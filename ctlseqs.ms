@@ -1,6 +1,6 @@
 .\"#! troff -ms $1		-*- Nroff -*-
 .\" "Xterm Control Sequences" document
-.\" $XConsortium: ctlseqs.ms,v 1.14 94/04/19 14:13:43 gildea Exp $
+.\" $XConsortium: ctlseqs.ms,v 1.16 94/12/28 20:45:48 gildea Exp $
 .\"
 .\" Copyright 1991, 1994 X Consortium
 .\"
@@ -189,7 +189,8 @@
 .ds Ir \fIr\fP
 .ds Ic \fIc\fP
 .ie t .nr LL 6.5i
-.el .nr LL 76m
+.el .nr LL 72m
+.if n .na
 .TL
 Xterm Control Sequences
 .AU
@@ -222,7 +223,6 @@ A text parameter composed of printable characters.
 .SH
 VT100 Mode
 .ds RH VT100 Mode
-.St
 .LP
 Most of these control sequences are standard VT102 control sequences,
 but there are some sequences here from later DEC VT terminals, too.
@@ -234,6 +234,7 @@ Where the function is specified by DEC or ISO 6429, the code assigned
 to it is given in parentheses.  The escape codes to designate and invoke
 character sets are specified by ISO 2022; see that document for a
 discussion of character sets.
+.St
 .IP \\*(Be
 Bell (Ctrl-G)
 .IP \\*(Bs
@@ -619,4 +620,4 @@ Incremental Plot Mode (Ctrl-^)
 .IP \\*(Us
 Alpha Mode (Ctrl-_)
 .Ed
-.if n .pl \\n(nlu+8v
+.if n .pl \n(nlu+1v

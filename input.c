@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: input.c,v 1.18 94/05/14 15:53:34 gildea Exp $
+ *	$XConsortium: input.c /main/20 1996/01/14 16:52:52 kaleb $
  */
 
 /*
@@ -32,8 +32,8 @@
 #include <X11/DECkeysym.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
+#include "data.h"
 
-static XComposeStatus compose_status = {NULL, 0};
 static char *kypd_num = " XXXXXXXX\tXXX\rXXXxxxxXXXXXXXXXXXXXXXXXXXXX*+,-./0123456789XXX=";
 static char *kypd_apl = " ABCDEFGHIJKLMNOPQRSTUVWXYZ??????abcdefghijklmnopqrstuvwxyzXXX";
 static char *cur = "DACB";
@@ -52,7 +52,7 @@ register TScreen *screen;
 		if(screen->bellarmed >= 0) {
 			if(screen->bellarmed == screen->cur_row) {
 			    if(screen->cur_col >= col) {
-				Bell();
+				Bell(XkbBI_MarginBell,0);
 				screen->bellarmed = -1;
 			    }
 			} else
@@ -77,11 +77,12 @@ Input (keyboard, screen, event, eightbit)
 	register int key = FALSE;
 	int	pty	= screen->respond;
 	int	nbytes;
-	KeySym  keysym;
+	KeySym  keysym = 0;
 	ANSI	reply;
+	Status	status_return;
 
-	nbytes = XLookupString (event, strbuf, STRBUFSIZE,
-				&keysym, &compose_status);
+	nbytes = XmbLookupString (screen->xic, event, strbuf, STRBUFSIZE,
+				&keysym, &status_return);
 
 	string = &strbuf[0];
 	reply.a_pintro = 0;

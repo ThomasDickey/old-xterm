@@ -1,5 +1,5 @@
 /*
- * $XConsortium: charproc.c,v 1.182 94/08/10 21:53:24 gildea Exp $
+ * $XConsortium: charproc.c /main/191 1996/01/23 11:34:26 kaleb $
  */
 
 /*
@@ -54,11 +54,6 @@ in this Software without prior written authorization from the X Consortium.
 /* charproc.c */
 
 #include "ptyx.h"
-#include "VTparse.h"
-#include "data.h"
-#include "error.h"
-#include "menu.h"
-#include "main.h"
 #include <X11/Xos.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -67,10 +62,17 @@ in this Software without prior written authorization from the X Consortium.
 #include <X11/Xmu/Atoms.h>
 #include <X11/Xmu/CharSet.h>
 #include <X11/Xmu/Converters.h>
+#include <X11/Xaw/XawImP.h>
+#include <X11/Xpoll.h>
 #include <stdio.h>
 #include <errno.h>
 #include <setjmp.h>
 #include <ctype.h>
+#include "VTparse.h"
+#include "data.h"
+#include "error.h"
+#include "menu.h"
+#include "main.h"
 
 /*
  * Check for both EAGAIN and EWOULDBLOCK, because some supposedly POSIX
@@ -89,10 +91,14 @@ in this Software without prior written authorization from the X Consortium.
 
 extern jmp_buf VTend;
 
+extern XtAppContext app_con;
 extern Widget toplevel;
 extern void exit();
 extern char *malloc();
 extern char *realloc();
+extern fd_set Select_mask;
+extern fd_set X_mask;
+extern fd_set pty_mask;
 
 static void VTallocbuf();
 static int finput();
@@ -272,26 +278,32 @@ static	char *	_Font_Selected_ = "yes";  /* string is arbitrary */
  */
 static char defaultTranslations[] =
 "\
- Shift <KeyPress> Prior:scroll-back(1,halfpage) \n\
-  Shift <KeyPress> Next:scroll-forw(1,halfpage) \n\
-Shift <KeyPress> Select:select-cursor-start() select-cursor-end(PRIMARY, CUT_BUFFER0) \n\
-Shift <KeyPress> Insert:insert-selection(PRIMARY, CUT_BUFFER0) \n\
-       ~Meta <KeyPress>:insert-seven-bit() \n\
-        Meta <KeyPress>:insert-eight-bit() \n\
-       !Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
-  !Lock Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
-       ~Meta <Btn1Down>:select-start() \n\
-     ~Meta <Btn1Motion>:select-extend() \n\
-       !Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
-  !Lock Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
- ~Ctrl ~Meta <Btn2Down>:ignore() \n\
-   ~Ctrl ~Meta <Btn2Up>:insert-selection(PRIMARY, CUT_BUFFER0) \n\
-       !Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
-  !Lock Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
- ~Ctrl ~Meta <Btn3Down>:start-extend() \n\
-     ~Meta <Btn3Motion>:select-extend()	\n\
-                <BtnUp>:select-end(PRIMARY, CUT_BUFFER0) \n\
-	      <BtnDown>:bell(0) \
+          Shift <KeyPress> Prior:scroll-back(1,halfpage) \n\
+           Shift <KeyPress> Next:scroll-forw(1,halfpage) \n\
+         Shift <KeyPress> Select:select-cursor-start() select-cursor-end(PRIMARY , CUT_BUFFER0) \n\
+         Shift <KeyPress> Insert:insert-selection(PRIMARY, CUT_BUFFER0) \n\
+                ~Meta <KeyPress>:insert-seven-bit() \n\
+                 Meta <KeyPress>:insert-eight-bit() \n\
+                !Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
+           !Lock Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
+ !Lock Ctrl @Num_Lock <Btn1Down>:popup-menu(mainMenu) \n\
+     ! @Num_Lock Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
+                ~Meta <Btn1Down>:select-start() \n\
+              ~Meta <Btn1Motion>:select-extend() \n\
+                !Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
+           !Lock Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
+ !Lock Ctrl @Num_Lock <Btn2Down>:popup-menu(vtMenu) \n\
+     ! @Num_Lock Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
+          ~Ctrl ~Meta <Btn2Down>:ignore() \n\
+            ~Ctrl ~Meta <Btn2Up>:insert-selection(PRIMARY, CUT_BUFFER0) \n\
+                !Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
+           !Lock Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
+ !Lock Ctrl @Num_Lock <Btn3Down>:popup-menu(fontMenu) \n\
+     ! @Num_Lock Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
+          ~Ctrl ~Meta <Btn3Down>:start-extend() \n\
+              ~Meta <Btn3Motion>:select-extend()      \n\
+                         <BtnUp>:select-end(PRIMARY, CUT_BUFFER0) \n\
+                       <BtnDown>:bell(0) \
 ";
 
 static XtActionsRec actionsList[] = { 
@@ -517,6 +529,15 @@ static XtResource resources[] = {
 {"font6", "Font6", XtRString, sizeof(String),
 	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font6]),
 	XtRString, (XtPointer) NULL},
+{XtNinputMethod, XtCInputMethod, XtRString, sizeof(char*),
+	XtOffsetOf(XtermWidgetRec, misc.input_method),
+	XtRString, (XtPointer)NULL},
+{XtNpreeditType, XtCPreeditType, XtRString, sizeof(char*),
+	XtOffsetOf(XtermWidgetRec, misc.preedit_type),
+	XtRString, (XtPointer)"Root"},
+{XtNopenIm, XtCOpenIm, XtRBoolean, sizeof(Boolean),
+	XtOffsetOf(XtermWidgetRec, misc.open_im),
+	XtRImmediate, (XtPointer)TRUE},
 };
 
 static void VTClassInit();
@@ -526,6 +547,7 @@ static void VTExpose();
 static void VTResize();
 static void VTDestroy();
 static Boolean VTSetValues();
+static void VTInitI18N();
 
 static WidgetClassRec xtermClassRec = {
   {
@@ -623,7 +645,7 @@ static void VTparse()
 
 		 case CASE_BELL:
 			/* bell */
-			Bell();
+			Bell(XkbBI_TerminalBell,0);
 			break;
 
 		 case CASE_BS:
@@ -713,7 +735,8 @@ static void VTparse()
 
 		 case CASE_ESC_SEMI:
 			/* semicolon in csi or dec mode */
-			param[nparam++] = DEFAULT;
+			if (nparam < NPARAM)
+			    param[nparam++] = DEFAULT;
 			break;
 
 		 case CASE_DEC_STATE:
@@ -1186,7 +1209,7 @@ v_write(f, d, len)
 	}
 #endif
 
-	if ((1 << f) != pty_mask)
+	if (!FD_ISSET (f, &pty_mask))
 		return(write(f, d, len));
 
 	/*
@@ -1306,8 +1329,8 @@ v_write(f, d, len)
 	return(c);
 }
 
-static int select_mask;
-static int write_mask;
+static fd_set select_mask;
+static fd_set write_mask;
 static int pty_read_bytes;
 
 in_put()
@@ -1317,7 +1340,7 @@ in_put()
     static struct timeval select_timeout;
 
     for( ; ; ) {
-	if (select_mask & pty_mask && eventMode == NORMAL) {
+	if (FD_ISSET (screen->respond, &select_mask) && eventMode == NORMAL) {
 #ifdef ALLOWLOGGING
 	    if (screen->logging)
 		FlushLog(screen);
@@ -1348,9 +1371,8 @@ in_put()
 		pty_read_bytes += bcnt;
 		/* stop speed reading at some point to look for X stuff */
 		/* (4096 is just a random large number.) */
-		if (pty_read_bytes > 4096) {
-		    select_mask &= ~pty_mask;
-		}
+		if (pty_read_bytes > 4096)
+		    FD_CLR (screen->respond, &select_mask);
 		break;
 	    }
 	}
@@ -1374,13 +1396,15 @@ in_put()
 
 	/* Update the masks and, unless X events are already in the queue,
 	   wait for I/O to be possible. */
-	select_mask = Select_mask;
-	write_mask = ptymask();
+	XFD_COPYSET (&Select_mask, &select_mask);
+	if (v_bufptr > v_bufstr) {
+	    XFD_COPYSET (&pty_mask, &write_mask);
+	} else
+	    FD_ZERO (&write_mask);
 	select_timeout.tv_sec = 0;
 	select_timeout.tv_usec = 0;
-	i = select(max_plus1, &select_mask, &write_mask, (int *)NULL,
-		   QLength(screen->display) ? &select_timeout
-		   : (struct timeval *) NULL);
+	i = Select(max_plus1, &select_mask, &write_mask, NULL,
+		   QLength(screen->display) ? &select_timeout : NULL);
 	if (i < 0) {
 	    if (errno != EINTR)
 		SysError(ERROR_SELECT);
@@ -1388,13 +1412,14 @@ in_put()
 	} 
 
 	/* if there is room to write more data to the pty, go write more */
-	if (write_mask & ptymask()) {
+	if (FD_ISSET (screen->respond, &write_mask)) {
 	    v_write(screen->respond, 0, 0); /* flush buffer */
 	}
 
 	/* if there are X events already in our queue, it
 	   counts as being readable */
-	if (QLength(screen->display) || (select_mask & X_mask)) {
+	if (QLength(screen->display) || 
+	    FD_ISSET (ConnectionNumber(screen->display), &select_mask)) {
 	    xevents();
 	}
 
@@ -1697,8 +1722,8 @@ dpmodes(termw, func)
 			else
 				CloseLog(screen);
 #else
-			Bell();
-			Bell();
+			Bell(XkbBI_Info,0);
+			Bell(XkbBI_Info,0);
 #endif /* ALLOWLOGFILEONOFF */
 			break;
 #endif
@@ -2471,6 +2496,8 @@ static void VTRealize (w, valuemask, values)
 		InputOutput, CopyFromParent,	
 		*valuemask|CWBitGravity, values);
 
+	VTInitI18N();
+
 	set_cursor_gcs (screen);
 
 	/* Reset variables used by ANSI emulation. */
@@ -2513,6 +2540,124 @@ static void VTRealize (w, valuemask, values)
 	CursorSave (term, &screen->sc);
 	return;
 }
+
+static void VTInitI18N()
+{
+    int		i;
+    char       *p,
+	       *s,
+	       *ns,
+	       *end,
+		tmp[1024],
+	  	buf[32];
+    XIM		xim = (XIM) NULL;
+    XIMStyles  *xim_styles;
+    XIMStyle	input_style = 0;
+    Boolean	found;
+
+    term->screen.xic = NULL;
+
+    if (!term->misc.open_im) return;
+
+    if (!term->misc.input_method || !*term->misc.input_method) {
+	if ((p = XSetLocaleModifiers("@im=none")) != NULL && *p)
+	    xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL);
+    } else {
+	strcpy(tmp, term->misc.input_method);
+	for(ns=s=tmp; ns && *s;) {
+	    while (*s && isspace(*s)) s++;
+	    if (!*s) break;
+	    if ((ns = end = index(s, ',')) == 0)
+		end = s + strlen(s);
+	    while (isspace(*end)) end--;
+	    *end = '\0';
+
+	    strcpy(buf, "@im=");
+	    strcat(buf, s);
+	    if ((p = XSetLocaleModifiers(buf)) != NULL && *p
+		&& (xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL)) != NULL)
+		break;
+
+	    s = ns + 1;
+	}
+    }
+
+    if (xim == NULL && (p = XSetLocaleModifiers("")) != NULL && *p)
+	xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL);
+    
+    if (!xim) {
+	fprintf(stderr, "Failed to open input method");
+	return;
+    }
+
+    if (XGetIMValues(xim, XNQueryInputStyle, &xim_styles, NULL)
+        || !xim_styles) {
+	fprintf(stderr, "input method doesn't support any style\n");
+        XCloseIM(xim);
+        return;
+    }
+
+    found = False;
+    strcpy(tmp, term->misc.preedit_type);
+    for(s = tmp; s && !found;) {
+	while (*s && isspace(*s)) s++;
+	if (!*s) break;
+	if (ns = end = index(s, ','))
+	    ns++;
+	else
+	    end = s + strlen(s);
+	while (isspace(*end)) end--;
+	*end = '\0';
+
+	if (!strcmp(s, "OverTheSpot")) {
+	    input_style = (XIMPreeditPosition | XIMStatusArea);
+	} else if (!strcmp(s, "OffTheSpot")) {
+	    input_style = (XIMPreeditArea | XIMStatusArea);
+	} else if (!strcmp(s, "Root")) {
+	    input_style = (XIMPreeditNothing | XIMStatusNothing);
+	}
+	for (i = 0; (unsigned short)i < xim_styles->count_styles; i++)
+	    if (input_style == xim_styles->supported_styles[i]) {
+		found = True;
+		break;
+	    }
+
+	s = ns;
+    }
+    XFree(xim_styles);
+
+    if (!found) {
+	fprintf(stderr, "input method doesn't support my preedit type\n");
+	XCloseIM(xim);
+	return;
+    }
+
+    /*
+     * This program only understands the Root preedit_style yet
+     * Then misc.preedit_type should default to:
+     *		"OverTheSpot,OffTheSpot,Root"
+     *
+     *	/MaF
+     */
+    if (input_style != (XIMPreeditNothing | XIMStatusNothing)) {
+	fprintf(stderr,"This program only supports the 'Root' preedit type\n");
+	XCloseIM(xim);
+	return;
+    }
+
+    term->screen.xic = XCreateIC(xim, XNInputStyle, input_style,
+				      XNClientWindow, term->core.window,
+				      XNFocusWindow, term->core.window,
+				      NULL);
+
+    if (!term->screen.xic) {
+	fprintf(stderr,"Failed to create input context\n");
+	XCloseIM(xim);
+    }
+
+    return;
+}
+
 
 static Boolean VTSetValues (cur, request, new, args, num_args)
     Widget cur, request, new;
@@ -2919,7 +3064,12 @@ static void HandleBell(w, event, params, param_count)
 {
     int percent = (*param_count) ? atoi(params[0]) : 0;
 
+#ifdef XKB
+    int which= XkbBI_TerminalBell;
+    XkbStdBell(XtDisplay(w),XtWindow(w),percent,which);
+#else
     XBell( XtDisplay(w), percent );
+#endif
 }
 
 
@@ -2959,7 +3109,7 @@ DoSetSelectedFont(w, client_data, selection, type, value, length, format)
     char *val = (char *)value;
     int len;
     if (*type != XA_STRING  ||  *format != 8) {
-	Bell();
+	Bell(XkbBI_MinorError,0);
 	return;
     }
     len = strlen(val);
@@ -2972,7 +3122,7 @@ DoSetSelectedFont(w, client_data, selection, type, value, length, format)
 	if (len > 1000  ||  strchr(val, '\n'))
 	    return;
 	if (!LoadNewFont (&term->screen, val, NULL, True, fontMenu_fontsel))
-	    Bell();
+	    Bell(XkbBI_MinorError,0);
     }
 }
 
@@ -3045,11 +3195,11 @@ void HandleSetFont(w, event, params, param_count)
 	  case 's': case 'S':
 	    fontnum = fontMenu_fontsel; maxparams = 2; break;
 	  default:
-	    Bell();
+	    Bell(XkbBI_MinorError,0);
 	    return;
 	}
 	if (*param_count > maxparams) {	 /* see if extra args given */
-	    Bell();
+	    Bell(XkbBI_MinorError,0);
 	    return;
 	}
 	switch (*param_count) {		/* assign 'em */
@@ -3074,7 +3224,7 @@ void SetVTFont (i, doresize, name1, name2)
     TScreen *screen = &term->screen;
 
     if (i < 0 || i >= NMENUFONTS) {
-	Bell();
+	Bell(XkbBI_MinorError,0);
 	return;
     }
     if (i == fontMenu_fontsel) {	/* go get the selection */
@@ -3083,7 +3233,7 @@ void SetVTFont (i, doresize, name1, name2)
     }
     if (!name1) name1 = screen->menu_font_names[i];
     if (!LoadNewFont(screen, name1, name2, doresize, i)) {
-	Bell();
+	Bell(XkbBI_MinorError,0);
     }
     return;
 }

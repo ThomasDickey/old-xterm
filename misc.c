@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: misc.c,v 1.102 94/03/28 18:27:08 gildea Exp $
+ *	$XConsortium: misc.c /main/106 1996/02/02 14:27:57 kaleb $
  */
 
 /*
@@ -251,7 +251,7 @@ caddr_t eventdata;
 			       (event->detail == NotifyPointer) ? INWINDOW :
 								  FOCUS);
 		if (screen->grabbedKbd && (event->mode == NotifyUngrab)) {
-		    XBell(screen->display, 100);
+		    Bell(XkbBI_Info, 100);
 		    ReverseVideo(term);
 		    screen->grabbedKbd = FALSE;
 		    update_securekbd();
@@ -273,6 +273,9 @@ register int flag;
 			TCursorToggle(TOGGLE);
 		return;
 	} else {
+		if (screen->xic)
+		    XSetICFocus(screen->xic);
+
 		if(screen->cursor_state &&
 		   (screen->cursor_col != screen->cur_col ||
 		    screen->cursor_row != screen->cur_row))
@@ -295,6 +298,8 @@ register int flag;
 	screen->select &= ~flag;
 	if(!Ttoggled) TCursorToggle(TOGGLE);
     } else {
+	if (screen->xic)
+	    XUnsetICFocus(screen->xic);
 	screen->select &= ~flag;
 	if(screen->cursor_state &&
 	   (screen->cursor_col != screen->cur_col ||
@@ -307,7 +312,9 @@ register int flag;
 
 static long lastBellTime;	/* in milliseconds */
 
-Bell()
+Bell(which,percent)
+     int which;
+     int percent;
 {
     extern XtermWidget term;
     register TScreen *screen = &term->screen;
@@ -337,7 +344,11 @@ Bell()
     if (screen->visualbell)
 	VisualBell();
     else
-	XBell(screen->display, 0);
+#ifdef XKB
+	XkbStdBell(screen->display,TWindow(screen),percent,which);
+#else
+	XBell(screen->display, percent);
+#endif
 
     if(screen->bellSuppressTime) {
 	/* now we change a property and wait for the notify event to come
@@ -591,8 +602,8 @@ register TScreen *screen;
 		screen->logfd = p[1];
 		signal(SIGPIPE, logpipe);
 #else
-		Bell();
-		Bell();
+		Bell(XkbBI_Info,0);
+		Bell(XkbBI_Info,0);
 		return;
 #endif
 	} else {
@@ -705,8 +716,8 @@ int (*func)();
 			free(term->screen.logfile);
 		term->screen.logfile = cp;
 #else
-		Bell();
-		Bell();
+		Bell(XkbBI_Info,0);
+		Bell(XkbBI_Info,0);
 #endif
 		break;
 #endif /* ALLOWLOGGING */
@@ -765,10 +776,8 @@ int a;
 char *SysErrorMsg (n)
     int n;
 {
-    extern char *sys_errlist[];
-    extern int sys_nerr;
-
-    return ((n >= 0 && n < sys_nerr) ? sys_errlist[n] : "unknown error");
+    register char *s = strerror(n);
+    return s ? s : "unknown error";
 }
 
 

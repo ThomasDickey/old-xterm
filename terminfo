@@ -1,4 +1,4 @@
-# $XConsortium: terminfo,v 1.10 94/04/13 11:43:14 gildea Exp $
+# $XConsortium: terminfo,v 1.11 94/10/13 21:24:31 gildea Exp $
 # meml locks memory above the cursor; memu unlocks (ala HP terminals)
 #
 xterm|xterm-24|xterms|vs100|xterm terminal emulator (X Window System),
@@ -39,6 +39,8 @@ xterm-65|xterm with tall window 65x80 (X Window System),
 	use=xterm,
 xterm-bold|xterm with bold instead of underline (X Window System),
 	smul=\E[1m, use=xterm,
+xterm-boldso|xterm with bold for standout (X Window System),
+	smso=\E[1m, use=xterm,
 #
 # vi may work better with this entry, because vi
 # doesn't use insert mode much

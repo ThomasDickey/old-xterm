@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: resize.c,v 1.31 94/11/30 23:51:18 kaleb Exp $
+ *	$XConsortium: resize.c,v 1.34 95/05/24 22:12:04 gildea Exp $
  */
 
 /*
@@ -34,6 +34,11 @@
 
 #if defined(att) || (defined(SYSV) && defined(i386))
 #define ATT
+#endif
+
+#if defined(sgi) && defined(SVR4)
+#undef SVR4
+#define SYSV
 #endif
 
 #ifdef SVR4
@@ -72,7 +77,9 @@
 
 #ifdef USE_USG_PTYS
 #include <sys/stream.h>
+#ifndef SVR4
 #include <sys/ptem.h>
+#endif
 #endif
 
 #include <signal.h>
@@ -474,12 +481,12 @@ readstring(fp, buf, str)
     char *str;
 {
 	register int last, c;
-	SIGNAL_T timeout();
+	SIGNAL_T resize_timeout();
 #ifndef USG
 	struct itimerval it;
 #endif
 
-	signal(SIGALRM, timeout);
+	signal(SIGALRM, resize_timeout);
 #ifdef USG
 	alarm (TIMEOUT);
 #else
@@ -517,10 +524,10 @@ Usage()
 }
 
 SIGNAL_T
-timeout(sig)
+resize_timeout(sig)
     int sig;
 {
-	fprintf(stderr, "%s: Time out occurred\r\n", myname);
+	fprintf(stderr, "\n%s: Time out occurred\r\n", myname);
 	onintr(sig);
 }
 
