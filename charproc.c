@@ -1,12 +1,16 @@
 /*
- * $Xorg: charproc.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
+ * $Xorg: charproc.c,v 1.6 2001/02/09 02:06:02 xorgcvs Exp $
  */
 
 /*
  
 Copyright 1988, 1998  The Open Group
 
-All Rights Reserved.
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation.
 
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
@@ -2730,8 +2734,19 @@ static void VTInitI18N()
 	while (*s && isspace(*s)) s++;
 	if (!*s) break;
 	if ((ns = end = strchr(s, ',')) == NULL)
-	    end = s + strlen(s);
-	while (isspace(*end)) end--;
+	    ns = end = s + strlen(s);
+	while ((end > s) && isspace(end[-1])) end--;
+
+	/*
+	 * If input was degenerate, e.g. "PreeditType: , Root"
+	 *     Skip over the comma
+	 *     Don't bother checking current preedit type
+	 */
+
+	if (end <= s) {
+	    s = ns + 1;
+	    continue;
+	}
 
 	if (!strncmp(s, "OverTheSpot", end - s)) {
 	    input_style = (XIMPreeditPosition | XIMStatusArea);
@@ -3026,8 +3041,12 @@ VTReset(full)
 		FromAlternate(screen);
 		ClearScreen(screen);
 		screen->cursor_state = OFF;
-		if (term->flags & REVERSE_VIDEO)
+		if ((term->flags & REVERSE_VIDEO) !=
+		    (term->initflags & REVERSE_VIDEO)) {
+			term->flags &= ~REVERSE_VIDEO;
+			term->flags |= (term->initflags & REVERSE_VIDEO);
 			ReverseVideo(term);
+		}
 
 		term->flags = term->initflags;
 		update_reversevideo();
