@@ -1,4 +1,4 @@
-! $XConsortium: XTerm.ad /main/35 1996/12/03 16:44:38 swick $
+! $Xorg: XTerm.ad,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
 XTerm.JoinSession:False
 
 *SimpleMenu*BackingStore: NotUseful

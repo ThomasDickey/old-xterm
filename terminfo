@@ -1,4 +1,4 @@
-# $XConsortium: terminfo,v 1.11 94/10/13 21:24:31 gildea Exp $
+# $Xorg: terminfo,v 1.3 2000/08/17 19:55:10 cpqbld Exp $
 # meml locks memory above the cursor; memu unlocks (ala HP terminals)
 #
 xterm|xterm-24|xterms|vs100|xterm terminal emulator (X Window System),

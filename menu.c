@@ -1,4 +1,4 @@
-/* $TOG: menu.c /main/67 1998/02/09 14:17:26 kaleb $ */
+/* $Xorg: menu.c,v 1.3 2000/08/17 19:55:09 cpqbld Exp $ */
 /*
 
 Copyright 1989, 1998  The Open Group

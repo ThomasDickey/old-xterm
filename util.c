@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: util.c /main/33 1996/12/01 23:47:10 swick $
+ *	$Xorg: util.c,v 1.3 2000/08/17 19:55:10 cpqbld Exp $
  */
 
 /*

@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: main.h,v 1.5 91/02/06 16:00:15 gildea Exp $
+ *	$Xorg: main.h,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
 /*

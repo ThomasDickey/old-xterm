@@ -1,5 +1,5 @@
 /*
- * $TOG: charproc.c /main/197 1998/02/09 14:16:41 kaleb $
+ * $Xorg: charproc.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
 /*
@@ -2664,7 +2664,7 @@ static void VTInitI18N()
 	       *s,
 	       *ns,
 	       *end,
-		tmp[1024],
+	       *pbuf,
 	  	buf[32];
     XIM		xim = (XIM) NULL;
     XIMStyles  *xim_styles;
@@ -2679,23 +2679,35 @@ static void VTInitI18N()
 	if ((p = XSetLocaleModifiers("@im=none")) != NULL && *p)
 	    xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL);
     } else {
-	strcpy(tmp, term->misc.input_method);
-	for(ns=s=tmp; ns && *s;) {
+	/* no fragment can be longer than the whole string */
+	int	len = strlen (term->misc.input_method) + 5;
+
+	if (len < sizeof buf) pbuf = buf;
+	else pbuf = malloc (len);
+
+	if (pbuf == NULL)
+	    SysError(ERROR_VINIT);
+
+	for(ns=s=term->misc.input_method; ns && *s;) {
+	    /* skip any leading blanks */
 	    while (*s && isspace(*s)) s++;
 	    if (!*s) break;
-	    if ((ns = end = index(s, ',')) == 0)
+	    if ((ns = end = strchr(s, ',')) == NULL)
 		end = s + strlen(s);
+	    /* strip any trailing blanks */
 	    while (isspace(*end)) end--;
-	    *end = '\0';
 
-	    strcpy(buf, "@im=");
-	    strcat(buf, s);
-	    if ((p = XSetLocaleModifiers(buf)) != NULL && *p
+	    strcpy (pbuf, "@im=");
+	    strncat (pbuf, s, end - s);
+	    pbuf[end - s + 4] = '\0';
+
+	    if ((p = XSetLocaleModifiers(pbuf)) != NULL && *p
 		&& (xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL)) != NULL)
 		break;
 
 	    s = ns + 1;
 	}
+	if (pbuf != buf) free (pbuf);
     }
 
     if (xim == NULL && (p = XSetLocaleModifiers("")) != NULL)
@@ -2714,22 +2726,18 @@ static void VTInitI18N()
     }
 
     found = False;
-    strcpy(tmp, term->misc.preedit_type);
-    for(s = tmp; s && !found;) {
+    for(ns = s = term->misc.preedit_type; s && !found;) {
 	while (*s && isspace(*s)) s++;
 	if (!*s) break;
-	if (ns = end = index(s, ','))
-	    ns++;
-	else
+	if ((ns = end = strchr(s, ',')) == NULL)
 	    end = s + strlen(s);
 	while (isspace(*end)) end--;
-	*end = '\0';
 
-	if (!strcmp(s, "OverTheSpot")) {
+	if (!strncmp(s, "OverTheSpot", end - s)) {
 	    input_style = (XIMPreeditPosition | XIMStatusArea);
-	} else if (!strcmp(s, "OffTheSpot")) {
+	} else if (!strncmp(s, "OffTheSpot", end - s)) {
 	    input_style = (XIMPreeditArea | XIMStatusArea);
-	} else if (!strcmp(s, "Root")) {
+	} else if (!strncmp(s, "Root", end - s)) {
 	    input_style = (XIMPreeditNothing | XIMStatusNothing);
 	}
 	for (i = 0; (unsigned short)i < xim_styles->count_styles; i++)
@@ -2738,7 +2746,7 @@ static void VTInitI18N()
 		break;
 	    }
 
-	s = ns;
+	s = ns + 1;
     }
     XFree(xim_styles);
 
@@ -2770,8 +2778,6 @@ static void VTInitI18N()
 	fprintf(stderr,"Failed to create input context\n");
 	XCloseIM(xim);
     }
-
-    return;
 }
 
 
@@ -3168,6 +3174,9 @@ static void HandleKeymapChange(w, event, params, param_count)
     };
     char mapName[1000];
     char mapClass[1000];
+    char* pmapName;
+    char* pmapClass;
+    int len;
 
     if (*param_count != 1) return;
 
@@ -3177,13 +3186,32 @@ static void HandleKeymapChange(w, event, params, param_count)
 	XtOverrideTranslations(w, original);
 	return;
     }
-    (void) sprintf( mapName, "%sKeymap", params[0] );
-    (void) strcpy( mapClass, mapName );
-    if (islower(mapClass[0])) mapClass[0] = toupper(mapClass[0]);
-    XtGetSubresources( w, (XtPointer)&keymap, mapName, mapClass,
+
+    len = strlen (params[0]) + 7;
+
+    if (len < sizeof mapName) {
+	pmapName = mapName;
+	pmapClass = mapClass;
+    } else {
+	pmapName = malloc (len);
+	pmapClass = malloc (len);
+
+	if (pmapName == NULL || pmapClass == NULL)
+	    SysError(57);
+    }
+
+    (void) sprintf( pmapName, "%sKeymap", params[0] );
+    (void) strcpy( pmapClass, pmapName );
+    if (islower(pmapClass[0])) pmapClass[0] = toupper(pmapClass[0]);
+    XtGetSubresources( w, (XtPointer)&keymap, pmapName, pmapClass,
 		       key_resources, (Cardinal)1, NULL, (Cardinal)0 );
     if (keymap != NULL)
 	XtOverrideTranslations(w, keymap);
+
+    if (pmapName != mapName) {
+	(void) free (pmapName);
+	(void) free (pmapClass);
+    }
 }
 
 

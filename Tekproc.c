@@ -1,5 +1,5 @@
 /*
- * $TOG: Tekproc.c /main/121 1998/02/09 14:18:36 kaleb $
+ * $Xorg: Tekproc.c,v 1.4 2000/08/17 19:55:07 cpqbld Exp $
  *
  * Warning, there be crufty dragons here.
  */
@@ -415,9 +415,9 @@ static void Tekparse()
 			/* Do Tek GIN mode */
 			screen->TekGIN = &TekRecord->ptr[-1];
 				/* Set cross-hair cursor raster array */
-			if (GINcursor = 
+			if ((GINcursor = 
 			    make_colored_cursor (XC_tcross, screen->mousecolor,
-						 screen->mousecolorback))
+						 screen->mousecolorback)))
 				XDefineCursor (screen->display, TShellWindow,
 					       GINcursor);
 			Tparsestate = Tbyptable;	/* Bypass mode */
@@ -686,7 +686,7 @@ static int Tinput()
 	if(TekRefresh) {
 		if(rcnt-- > 0)
 			return(*rptr++);
-		if(tek = TekRefresh->next) {
+		if((tek = TekRefresh->next)) {
 			TekRefresh = tek;
 			rptr = tek->data;
 			rcnt = tek->count - 1;
