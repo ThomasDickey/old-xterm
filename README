@@ -1,0 +1,16 @@
+                                     xterm
+
+This is undoubtedly the most ugly program in the distribution.  It was one of
+the "serious" first programs ported, and still has a lot of historical baggage.
+We are trying as hard as possible to fix it, but we really need someone to go
+off and start again.  It would be really nice if the emulator packages were
+completely separate from each other as well as from the control structures
+so that new emulators would be easy to plug in.
+
+If you are porting this to a machine that has problems with overlapping
+bcopy's, watch out!   You may have to write your own.  See the Imakefile
+and Makefile for more information on how to do this.
+
+The Xterm Control Sequences document still needs a lot of work and may not
+be completely accurate.
+

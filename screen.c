@@ -1,5 +1,5 @@
 /*
- *	@Header: screen.c,v 1.1 88/02/10 13:08:12 jim Exp @
+ *	$XConsortium: screen.c,v 1.10 89/01/03 16:18:06 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -30,7 +30,7 @@
 /* screen.c */
 
 #ifndef lint
-static char rcs_id[] = "@Header: screen.c,v 1.1 88/02/10 13:08:12 jim Exp @";
+static char rcs_id[] = "$XConsortium: screen.c,v 1.10 89/01/03 16:18:06 jim Exp $";
 #endif	/* lint */
 
 #include <X11/Xlib.h>
@@ -43,7 +43,7 @@ static char rcs_id[] = "@Header: screen.c,v 1.1 88/02/10 13:08:12 jim Exp @";
 extern char *calloc();
 extern char *malloc();
 extern char *realloc();
-extern void bcopy();
+extern void Bcopy();
 extern void free();
 
 ScrnBuf Allocate (nrow, ncol)
@@ -89,7 +89,7 @@ register int length;		/* length of string */
 	col = screen->buf[avail = 2 * screen->cur_row] + screen->cur_col;
 	att = screen->buf[avail + 1] + screen->cur_col;
 	flags &= ATTRIBUTES;
-	bcopy(str, col, length);
+	Bcopy(str, col, length);
 	while(length-- > 0)
 		*att++ = flags;
 }
@@ -108,20 +108,29 @@ register int where, n, size;
 	register int i;
 	char *save [2 * MAX_ROWS];
 
+
 	/* save n lines at bottom */
-	bcopy ((char *) &sb [2 * (last -= n - 1)], (char *) save,
+	Bcopy ((char *) &sb [2 * (last -= n - 1)], (char *) save,
 		2 * sizeof (char *) * n);
 	
 	/* clear contents of old rows */
 	for (i = 2 * n - 1; i >= 0; i--)
 		bzero ((char *) save [i], size);
 
-	/* move down lines */
-	bcopy ((char *) &sb [2 * where], (char *) &sb [2 * (where + n)],
+	/*
+	 * WARNING, overlapping copy operation.  Move down lines (pointers).
+	 *
+	 *   +----|---------|--------+
+	 *
+	 * is copied in the array to:
+	 *
+	 *   +--------|---------|----+
+	 */
+	Bcopy ((char *) &sb [2 * where], (char *) &sb [2 * (where + n)],
 		2 * sizeof (char *) * (last - where));
 
 	/* reuse storage for new lines at where */
-	bcopy ((char *)save, (char *) &sb[2 * where], 2 * sizeof(char *) * n);
+	Bcopy ((char *)save, (char *) &sb[2 * where], 2 * sizeof(char *) * n);
 }
 
 
@@ -140,18 +149,18 @@ int where;
 	char *save [2 * MAX_ROWS];
 
 	/* save n lines at where */
-	bcopy ((char *) &sb[2 * where], (char *)save, 2 * sizeof(char *) * n);
+	Bcopy ((char *) &sb[2 * where], (char *)save, 2 * sizeof(char *) * n);
 
 	/* clear contents of old rows */
 	for (i = 2 * n - 1 ; i >= 0 ; i--)
 		bzero ((char *) save [i], size);
 
 	/* move up lines */
-	bcopy ((char *) &sb[2 * (where + n)], (char *) &sb[2 * where],
+	Bcopy ((char *) &sb[2 * (where + n)], (char *) &sb[2 * where],
 		2 * sizeof (char *) * ((last -= n - 1) - where));
 
 	/* reuse storage for new bottom lines */
-	bcopy ((char *)save, (char *) &sb[2 * last],
+	Bcopy ((char *)save, (char *) &sb[2 * last],
 		2 * sizeof(char *) * n);
 }
 
@@ -190,14 +199,14 @@ register int n, col;
 	register char *att = sb[2 * row + 1];
 	register nbytes = (size - n - col);
 
-	bcopy (ptr + col + n, ptr + col, nbytes);
-	bcopy (att + col + n, att + col, nbytes);
+	Bcopy (ptr + col + n, ptr + col, nbytes);
+	Bcopy (att + col + n, att + col, nbytes);
 	bzero (ptr + size - n, n);
 	bzero (att + size - n, n);
 }
 
 
-ScrnRefresh (screen, toprow, leftcol, nrows, ncols)
+ScrnRefresh (screen, toprow, leftcol, nrows, ncols, force)
 /*
    Repaints the area enclosed by the parameters.
    Requires: (toprow, leftcol), (toprow + nrows, leftcol + ncols) are
@@ -206,15 +215,15 @@ ScrnRefresh (screen, toprow, leftcol, nrows, ncols)
  */
 register TScreen *screen;
 int toprow, leftcol, nrows, ncols;
+Boolean force;			/* ... leading/trailing spaces */
 {
 	int y = toprow * FontHeight(screen) + screen->border +
-		screen->fnt_norm->max_bounds.ascent;
+		screen->fnt_norm->ascent;
 	register int row;
 	register int topline = screen->topline;
 	int maxrow = toprow + nrows - 1;
 	int scrollamt = screen->scroll_amt;
 	int max = screen->max_row;
-	
 
 	if(screen->cursor_col >= leftcol && screen->cursor_col <=
 	 (leftcol + ncols - 1) && screen->cursor_row >= toprow + topline &&
@@ -229,26 +238,57 @@ int toprow, leftcol, nrows, ncols;
 	   int flags;
 	   int x, n;
 	   GC gc;
+	   Boolean hilite;	
 
-	   lastind = row - scrollamt;
+	   if (row < screen->top_marg || row > screen->bot_marg)
+		lastind = row;
+	   else
+		lastind = row - scrollamt;
+
 	   if (lastind < 0 || lastind > max)
 	   	continue;
+
 	   chars = screen->buf [2 * (lastind + topline)];
 	   att = screen->buf [2 * (lastind + topline) + 1];
 
-	   while (col <= maxcol && (att[col] & ~BOLD) == 0 &&
-	    (chars[col] & ~040) == 0)
-		col++;
+	   if (row < screen->startHRow || row > screen->endHRow ||
+	       (row == screen->startHRow && maxcol < screen->startHCol) ||
+	       (row == screen->endHRow && col >= screen->endHCol))
+	       {
+	       /* row does not intersect selection; don't hilite */
+	       if (!force) {
+		   while (col <= maxcol && (att[col] & ~BOLD) == 0 &&
+			  (chars[col] & ~040) == 0)
+		       col++;
 
-	   while (col <= maxcol && (att[maxcol] & ~BOLD) == 0 &&
-	    (chars[maxcol] & ~040) == 0)
-		maxcol--;
+		   while (col <= maxcol && (att[maxcol] & ~BOLD) == 0 &&
+			  (chars[maxcol] & ~040) == 0)
+		       maxcol--;
+	       }
+	       hilite = False;
+	   }
+	   else {
+	       /* row intersects selection; split into pieces of single type */
+	       if (row == screen->startHRow && col < screen->startHCol) {
+		   ScrnRefresh(screen, row, col, 1, screen->startHCol - col,
+			       force);
+		   col = screen->startHCol;
+	       }
+	       if (row == screen->endHRow && maxcol >= screen->endHCol) {
+		   ScrnRefresh(screen, row, screen->endHCol, 1,
+			       maxcol - screen->endHCol + 1, force);
+		   maxcol = screen->endHCol - 1;
+	       }
+	       /* remaining piece should be hilited */
+	       hilite = True;
+	   }
 
 	   if (col > maxcol) continue;
 
 	   flags = att[col];
 
-	   if ((flags & INVERSE) != 0)
+	   if ( (!hilite && (flags & INVERSE) != 0) ||
+	        (hilite && (flags & INVERSE) == 0) )
 	       if (flags & BOLD) gc = screen->reverseboldGC;
 	       else gc = screen->reverseGC;
 	   else 
@@ -275,7 +315,8 @@ int toprow, leftcol, nrows, ncols;
 
 		   flags = att[col];
 
-	   	   if ((flags & INVERSE) != 0)
+	   	   if ((!hilite && (flags & INVERSE) != 0) ||
+		       (hilite && (flags & INVERSE) == 0) )
 	       		if (flags & BOLD) gc = screen->reverseboldGC;
 	       		else gc = screen->reverseGC;
 	  	    else 
@@ -288,7 +329,8 @@ int toprow, leftcol, nrows, ncols;
 	   }
 
 
-	   if ((flags & INVERSE) != 0)
+	   if ( (!hilite && (flags & INVERSE) != 0) ||
+	        (hilite && (flags & INVERSE) == 0) )
 	       if (flags & BOLD) gc = screen->reverseboldGC;
 	       else gc = screen->reverseGC;
 	   else 
@@ -332,7 +374,7 @@ ScreenResize (screen, width, height, flags)
       and from the right
    4. Cursor is positioned as closely to its former position as possible
    5. Sets screen->max_row and screen->max_col to reflect new size
-   6. Maintains the inner border.
+   6. Maintains the inner border (and clears the border on the screen).
    7. Clears origin mode and sets scrolling region to be entire screen.
    8. Returns 0
  */
@@ -340,14 +382,14 @@ register TScreen *screen;
 int width, height;
 unsigned *flags;
 {
-	register int rows, cols;
+	int rows, cols;
 	register int index;
-	register int savelines;
+	int savelines;
 	register ScrnBuf sb = screen->allbuf;
 	register ScrnBuf ab = screen->altbuf;
 	register int x;
-	register int border = 2 * screen->border;
-	register int i, j, k;
+	int border = 2 * screen->border;
+	int i, j, k;
 #ifdef sun
 #ifdef TIOCSSIZE
 	struct ttysize ts;
@@ -357,6 +399,18 @@ unsigned *flags;
 	struct winsize ws;
 #endif	/* TIOCSWINSZ */
 #endif	/* sun */
+	Window tw = TextWindow (screen);
+
+	/* clear the right and bottom internal border because of NorthWest
+	   gravity might have left junk on the right and bottom edges */
+	XClearArea (screen->display, tw,
+		    width - screen->border, 0,                /* right edge */
+		    screen->border, height,           /* from top to bottom */
+		    False);
+	XClearArea (screen->display, tw, 
+		    0, height - screen->border,	                  /* bottom */
+		    width, screen->border,         /* all across the bottom */
+		    False);
 
 	/* round so that it is unlikely the screen will change size on  */
 	/* small mouse movements.					*/
@@ -472,6 +526,7 @@ unsigned *flags;
 	
 	screen->fullVwin.fullheight = height;
 	screen->fullVwin.fullwidth = width;
+	ResizeSelection (screen, rows, cols);
 #ifdef sun
 #ifdef TIOCSSIZE
 	/* Set tty's idea of window size */
@@ -479,8 +534,12 @@ unsigned *flags;
 	ts.ts_cols = cols;
 	ioctl (screen->respond, TIOCSSIZE, &ts);
 #ifdef SIGWINCH
-	if(screen->pid > 1)
-		killpg(getpgrp(screen->pid), SIGWINCH);
+	if(screen->pid > 1) {
+		int	pgrp;
+		
+		if (ioctl (screen->respond, TIOCGPGRP, &pgrp) != -1)
+			killpg(pgrp, SIGWINCH);
+	}
 #endif	/* SIGWINCH */
 #endif	/* TIOCSSIZE */
 #else	/* sun */
@@ -491,9 +550,13 @@ unsigned *flags;
 	ws.ws_xpixel = width;
 	ws.ws_ypixel = height;
 	ioctl (screen->respond, TIOCSWINSZ, (char *)&ws);
-#ifdef SIGWINCH
-	if(screen->pid > 1)
-		killpg(getpgrp((int)screen->pid), SIGWINCH);
+#ifdef notdef	/* change to SIGWINCH if this doesn't work for you */
+	if(screen->pid > 1) {
+		int	pgrp;
+		
+		if (ioctl (screen->respond, TIOCGPGRP, &pgrp) != -1)
+			killpg(pgrp, SIGWINCH);
+	}
 #endif	/* SIGWINCH */
 #endif	/* TIOCSWINSZ */
 #endif	/* sun */

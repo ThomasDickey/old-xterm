@@ -1,5 +1,5 @@
 /*
- *	@Header: Tekparse.h,v 1.1 88/02/11 22:08:38 jim Exp @
+ *	$XConsortium: Tekparse.h,v 1.3 88/09/06 17:07:31 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -29,37 +29,50 @@
 
 
 /* @(#)Tekparse.h	X10/6.6	11/7/86 */
-#define	CASE_REPORT	0
-#define	CASE_VT_MODE	(CASE_REPORT + 1)
-#define	CASE_SPT_STATE	(CASE_VT_MODE + 1)
-#define	CASE_GIN	(CASE_SPT_STATE + 1)
-#define	CASE_BEL	(CASE_GIN + 1)
-#define	CASE_BS		(CASE_BEL + 1)
-#define	CASE_PT_STATE	(CASE_BS + 1)
-#define	CASE_PLT_STATE	(CASE_PT_STATE + 1)
-#define	CASE_TAB	(CASE_PLT_STATE + 1)
-#define	CASE_IPL_STATE	(CASE_TAB + 1)
-#define	CASE_ALP_STATE	(CASE_IPL_STATE + 1)
-#define	CASE_UP		(CASE_ALP_STATE + 1)
-#define	CASE_COPY	(CASE_UP + 1)
-#define	CASE_PAGE	(CASE_COPY + 1)
-#define	CASE_BES_STATE	(CASE_PAGE + 1)
-#define	CASE_BYP_STATE	(CASE_BES_STATE + 1)
-#define	CASE_IGNORE	(CASE_BYP_STATE + 1)
-#define	CASE_ASCII	(CASE_IGNORE + 1)
-#define	CASE_APL	(CASE_ASCII + 1)
-#define	CASE_CHAR_SIZE	(CASE_APL + 1)
-#define	CASE_BEAM_VEC	(CASE_CHAR_SIZE + 1)
-#define	CASE_CURSTATE	(CASE_BEAM_VEC + 1)
-#define	CASE_PENUP	(CASE_CURSTATE + 1)
-#define	CASE_PENDOWN	(CASE_PENUP + 1)
-#define	CASE_IPL_POINT	(CASE_PENDOWN + 1)
-#define	CASE_PLT_VEC	(CASE_IPL_POINT + 1)
-#define	CASE_PT_POINT	(CASE_PLT_VEC + 1)
-#define	CASE_SPT_POINT	(CASE_PT_POINT + 1)
-#define	CASE_CR		(CASE_SPT_POINT + 1)
-#define	CASE_ESC_STATE	(CASE_CR + 1)
-#define	CASE_LF		(CASE_ESC_STATE + 1)
-#define	CASE_SP		(CASE_LF + 1)
-#define	CASE_PRINT	(CASE_SP + 1)
-#define	CASE_OSC	(CASE_PRINT + 1)
+
+/*
+ * The following list of definitions is generated from Tekparse.def using the
+ * following command line:
+ *
+ *     egrep -v '^CASE_' Tekparse.def | \
+ *     awk 'BEGIN {n = 0;} {printf "#define %s %d\n", $1, n; n++}' 
+ *
+ * You you need to change something, change Tekparse.def and regenerate the
+ * definitions.  This would have been automatic, but since this doesn't change
+ * very often, it isn't worth the makefile hassle.
+ */
+
+#define CASE_REPORT 0
+#define CASE_VT_MODE 1
+#define CASE_SPT_STATE 2
+#define CASE_GIN 3
+#define CASE_BEL 4
+#define CASE_BS 5
+#define CASE_PT_STATE 6
+#define CASE_PLT_STATE 7
+#define CASE_TAB 8
+#define CASE_IPL_STATE 9
+#define CASE_ALP_STATE 10
+#define CASE_UP 11
+#define CASE_COPY 12
+#define CASE_PAGE 13
+#define CASE_BES_STATE 14
+#define CASE_BYP_STATE 15
+#define CASE_IGNORE 16
+#define CASE_ASCII 17
+#define CASE_APL 18
+#define CASE_CHAR_SIZE 19
+#define CASE_BEAM_VEC 20
+#define CASE_CURSTATE 21
+#define CASE_PENUP 22
+#define CASE_PENDOWN 23
+#define CASE_IPL_POINT 24
+#define CASE_PLT_VEC 25
+#define CASE_PT_POINT 26
+#define CASE_SPT_POINT 27
+#define CASE_CR 28
+#define CASE_ESC_STATE 29
+#define CASE_LF 30
+#define CASE_SP 31
+#define CASE_PRINT 32
+#define CASE_OSC 33

@@ -1,4 +1,21 @@
-.TH XTERM 1 "1 March 1988" "X Version 11"
+.TH XTERM 1 "25 October 1988" "X Version 11"
+.de Ds
+.nf
+.\\$1D \\$2 \\$1
+.ft 1
+.ps \\n(PS
+.\".if \\n(VS>=40 .vs \\n(VSu
+.\".if \\n(VS<=39 .vs \\n(VSp
+..
+.de De
+.ce 0
+.if \\n(BD .DF
+.nr BD 0
+.in \\n(OIu
+.if \\n(TM .ls 2
+.sp \\n(DDu
+.fi
+..
 .SH NAME
 xterm \- terminal emulator for X
 .SH SYNOPSIS
@@ -35,6 +52,9 @@ instead of a
 .RB ` \- ',
 the option is restored to its default value):
 .TP 8
+.B \-help
+This causes \fIxterm\fP to print out a verbose message describing its options.
+.TP 8
 .B \-132
 Normally, the VT102 DECCOLM escape sequence that switches between 80 and
 132 column mode is ignored.
@@ -42,10 +62,27 @@ This option causes the DECCOLM escape sequence to be recognized, and the
 .I xterm
 window will resize appropriately.
 .TP 8
+.B \-ah
+This option indicates that 
+.I xterm
+should always highlight the text cursor and borders.  By default,
+.I xterm
+will display a hollow text cursor whenever the focus is lost or the 
+pointer leaves the window.
+.TP 8
+.B \+ah
+This option indicates that
+.I xterm
+should do text cursor highlighting.
+.TP 8
 .BI \-b " number"
 This option specifies the size of the inner border (the distance between
 the outer edge of the characters and the window border) in pixels.  The
 default is 2.
+.TP 8
+.B "\-cc \fIcharacterclassrange\fP:\fIvalue\fP[,...]"
+This sets classes indicated by the given ranges for using in selecting by
+words.  See the section specifying character classes.
 .TP 8
 .BI \-cr " color"
 This option specifies the color to use for text cursor.  The default is to
@@ -57,7 +94,7 @@ This option indicates that \fIxterm\fP should work around a bug in the
 cursor motion package that causes the
 .IR more (1)
 program to display lines that are exactly the width of the window and
-are followed by line beginning with a tab to be displayed incorrectly
+are followed by a line beginning with a tab to be displayed incorrectly
 (the leading tabs are not displayed).
 .TP 8
 .B \+cu
@@ -67,8 +104,10 @@ bug mentioned above.
 .TP 8
 .BI \-e " program \[arguments \.\.\.\]"
 This option specifies the program (and its command line arguments) to be
-run in the \fIxterm\fP window.  The default is to start the user's shell.
-\fBThis must be the last option on the command line.\fP
+run in the \fIxterm\fP window.  It also sets the window title and icon
+name to be the basename of the program being executed if neither \fI-T\fP
+nor \fI-n\fP are given on the command line.  \fBThis must be the last 
+option on the command line.\fP
 .TP 8
 .BI \-fb " font"
 This option specifies a font to be used when displaying bold text.  
@@ -104,16 +143,16 @@ the string is assumed to be a command to be used as the endpoint of a pipe.
 The default filename is ``\fBXtermLog.\fIXXXXX\fR'' (where \fIXXXXX\fP
 is the process id of \fIxterm\fP) and is created in the directory from which
 \fIxterm\fP was started (or the user's home directory in the case of a
-login window.
+login window).
 .TP 8
 .B \-ls
-This option indicates that shell that is started in the \fIxterm\fP window
+This option indicates that the shell that is started in the \fIxterm\fP window
 be a login shell (i.e. the first character of argv[0] will be a dash,
 indicating to the shell that it should read the user's .login or .profile).
 .TP 8
 .B \+ls
 This option indicates that the shell that is started should not be a login
-shell (i.e. it will be normal ``subshell'').
+shell (i.e. it will be a normal ``subshell'').
 .TP 8
 .B \-mb
 This option indicates that \fIxterm\fP should ring a margin bell when
@@ -160,6 +199,14 @@ those lines can be viewed.  This option may be turned on and off from the
 .B \+sb
 This option indicates that a scrollbar should not be displayed.
 .TP 8
+.B \-sf
+This option indicates that Sun Function Key escape codes should be generated
+for function keys.
+.TP 8
+.B \+sf
+This option indicates that the standard escape codes should be generated for
+function keys.
+.TP 8
 .B \-si
 This option indicates that output to a window should not automatically
 reposition the screen to the bottom of the scrolling region.  
@@ -191,6 +238,28 @@ than in VT102 mode.  Switching between the two windows is done using the
 .B \+t
 This option indicates that \fIxterm\fP should start in VT102 mode.
 .TP 8
+.BI \-tm " string"
+This option specifies a series of terminal setting keywords followed by the
+characters that should be bound to those functions, similar to the \fIstty\fP
+program.  This is ignored when \fB\-L\fP is given since \fIgetty\fP resets
+the terminal.  Allowable keywords include: intr, quit, erase, kill, eof,
+eol, swtch, start, stop, brk, susp, dsusp, rprnt, flush, weras, and lnext.
+Control characters may be specified as ^char (e.g. ^c or ^u) and ^? may be 
+used to indicate delete.
+.TP 8
+.BI \-tn " name"
+This option specifies the name of the terminal type to be set in the TERM
+environment variable.  This terminal type must exist in the \fItermcap(5)\fP
+database and should have \fIli#\fP and \fIco#\fP entries.
+.TP 8
+.B \-ut
+This option indicates that \fIxterm\fP shouldn't write a record into the 
+the system log file \fI/etc/utmp\fP.
+.TP 8
+.B \+ut
+This option indicates that \fIxterm\fP should write a record into the system
+log file \fI/etc/utmp\fP.
+.TP 8
 .B \-vb
 This option indicates that a visual bell is prefered over an audible one.
 Instead of ringing the terminal bell whenever a Control-G is received, the
@@ -200,15 +269,8 @@ window will be flashed.
 This option indicates that a visual bell should not be used.
 .TP 8
 .B \-C
-This option indicates that this window should be receive console output.  This
+This option indicates that this window should receive console output.  This
 is not supported on all systems.
-.TP 8
-.B \-L
-This option indicates that \fIxterm\fP was started by \fIinit\fP.  In this
-mode, \fIxterm\fP does not try to allocate a new pseudoterminal as \fIinit\fP
-has already done so.  In addition, the system program \fIgetty\fP is run 
-instead of the user's shell.  \fBThis option should never be used by users when
-starting terminal windows.\fP
 .TP 8
 .B \-S\fIccn\fP
 This option specifies the last two letters of the name of a pseudoterminal
@@ -232,9 +294,11 @@ It is shorthand for specifying the "\fI*iconGeometry\fP" resource.
 This option specifies the title for \fIxterm\fP's windows.
 It is equivalent to \fB-title\fP.
 .TP 8
-.BI \-n "string"
+.BI \-n " string"
 This option specifies the icon name for \fIxterm\fP's windows.
 It is shorthand for specifying the "\fI*iconName\fP" resource.
+Note that this is not the same as the toolkit option \fB-name\fP (see below).
+The default icon name is the application name.
 .TP 8
 .B \-r
 This option indicates that reverse video should be simulated by swapping
@@ -244,6 +308,14 @@ the foreground and background colors.  It is equivalent to
 .BI \-w " number"
 This option specifies the width in pixels of the border surrounding the window.
 It is equivalent to \fB-borderwidth\fP or \fB-bw\fP.
+.TP 8
+.B \-L
+This option indicates that \fIxterm\fP was started by \fIinit\fP.  In this
+mode, \fIxterm\fP does not try to allocate a new pseudoterminal as \fIinit\fP
+has already done so.  In addition, the system program \fIgetty\fP is run 
+instead of the user's shell.  \fBThis option has been superceeded by the new
+\fIxdm\fP program; furthermore, this option should never be used by users when
+starting terminal windows.\fP
 .PP
 The following standard X Toolkit command line arguments are commonly used 
 with \fIxterm\fP:
@@ -265,11 +337,18 @@ This option specifies the color to use for displaying text.  The default is
 .TP 8
 .B \-fn \fIfont\fP
 This option specifies the font to be used for displaying normal text.  The
-default is ``vtsingle.''
+default is \fIfixed\fP.
 .TP 8
 .B \-name \fIname\fP
-This option specifies the application name under which resource are to be
+This option specifies the application name under which resources are to be
 obtained, rather than the default executable file name.
+\fIName\fP should not contain ``.'' or ``*'' characters.
+.TP 8
+.B \-title \fIstring\fP
+This option specifies the window title string, which may be displayed by
+window managers if the user so chooses.  The default title is the command
+line specified after the \fB-e\fP option, if any, otherwise the application
+name.
 .TP 8
 .B \-rv
 This option indicates that reverse video should be simulated by swapping
@@ -277,7 +356,7 @@ the foreground and background colors.
 .TP 8
 .B \-geometry \fIgeometry\fP
 This option specifies the prefered size and position of the VT102 window;
-see \fIX(1)\fP;
+see \fIX(1)\fP.
 .TP 8
 .B \-display \fIdisplay\fP
 This option specifies the X server to contact; see \fIX(1)\fP.
@@ -285,24 +364,59 @@ This option specifies the X server to contact; see \fIX(1)\fP.
 .B \-xrm \fIresourcestring\fP
 This option specifies a resource string to be used.  This is especially
 useful for setting resources that do not have separate command line options.
+.TP 8
+.B \-iconic
+This option indicates that \fIxterm\fP should ask the window manager to 
+start it as an icon rather than as the normal window.
 .SH "X DEFAULTS"
 The program understands all of the core X Toolkit resource names and
 classes as well as:
-.TP 8
-.B "name (\fPclass\fB Name)"
-Specifies the name of this instance of the program.  The default is ``xterm.''
 .TP 8
 .B "iconGeometry (\fPclass\fB IconGeometry)"
 Specifies the prefered size and position of the application when iconified.
 It is not necessarily obeyed by all window managers.
 .TP 8
+.B "termName (\fPclass\fB TermName)"
+Specifies the terminal type name to be set in the TERM environment variable.
+.TP 8
 .B "title (\fPclass\fB Title)"
 Specifies a string that may be used by the window manager when displaying
 this application.
+.TP 8
+.B "ttyModes (\fPclass\fB TtyModes)"
+Specifies a string containing terminal setting keywords and the characters
+to which they may be bound.  This option is ignored when \fB\-L\fP is given 
+since 
+\fIgetty\fP resets the terminal.  Allowable keywords include: intr, quit, 
+erase, kill, eof, eol, swtch, start, stop, brk, susp, dsusp, rprnt, flush, 
+weras, and lnext.  Control characters may be specified as ^char (e.g. ^c or ^u)
+and ^? may be used to indicate delete.  This is very useful for overriding
+the default terminal settings without having to do an \fIstty\fP every time
+an \fIxterm\fP is started.
+.TP 8
+.B "utmpInhibit (\fPclass\fB UtmpInhibit)"
+Specifies whether or not \fIxterm\fP should try to record the user's terminal
+in \fI/etc/utmp\fP.
+.TP 8
+.B "sunFunctionKeys (\fPclass\fB SunFunctionKeys)"
+Specifies whether or not Sun Function Key escape codes should be generated for
+function keys instead of standard escape sequences.
 .sp
 .PP
 The following resources are specified as part of the ``vt100'' widget (class
 ``VT100''):
+.TP 8
+.B "allowSendEvents (\fPclass\fB AllowSendEvents)"
+Specifies whether or not synthetic key and button events (generated using
+the X protocol SendEvent request) should be interpreted or discarded.
+The default is ``false'' meaning they are discarded.  Note that allowing
+such events creates a very large security hole.
+.sp
+.TP 8
+.B "alwaysHighlight (\fPclass\fB AlwaysHighlight)"
+Specifies whether or not \fIxterm\fP should always display a highlighted 
+text cursor.  By default, a hollow text cursor is displayed whenever the
+pointer moves out of the window or the window loses the input focus.
 .TP 8
 .B "font (\fPclass\fB Font)"
 Specifies the name of the normal font.  The default is ``vtsingle.''
@@ -314,8 +428,16 @@ Specifies the name of the bold font.  The default is ``vtbold.''
 Specifies whether or not the VT102 DECCOLM escape sequence should be honored.
 The default is ``false.''
 .TP 8
+.B "charClass (\fPclass\fB CharClass)"
+Specifies comma-separated lists of character class bindings of the form
+\[\fIlow\fP-\]\fIhigh\fP:\fIvalue\fP.  These are used in determining which
+sets of characters should be treated the same when doing cut and paste.
+See the section on specifying character classes.
+.TP 8
 .B "curses (\fPclass\fB Curses)"
-Specifies whether or not the last column bug in cursor should be worked around.
+Specifies whether or not the last column bug in
+.IR curses (3x)
+should be worked around.
 The default is ``false.''
 .TP 8
 .B "background (\fPclass\fB Background)"
@@ -417,6 +539,15 @@ Specifies whether or not Tektronix mode should be disallowed.  The default is
 Specifies whether or not \fIxterm\fP should start up in Tektronix mode.
 The default is ``false.''
 .TP 8
+.B "titeInhibit (\fPclass\fB TiteInhibit)"
+Specifies whether or not \fIxterm\fP should remove remove \fIti\fP or \fIte\fP
+termcap entries (used to switch between alternate screens on startup of many
+screen-oriented programs) from the TERMCAP string.
+.TP 8
+.B "translations (\fPclass\fB Translations)"
+Specifies the key and button bindings for menus, selections, ``programmed
+strings'', etc.  See \fBKEY/BUTTON BINDINGS\fP below.
+.TP 8
 .B "visualBell (\fPclass\fB VisualBell)"
 Specifies whether or not a visible bell (i.e. flashing) should be used instead
 of an audible bell when Control-G is received.  The default is ``false.''
@@ -444,6 +575,21 @@ Specifies the name of the font to use for displaying menu items.
 .B "menuPad (\fPclass\fB MenuPad)"
 Specifies the number of pixels between menu items and the menu border.  The
 default is 3.
+.sp
+.PP
+The following resources are useful when specified for the Athena Scrollbar
+widget:
+.TP 8
+.B "thickness (\fPclass\fB Thickness)"
+Specifies the width in pixels of the scrollbar.
+.TP 8
+.B "background (\fPclass\fB Background)"
+Specifies the color to use for the background of the scrollbar.
+.TP 8
+.B "foreground (\fPclass\fB Foreground)"
+Specifies the color to use for the foreground of the scrollbar.  The ``thumb''
+of the scrollbar is a simple checkerboard pattern alternating pixels for
+foreground and background color.
 .SH EMULATIONS
 The VT102 emulation is fairly complete, but does not support the blinking
 character attribute nor the double-wide and double-size character sets.
@@ -494,18 +640,26 @@ allows you to select text and copy it within the same or other windows.
 .PP
 The selection functions are invoked when the pointer buttons are used with no
 modifiers, and when they are used with the ``shift'' key.
+The assignment of the functions described below to keys and buttons may
+be changed through the resource database; see \fBKEY/BUTTON BINDINGS\fP below.
 .PP
 Pointer button one (usually left) is used to save text into the cut buffer.
 Move the cursor to beginning of the text,
 and then hold the button down while moving the cursor to the end of the region
 and releasing the button.
-The selected text is highlighted and is saved in the global cut buffer when
+The selected text is highlighted and is saved in the global cut buffer
+and made the PRIMARY selection when
 the button is released.  Double-clicking selects by words.  Triple-clicking
 selects by lines.  Quadruple-clicking goes back to characters, etc.
 Multiple-click is determined by the time from button up to
 button down, so you can change the selection unit in the middle of a selection.
+If the key/button bindings specify that an X selection is to be made,
+\fIxterm\fP will leave the selected text highlighted for as long as it
+is the selection owner.
 .PP
-Pointer button two (usually middle) `types' (pastes) the text from the cut buffer,
+Pointer button two (usually middle) `types' (pastes) the text from
+the PRIMARY selection, if any, otherwise from
+the cut buffer,
 inserting it as keyboard input.
 .PP
 Pointer button three (usually right) extends the current selection.
@@ -583,6 +737,10 @@ menu pops up when the ``control'' key and pointer button one are
 pressed in a window.
 The modes section contains items that apply to both the VT102 and Tektronix
 windows.
+The
+.B Secure Keyboard
+mode should be used when typing in passwords or other sensitive data;
+see \fBSECURITY\fP below.
 Notable entries in the command section of the menu are the
 .BR Continue ,
 .BR Suspend ,
@@ -611,9 +769,9 @@ This can be convenient when some program has left the scroll regions
 set incorrectly (often a problem when using VMS or TOPS-20).
 The full reset entry will clear the screen, reset tabs to every
 eight columns, and reset the terminal modes (such as wrap and smooth scroll)
-to there initial states just after
+to their initial states just after
 .I xterm
-has finish processing the command line options.
+has finished processing the command line options.
 The
 .B Tektronix
 menu sets various modes in the Tektronix emulation, and is popped up when the
@@ -622,6 +780,260 @@ The current font size is checked in the modes section of the menu.
 The
 .B PAGE
 entry in the command section clears the Tektronix window.
+.SH SECURITY
+.PP
+X environments differ in their security conciousness.  The servers provided
+by MIT use a host-based mechanism to control access to the server (see
+\fIxhost(1)\fP).  If you enable access for a host, and other users are
+also permitted to run clients on that host, there is the possibility that
+someone will run an application that will attempt to use the basic services
+of the X protocol to snoop on your activities, and potentially capture a
+transcript of everything you type at the keyboard.  This is of particular
+concern when you want to type in a password or other sensitive data.
+The best solution to this problem is for the industry to choose a standard
+authorization mechanism, with the necessary operating system support,
+and to incorporate this into the X protocol (which is already designed to
+handle such a mechanism).  In the mean time, since passwords are most
+commonly typed to something running in an \fIxterm\fP window, a simple
+mechanism exists for protecting keyboard input in \fIxterm\fP.
+.PP
+The \fBxterm\fP menu (see \fBMENUS\fP above) contains a \fBSecure Keyboard\fP
+entry which, when enabled, ensures that all keyboard input is directed
+\fIonly\fP to \fIxterm\fP (using the GrabKeyboard protocol request).
+When an application prompts you for a password
+(or other sensitive data), you can enable \fBSecure Keyboard\fP using the
+menu, type in the data, and then disable \fBSecure Keyboard\fP using
+the menu again.  Only one X client at a time can secure the keyboard,
+so when you attempt to enable \fBSecure Keyboard\fP it may fail.  In
+this case, the bell will sound.  If the \fBSecure Keyboard\fP succeeds,
+the foreground and background colors will be exchanged (as if you
+selected the \fBReverse Video\fP entry in the \fBModes\fP menu);
+they will be exchanged again when you exit secure mode.  If the colors
+do \fInot\fP switch, then
+you should be \fIvery\fP suspicious that you are being spoofed.  If
+the application you are running displays a prompt before asking for
+the password, it is safest to enter secure mode \fIbefore\fP the
+prompt gets displayed, and to make sure that the prompt gets displayed
+correctly (in the new colors), to minimize the probability of
+spoofing.  You can also bring up the menu again and make sure that a check
+mark appears next to the entry.
+.PP
+\fBSecure Keyboard\fP mode will be disabled automatically if your xterm
+window becomes iconified (or otherwise unmapped), or if you start up
+a reparenting window manager (that places a title bar or other decoration
+around the window) while in \fBSecure Keyboard\fP mode.  (This is a
+feature of the X protocol not easily overcome.)  When this happens,
+the foreground and background colors will be switched back and the bell
+will sound in warning.
+.SH "CHARACTER CLASSES"
+Clicking the middle mouse button twice in rapid succession will cause all
+characters of the same class (e.g. letters, white space, punctuation) to be
+selected.  Since different people have different preferences for what should
+be selected (for example, should filenames be selected as a whole or only
+the separate subnames), the default mapping can be overridden through the use 
+of the \fIcharClass\fP (class \fICharClass\fP) resource.
+.PP
+This resource is simply a list of \fIrange\fP:\fIvalue\fP pairs where the
+range is either a single number or \fIlow\fP-\fIhigh\fP in the range of 0
+to 127, corresponding to the ASCII code for the character or characters to be
+set.  The \fIvalue\fP is arbitrary, although the default table uses the
+character number of the first character occurring in the set.
+.PP
+The default table is:
+.sp
+.in +10
+.nf
+static int charClass[128] = {
+/* NUL  SOH  STX  ETX  EOT  ENQ  ACK  BEL */
+    32,   1,   1,   1,   1,   1,   1,   1,
+/*  BS   HT   NL   VT   NP   CR   SO   SI */
+     1,  32,   1,   1,   1,   1,   1,   1,
+/* DLE  DC1  DC2  DC3  DC4  NAK  SYN  ETB */
+     1,   1,   1,   1,   1,   1,   1,   1,
+/* CAN   EM  SUB  ESC   FS   GS   RS   US */
+     1,   1,   1,   1,   1,   1,   1,   1,
+/*  SP    !    "    #    $    %    &    ' */
+    32,  33,  34,  35,  36,  37,  38,  39,
+/*   (    )    *    +    ,    -    .    / */
+    40,  41,  42,  43,  44,  45,  46,  47,
+/*   0    1    2    3    4    5    6    7 */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   8    9    :    ;    <    =    >    ? */
+    48,  48,  58,  59,  60,  61,  62,  63,
+/*   @    A    B    C    D    E    F    G */
+    64,  48,  48,  48,  48,  48,  48,  48,
+/*   H    I    J    K    L    M    N    O */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   P    Q    R    S    T    U    V    W */ 
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   X    Y    Z    [    \\    ]    ^    _ */
+    48,  48,  48,  91,  92,  93,  94,  48,
+/*   `    a    b    c    d    e    f    g */
+    96,  48,  48,  48,  48,  48,  48,  48,
+/*   h    i    j    k    l    m    n    o */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   p    q    r    s    t    u    v    w */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   x    y    z    {    |    }    ~  DEL */
+    48,  48,  48, 123, 124, 125, 126,   1};
+.fi
+.sp
+.in -10
+For example, the string ``33:48,37:48,45-47:48,64:48'' indicates that the
+exclamation mark, percent sign, dash, period, slash, and ampersand characters
+should be treated the same way as characters and numbers.  This is very useful 
+for cutting and pasting electronic mailing addresses and Unix filenames.
+.SH "KEY TRANSLATIONS"
+.PP
+It is possible to rebind keys (or sequences of keys) to arbitrary strings
+for input, by changing the translations for the vt100 or tek4014 widgets.
+Changing the translations for events other than key and button events
+is not expected, and will cause unpredictable behavior.
+.PP
+The actions available for key translations are:
+.TP 15
+.B secure()
+Toggles the \fBSecure Keyboard\fP mode; see \fBSECURITY\fP.
+.TP 15
+.B insert()
+Processes the key in the normal way; i.e. inserts the
+ASCII character code corresponding to the keysym found in the
+keyboard mapping table into the input stream.
+.TP 15
+.B string(\fIstring\fB)
+Rebinds the key or key sequence to the string value; that is, inserts the
+string argument into the input stream.
+Quotation is necessary if the string contains whitespace or
+non-alphanumeric characters.  If the string argument begins with the
+characters ``0x'', it is interpreted
+as a hex character constant and the corresponding character is sent
+in the normal way.
+.TP 15
+.B keymap(\fIname\fB)
+The \fBkeymap\fP action takes a single string argument naming a resource
+to be used to dynamically define a new translation table; the name of the
+resource is obtained by appending the string ``Keymap'' to
+\fIname\fP.   The keymap name \fBNone\fP
+restores the original translation table
+(the very first one; a stack is not maintained).  Upper/lower case is
+significant.
+.TP 15
+.B insert-selection(\fIname\fP[,\fIname\fP]...\fB)
+Retrieves the value of the first (left-most) named selection that exists
+or cut buffer that is non-empty
+and inserts the value into the input stream. \fIName\fP is the
+name of any selection, for example, \fBPRIMARY\fP or \fBSECONDARY\fP, or
+the name of a cut buffer: \fBCUT_BUFFER0\fP, ..., \fBCUT_BUFFER7\fP.
+Upper/lower case is significant.
+.PP
+For example, a debugging session might benefit from the following bindings:
+.sp
+.in +4
+.Ds
+.TA .5i
+.ta .5i
+*VT100.Translations: #override <Key>F13: keymap(dbx)
+*VT100.dbxKeymap.translations: \\
+	<Key>F14: keymap(None) \\n\\
+	<Key>F17: string("next") string(0x0d) \\n\\
+	<Key>F18: string("step") string(0x0d) \\n\\
+	<Key>F19: string("continue") string(0x0d) \\n\\
+	<Key>F20: string("print ") insert-selection(PRIMARY, CUT_BUFFER0)
+.De
+.sp
+.in -4
+.SH KEY/BUTTON BINDINGS
+Within the VT100 widget the key and button bindings for selecting
+text, pasting text, and activating the menus are controlled by the
+translation bindings.  In addition to the actions listed above under
+\fBKEY TRANSLATIONS\fP, the following actions are available:
+.TP 15
+.B mode-menu()
+Posts one of the two mode menus, depending on which button is pressed.
+.TP 15
+.B select-start()
+Unselects any previously selected text and begins selecting new text.
+.TP 15
+.B select-extend()
+Continues selecting text from the previous starting position.
+.TP 15
+.B start-extend()
+Begins extending the selection from the farthest (left or right) edge.
+.TP 15
+.B select-end(\fIname\fP[,\fIname\fP]...\fB)
+Ends the text selection.  \fIName\fP is the name of a selection, or
+the name of a cut buffer into which the text is to be copied.  \fIXterm\fP
+will assert ownership of all the selections named and will copy the text
+into each of the cut buffers.  Upper/lower case is significant.
+.TP 15
+.B ignore()
+Quietly discards the key or button event.
+.TP 15
+.B bell(\fP[\fIvolume\fP]\fB)
+Rings the bell at the specified volume increment above/below the base volume.
+.PP
+The default bindings are:
+.sp
+.in +4
+.Ds
+.TA .5i 1i 2i
+.ta .5i 1i 2i
+		<KeyPress>:	insert() \\n\\
+ Ctrl	~Meta	<Btn1Down>:	mode-menu() \\n\\
+	~Meta	<Btn1Down>:	select-start() \\n\\
+	~Meta	<Btn1Motion>:	select-extend() \\n\\
+ Ctrl	~Meta	<Btn2Down>:	mode-menu() \\n\\
+~Ctrl	~Meta	<Btn2Down>:	ignore() \\n\\
+	~Meta	<Btn2Up>:	insert-selection(PRIMARY, CUT_BUFFER0) \\n\\
+~Ctrl	~Meta	<Btn3Down>:	start-extend() \\n\\
+	~Meta	<Btn3Motion>:	select-extend() \\n\\
+	~Meta	<BtnUp>:	select-end(PRIMARY, CUT_BUFFER0) \\n\\
+		<BtnDown>:	bell(0)
+.De
+.sp
+.in -4
+.SH "STARTING XTERM FROM INIT"
+.PP
+\fBWarning, this feature is now obsolete and may not be supported in 
+future releases.  Sites using this method should switch to \fIxdm\fP 
+instead.\fR
+.PP
+On operating systems such as 4.3bsd and Ultrix, the server and initial login 
+window are normally started automatically by 
+\fIinit(8)\fP.
+.PP
+By convention, the pseudoterminal with the
+highest minor device number (e.g. \fI\/dev\/ttyqf\fP and \fI\/dev\/ptyqf\fP)
+is renamed for
+the lowest display number (e.g. \fI\/dev\/ttyv0\fP and \fI\/dev\/ptyv0\fP).
+Machines that have more than one
+display can repeat this process using \fIttyqe\fP for \fIttyv1\fP, and 
+so on.
+.PP
+Once the pseudoterminals are in place, a line similar to the following may be 
+added to \fI/etc/ttys\fP (replacing \fIXqvss\fP with the appropriate server
+and putting it all on one line):
+.sp
+.in +4
+.nf
+ttyv0 "/usr/bin/X11/xterm -L -geom 80x24+1+1 -display :0" 
+	xterm on secure window="/usr/bin/X11/Xqvss :0"
+.fi
+.in -4
+.PP
+Sites that used to run X10 should note that the colon in the server display
+number is required.
+.PP
+Although the release will install both the X server and 
+\fIxterm\fP in /usr/bin/X11 by default, many sites choose to make a copy of
+both of these programs on the root partition (usually in /etc) so that they
+may still be used even if the partition containing /usr/bin/X11 isn't mounted.
+.PP
+Some versions of \fIinit\fP have relatively small program name buffer 
+sizes and treat all sharp signs as comment delimiters.  Sites that wish to
+list large numbers of options on the xterm line will need to write a small
+shell script to exec the long xterm line.  The best solution, of course, is
+to use \fIxdm\fP.
 .SH "OTHER FEATURES"
 .I Xterm
 automatically highlights the window border and text cursor when the
@@ -663,6 +1075,12 @@ resize(1), X(1), pty(4), tty(4)
 .br
 .I ``Xterm Control Sequences''
 .SH BUGS
+.PP
+The \fB\-L\fP option is no longer needed as the new \fIxdm\fP display manager
+system handles logging in in a much cleaner way.  No more messing around with
+trying to match colors in \fI/etc/ttys\fP or worrying about an unwanted login
+window.  \fBThis option may be removed in future releases.\fP
+.PP
 \fBXterm will hang forever if you try to paste too much text at one time.\fP
 It is both producer and consumer for the pty and can deadlock.
 .PP
@@ -684,6 +1102,8 @@ Many of the options are not resettable after
 .I xterm
 starts.
 .PP
+The Tek widget does not support key/button re-binding.
+.PP
 This manual page is too long.  There should be a separate users manual
 defining all of the non-standard escape sequences.
 .PP
@@ -702,4 +1122,4 @@ Edward Moy (Berkeley), Ralph R. Swick (MIT-Athena),
 Mark Vandevoorde (MIT-Athena), Bob McNamara (DEC-MAD),
 Jim Gettys (MIT-Athena), Bob Scheifler (MIT X Consortium), Doug Mink (SAO),
 Steve Pitschke (Stellar), Ron Newman (MIT-Athena), Jim Fulton (MIT X 
-Consortium)
+Consortium), Dave Serisky (HP)

@@ -1,9 +1,9 @@
 /*
- *	@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @
+ *	$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $
  */
 
 #ifndef lint
-static char *rcsid_cursor_c = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @";
+static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $";
 #endif	/* lint */
 
 #include <X11/copyright.h>
@@ -35,7 +35,7 @@ static char *rcsid_cursor_c = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp
 
 
 #ifndef lint
-static char rcs_id[] = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @";
+static char rcs_id[] = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $";
 #endif	/* lint */
 
 #include <X11/Xlib.h>
@@ -43,7 +43,21 @@ static char rcs_id[] = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @";
 #include <sys/ioctl.h>
 #include "ptyx.h"
 
-extern void bcopy();
+extern void Bcopy();
+
+static void _CheckSelection(screen)
+register TScreen *screen;
+{
+    extern XtermWidget term;	/* %%% gross */
+
+    if (screen->cur_row > screen->endHRow ||
+	(screen->cur_row == screen->endHRow &&
+	 screen->cur_col >= screen->endHCol)) {}
+    else
+	DisownSelection(term);
+}
+
+
 
 /*
  * Moves the cursor to the specified position, checking for bounds.
@@ -67,6 +81,7 @@ unsigned	flags;
 	row = (row < 0 ? 0 : row);
 	screen->cur_row = (row <= maxr ? row : maxr);
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /*
@@ -95,6 +110,7 @@ int		n;
 			screen->cur_col = 0;
 	}
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /*
@@ -108,6 +124,7 @@ int		n;
 	if (screen->cur_col > screen->max_col)
 		screen->cur_col = screen->max_col;
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /* 
@@ -127,6 +144,7 @@ int		n;
 	if (screen->cur_row > max)
 		screen->cur_row = max;
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /* 
@@ -146,6 +164,7 @@ int		n;
 	if (screen->cur_row < min)
 		screen->cur_row = min;
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /* 
@@ -202,6 +221,7 @@ register TScreen *screen;
 {
 	screen->cur_col = 0;
 	screen->do_wrap = 0;
+	_CheckSelection(screen);
 }
 
 /*
@@ -218,7 +238,7 @@ register SavedCursor *sc;
 	sc->flags = term->flags;
 	sc->curgl = screen->curgl;
 	sc->curgr = screen->curgr;
-	bcopy(screen->gsets, sc->gsets, sizeof(screen->gsets));
+	Bcopy(screen->gsets, sc->gsets, sizeof(screen->gsets));
 }
 
 /*
@@ -230,10 +250,10 @@ register SavedCursor *sc;
 {
 	register TScreen *screen = &term->screen;
 
-	bcopy(sc->gsets, screen->gsets, sizeof(screen->gsets));
+	Bcopy(sc->gsets, screen->gsets, sizeof(screen->gsets));
 	screen->curgl = sc->curgl;
 	screen->curgr = sc->curgr;
-	term->flags &= ~(BOLD|INVERSE|UNDERLINE);
-	term->flags |= sc->flags & (BOLD|INVERSE|UNDERLINE);
-	CursorSet(screen, sc->row, sc->col, term->flags);
+	term->flags &= ~(BOLD|INVERSE|UNDERLINE|ORIGIN);
+	term->flags |= sc->flags & (BOLD|INVERSE|UNDERLINE|ORIGIN);
+	CursorSet(screen, sc->row - screen->top_marg, sc->col, term->flags);
 }

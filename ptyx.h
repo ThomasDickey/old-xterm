@@ -1,5 +1,5 @@
 /*
- *	@Header: ptyx.h,v 1.5 88/02/20 15:30:55 swick Exp @
+ *	$XConsortium: ptyx.h,v 1.20 88/11/16 18:13:26 rws Exp $
  */
 
 #include <X11/copyright.h>
@@ -47,6 +47,7 @@
 
 
 #define Max(i, j)       ((i) > (j) ? (i) : (j))
+#define Min(i, j)       ((i) < (j) ? (i) : (j))
 
 #define MAX_COLS	200
 #define MAX_ROWS	128
@@ -191,7 +192,6 @@ typedef struct {
 } BitmapBits;
 
 #define	SAVELINES		64      /* default # lines to save      */
-#define	SCROLLBARWIDTH		15      /* scroll bar width		*/
 
 typedef struct {
 /* These parameters apply to both windows */
@@ -207,6 +207,7 @@ typedef struct {
 	GC		reverseboldGC;	/* reverse painting, bold font	*/
 	GC		cursorGC;	/* normal cursor painting	*/
 	GC		reversecursorGC;/* reverse cursor painting	*/
+	GC		cursoroutlineGC;/* for painting lines around    */
 	Pixel		foreground;	/* foreground color		*/
 	Pixel		cursorcolor;	/* Cursor color			*/
 	Pixel		mousecolor;	/* Mouse color			*/
@@ -219,6 +220,8 @@ typedef struct {
 	int		select;		/* xterm selected		*/
 	Boolean		visualbell;	/* visual bell mode		*/
 	int		logging;	/* logging mode			*/
+	Boolean		allowSendEvents;/* SendEvent mode		*/
+	Boolean		grabbedKbd;	/* keyboard is grabbed		*/
 	int		logfd;		/* file descriptor of log	*/
 	char		*logfile;	/* log file name		*/
 	char		*logstart;	/* current start of log buffer	*/
@@ -234,7 +237,8 @@ typedef struct {
 		int	f_width;	/* width of fonts in pixels	*/
 		int	f_height;	/* height of fonts in pixels	*/
 	} fullVwin;
-	Cursor		curs;		/* cursor resource from X	*/
+	Cursor pointer_cursor;		/* pointer cursor in window	*/
+
 	/* Terminal fonts must be of the same size and of fixed width */
 	XFontStruct	*fnt_norm;	/* normal font of terminal	*/
 	XFontStruct	*fnt_bold;	/* bold font of terminal	*/
@@ -288,6 +292,7 @@ typedef struct {
 	int		scroll_amt;	/* amount to scroll		*/
 	int		refresh_amt;	/* amount to refresh		*/
 	Boolean		jumpscroll;	/* whether we should jumpscroll */
+	Boolean         always_highlight; /* whether to highlight cursor */
 
 /* Tektronix window parameters */
 	GC		TnormalGC;	/* normal painting		*/
@@ -325,11 +330,27 @@ typedef struct {
 	int		margin;		/* 0 -> margin 1, 1 -> margin 2	*/
 	int		pen;		/* current Tektronix pen 0=up, 1=dn */
 	char		*TekGIN;	/* nonzero if Tektronix GIN mode*/
+	int		multiClickTime;	 /* time between multiclick selects */
+	char		*charClass;	/* for overriding word selection */
+	Boolean		cutNewline;	/* whether or not line cut has \n */
+	Boolean		cutToBeginningOfLine;  /* line cuts to BOL? */
+	char		*selection;	/* the current selection */
+	int		selection_size; /* size of allocated buffer */
+	int		selection_length; /* number of significant bytes */
+	int		selection_time;	/* latest event timestamp */
+	int		startHRow, startHCol, /* highlighted text */
+			endHRow, endHCol,
+			startHCoord, endHCoord;
+	Atom*		selection_atoms; /* which selections we own */
+	Cardinal	sel_atoms_size;	/*  how many atoms allocated */
+	Cardinal	selection_count; /* how many atoms in use */
 } TScreen;
 
 /* meaning of bits in screen.select flag */
 #define	INWINDOW	01	/* the mouse is in one of the windows */
 #define	FOCUS		02	/* one of the windows is the focus window */
+
+#define MULTICLICKTIME 250	/* milliseconds */
 
 typedef struct
 {
@@ -341,7 +362,6 @@ typedef struct _Misc {
     char *T_geometry;
     char *f_n;
     char *f_b;
-    char *curs_shape;
     Boolean log_on;
     Boolean login_shell;
     Boolean re_verse;
@@ -350,6 +370,7 @@ typedef struct _Misc {
     Boolean signalInhibit;
     Boolean tekInhibit;
     Boolean scrollbar;
+    Boolean titeInhibit;
 } Misc;
 
 typedef struct {int foo;} XtermClassPart, TekClassPart;
@@ -402,7 +423,9 @@ typedef struct _TekWidgetRec {
 #define ORIGIN		0x20	/* true if in origin mode */
 #define INSERT		0x40	/* true if in insert mode */
 #define SMOOTHSCROLL	0x80	/* true if in smooth scroll mode */
+#ifdef DO_AUTOREPEAT
 #define AUTOREPEAT	0x100	/* true if in autorepeat mode */
+#endif /* DO_AUTOREPEAT */
 #define IN132COLUMNS	0x200	/* true if in 132 column mode */
 #define LINEFEED	0x400
 #define	REVERSEWRAP	0x800	/* true if reverse wraparound mode */

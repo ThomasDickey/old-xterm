@@ -1,5 +1,5 @@
 /*
- *	@Header: VTparse.h,v 1.1 88/02/11 22:08:38 jim Exp @
+ *	$XConsortium: VTparse.h,v 1.4 89/01/04 13:37:49 jim Exp $
  */
 
 
@@ -29,70 +29,84 @@
  */
 
 /* @(#)VTparse.h	X10/6.6	11/6/86 */
-#define	CASE_GROUND_STATE	0
-#define	CASE_IGNORE_STATE	(CASE_GROUND_STATE+1)
-#define	CASE_IGNORE_ESC		(CASE_IGNORE_STATE+1)
-#define	CASE_IGNORE		(CASE_IGNORE_ESC+1)
-#define	CASE_BELL		(CASE_IGNORE+1)
-#define	CASE_BS			(CASE_BELL+1)
-#define	CASE_CR			(CASE_BS+1)
-#define	CASE_ESC		(CASE_CR+1)
-#define	CASE_VMOT		(CASE_ESC+1)
-#define	CASE_TAB		(CASE_VMOT+1)
-#define	CASE_SI			(CASE_TAB+1)
-#define	CASE_SO			(CASE_SI+1)
-#define	CASE_SCR_STATE		(CASE_SO+1)
-#define	CASE_SCS0_STATE		(CASE_SCR_STATE+1)
-#define	CASE_SCS1_STATE		(CASE_SCS0_STATE+1)
-#define	CASE_SCS2_STATE		(CASE_SCS1_STATE+1)
-#define	CASE_SCS3_STATE		(CASE_SCS2_STATE+1)
-#define	CASE_ESC_IGNORE		(CASE_SCS3_STATE+1)
-#define	CASE_ESC_DIGIT		(CASE_ESC_IGNORE+1)
-#define	CASE_ESC_SEMI		(CASE_ESC_DIGIT+1)
-#define	CASE_DEC_STATE		(CASE_ESC_SEMI+1)
-#define	CASE_ICH		(CASE_DEC_STATE+1)
-#define	CASE_CUU		(CASE_ICH+1)
-#define	CASE_CUD		(CASE_CUU+1)
-#define	CASE_CUF		(CASE_CUD+1)
-#define	CASE_CUB		(CASE_CUF+1)
-#define	CASE_CUP		(CASE_CUB+1)
-#define	CASE_ED			(CASE_CUP+1)
-#define	CASE_EL			(CASE_ED+1)
-#define	CASE_IL			(CASE_EL+1)
-#define	CASE_DL			(CASE_IL+1)
-#define	CASE_DCH		(CASE_DL+1)
-#define	CASE_DA1		(CASE_DCH+1)
-#define CASE_TRACK_MOUSE	(CASE_DA1+1)
-#define	CASE_TBC		(CASE_TRACK_MOUSE+1)
-#define	CASE_SET		(CASE_TBC+1)
-#define	CASE_RST		(CASE_SET+1)
-#define	CASE_SGR		(CASE_RST+1)
-#define	CASE_CPR		(CASE_SGR+1)
-#define	CASE_DECSTBM		(CASE_CPR+1)
-#define	CASE_DECREQTPARM	(CASE_DECSTBM+1)
-#define	CASE_DECSET		(CASE_DECREQTPARM+1)
-#define CASE_DECRST             (CASE_DECSET+1)
-#define	CASE_DECALN		(CASE_DECRST+1)
-#define	CASE_GSETS		(CASE_DECALN+1)
-#define	CASE_DECSC		(CASE_GSETS+1)
-#define	CASE_DECRC		(CASE_DECSC+1)
-#define	CASE_DECKPAM		(CASE_DECRC+1)
-#define	CASE_DECKPNM		(CASE_DECKPAM+1)
-#define	CASE_IND		(CASE_DECKPNM+1)
-#define	CASE_NEL		(CASE_IND+1)
-#define	CASE_HTS		(CASE_NEL+1)
-#define	CASE_RI			(CASE_HTS+1)
-#define	CASE_SS2		(CASE_RI+1)
-#define	CASE_SS3		(CASE_SS2+1)
-#define	CASE_CSI_STATE		(CASE_SS3+1)
-#define	CASE_OSC		(CASE_CSI_STATE+1)
-#define	CASE_RIS		(CASE_OSC+1)
-#define	CASE_LS2		(CASE_RIS+1)
-#define	CASE_LS3		(CASE_LS2+1)
-#define	CASE_LS3R		(CASE_LS3+1)
-#define	CASE_LS2R		(CASE_LS3R+1)
-#define	CASE_LS1R		(CASE_LS2R+1)
-#define	CASE_PRINT		(CASE_LS1R+1)
-#define	CASE_XTERM_SAVE		(CASE_PRINT+1)
-#define	CASE_XTERM_RESTORE	(CASE_XTERM_SAVE+1)
-#define CASE_XTERM_TITLE	(CASE_XTERM_RESTORE+1)
+
+/*
+ * The following list of definitions is generated from VTparse.def using the
+ * following command line:
+ *
+ *     egrep -v '^CASE_' VTparse.def | \
+ *     awk 'BEGIN {n = 0;} {printf "#define %s %d\n", $1, n; n++}'
+ *
+ * You you need to change something, change VTparse.def and regenerate the
+ * definitions.  This would have been automatic, but since this doesn't change
+ * very often, it isn't worth the makefile hassle.
+ */
+
+#define CASE_GROUND_STATE 0
+#define CASE_IGNORE_STATE 1
+#define CASE_IGNORE_ESC 2
+#define CASE_IGNORE 3
+#define CASE_BELL 4
+#define CASE_BS 5
+#define CASE_CR 6
+#define CASE_ESC 7
+#define CASE_VMOT 8
+#define CASE_TAB 9
+#define CASE_SI 10
+#define CASE_SO 11
+#define CASE_SCR_STATE 12
+#define CASE_SCS0_STATE 13
+#define CASE_SCS1_STATE 14
+#define CASE_SCS2_STATE 15
+#define CASE_SCS3_STATE 16
+#define CASE_ESC_IGNORE 17
+#define CASE_ESC_DIGIT 18
+#define CASE_ESC_SEMI 19
+#define CASE_DEC_STATE 20
+#define CASE_ICH 21
+#define CASE_CUU 22
+#define CASE_CUD 23
+#define CASE_CUF 24
+#define CASE_CUB 25
+#define CASE_CUP 26
+#define CASE_ED 27
+#define CASE_EL 28
+#define CASE_IL 29
+#define CASE_DL 30
+#define CASE_DCH 31
+#define CASE_DA1 32
+#define CASE_TRACK_MOUSE 33
+#define CASE_TBC 34
+#define CASE_SET 35
+#define CASE_RST 36
+#define CASE_SGR 37
+#define CASE_CPR 38
+#define CASE_DECSTBM 39
+#define CASE_DECREQTPARM 40
+#define CASE_DECSET 41
+#define CASE_DECRST 42
+#define CASE_DECALN 43
+#define CASE_GSETS 44
+#define CASE_DECSC 45
+#define CASE_DECRC 46
+#define CASE_DECKPAM 47
+#define CASE_DECKPNM 48
+#define CASE_IND 49
+#define CASE_NEL 50
+#define CASE_HTS 51
+#define CASE_RI 52
+#define CASE_SS2 53
+#define CASE_SS3 54
+#define CASE_CSI_STATE 55
+#define CASE_OSC 56
+#define CASE_RIS 57
+#define CASE_LS2 58
+#define CASE_LS3 59
+#define CASE_LS3R 60
+#define CASE_LS2R 61
+#define CASE_LS1R 62
+#define CASE_PRINT 63
+#define CASE_XTERM_SAVE 64
+#define CASE_XTERM_RESTORE 65
+#define CASE_XTERM_TITLE 66
+#define CASE_DECID 67

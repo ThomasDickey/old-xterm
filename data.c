@@ -1,5 +1,5 @@
 /*
- *	@Header: data.c,v 1.2 88/02/16 14:59:48 jim Exp @
+ *	$XConsortium: data.c,v 1.4 88/09/06 17:08:01 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -34,7 +34,7 @@
 #include "data.h"
 
 #ifndef lint
-static char rcs_id[] = "@Header: data.c,v 1.2 88/02/16 14:59:48 jim Exp @";
+static char rcs_id[] = "$XConsortium: data.c,v 1.4 88/09/06 17:08:01 jim Exp $";
 #endif	/* lint */
 
 XPoint T_boxlarge[NBOX] = {
@@ -103,8 +103,8 @@ int max_plus1;
 int pty_mask;
 int Select_mask;
 int X_mask;
-char *ptydev = PTYDEV;
-char *ttydev = TTYDEV;
+char *ptydev;
+char *ttydev;
 char log_def_name[] = "XtermLog.XXXXX";
 int T_lastx = -1;
 int T_lasty = -1;

@@ -1,5 +1,5 @@
 /*
- *	@Header: main.h,v 1.2 88/02/21 15:06:04 jim Exp @
+ *	$XConsortium: main.h,v 1.3 88/09/06 17:08:12 jim Exp $
  */
 
 
