@@ -1,86 +1,107 @@
 /*
- *	@Source: /u1/X/xterm/RCS/input.c,v @
- *	@Header: input.c,v 10.100 86/12/01 14:44:04 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/input.c,v @
+ *	@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @
  */
 
 #ifndef lint
-static char *rcsid_input_c = "@Header: input.c,v 10.100 86/12/01 14:44:04 jg Rel @";
+static char *rcsid_input_c = "@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @";
 #endif	lint
 
-#include <X/mit-copyright.h>
+#include <X11/copyright.h>
 
-/* Copyright    Massachusetts Institute of Technology    1984, 1985	*/
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
 
 /* input.c */
 
 #ifndef lint
-static char sccs_id[] = "@(#)input.c\tX10/6.6\t11/3/86";
+static char rcs_id[] = "@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @";
 #endif	lint
 
-#include <X/Xlib.h>
-#include <X/Xkeyboard.h>
-#include "scrollbar.h"
-#include "ptyx.h"
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
+#include <X11/Intrinsic.h>
+#include <X11/Xutil.h>
 #include <stdio.h>
+#include "ptyx.h"
 
-static char *kypd_num = "0x.\r123456,789-";
-static char *kypd_apl = "pxnMqrstuvlwxym";
-static char *cur = "DCBA";
+int MetaMode = 1;	/* prefix with ESC when Meta Key is down */
+
+static XComposeStatus compose_status = {NULL, 0};
+static char *kypd_num = " XXXXXXXX\tXXX\rXXXxxxxXXXXXXXXXXXXXXXXXXXXX*+,-.\\0123456789XXX=";
+static char *kypd_apl = " ABCDEFGHIJKLMNOPQRSTUVWXYZ??????abcdefghijklmnopqrstuvwxyzXXX";
+static char *cur = "DACB";
 
 Input (keyboard, screen, event)
-register Keyboard	*keyboard;
-register Screen		*screen;
+register TKeyboard	*keyboard;
+register TScreen		*screen;
 register XKeyPressedEvent *event;
 {
-	register int keycode = event->detail;
+
+#define STRBUFSIZE 100
+
+	 char strbuf[STRBUFSIZE];
 	register char *string;
 	register int col, key = FALSE;
 	int	pty	= screen->respond;
 	int	nbytes;
+	int 	keycode;
 	ANSI	reply;
 
-	string = XLookupMapping (event, &nbytes);
+	nbytes = XLookupString (event, strbuf, STRBUFSIZE, 
+		&keycode, &compose_status);
 
-	if (nbytes > 0) {
-		if(screen->TekGIN) {
-			TekEnqMouse(*string++);
-			TekGINoff();
-			nbytes--;
-		}
-		while (nbytes-- > 0)
-			unparseputc(*string++, pty);
+	string = &strbuf[0];
+	reply.a_pintro = 0;
+	reply.a_final = 0;
+	reply.a_nparam = 0;
+	reply.a_inters = 0;
+
+	if (IsPFKey(keycode)) {
+		reply.a_type = SS3;
+		unparseseq(&reply, pty);
+		unparseputc((char)(keycode-XK_KP_F1+'P'), pty);
 		key = TRUE;
-	} else {
-	    keycode &= ValueMask; /* no longer need shift bits for anything */
-	    reply.a_pintro = 0;
-	    reply.a_final = 0;
-	    reply.a_nparam = 0;
-	    reply.a_inters = 0;
-	    if (IsKeypadKey(keycode)) {
+	} else if (IsKeypadKey(keycode)) {
 	  	if (keyboard->flags & KYPD_APL)	{
 			reply.a_type   = SS3;
 			unparseseq(&reply, pty);
-			unparseputc(kypd_apl[keycode-KC_KEYPAD_0], pty);
+			unparseputc(kypd_apl[keycode-XK_KP_Space], pty);
 		} else
-			unparseputc(kypd_num[keycode-KC_KEYPAD_0], pty);
+			unparseputc(kypd_num[keycode-XK_KP_Space], pty);
 		key = TRUE;
-	    } else if (IsCursorKey(keycode)) {
+        } else if (IsCursorKey(keycode)) {
        		if (keyboard->flags & CURSOR_APL) {
 			reply.a_type = SS3;
 			unparseseq(&reply, pty);
-			unparseputc(cur[keycode-KC_CURSOR_LEFT], pty);
+			unparseputc(cur[keycode-XK_Left], pty);
 		} else {
 			reply.a_type = CSI;
-			reply.a_final = cur[keycode-KC_CURSOR_LEFT];
+			reply.a_final = cur[keycode-XK_Left];
 			unparseseq(&reply, pty);
 		}
 		key = TRUE;
-	    } else if (IsPFKey(keycode)) {
-		reply.a_type = SS3;
-		unparseseq(&reply, pty);
-		unparseputc((char)(keycode-KC_PF1+'P'), pty);
-		key = TRUE;
-	    } else if (IsFunctionKey(keycode)) {
+	 } else if (IsFunctionKey(keycode) || IsMiscFunctionKey(keycode)) {
 		reply.a_type = CSI;
 		reply.a_nparam = 1;
 		reply.a_param[0] = funcvalue(keycode);
@@ -88,11 +109,21 @@ register XKeyPressedEvent *event;
 		if (reply.a_param[0] > 0)
 			unparseseq(&reply, pty);
 		key = TRUE;
-	    }
+	} else if (nbytes > 0) {
+		if(screen->TekGIN) {
+			TekEnqMouse(*string++);
+			TekGINoff();
+			nbytes--;
+		}
+		if ((nbytes == 1) && MetaMode && (event->state & Mod1Mask))
+			unparseputc(033, pty);
+		while (nbytes-- > 0)
+			unparseputc(*string++, pty);
+		key = TRUE;
 	}
 	if(key && !screen->TekEmu) {
 		if(screen->scrollkey && screen->topline != 0)
-			ScrollToBottom(screen->sb);
+			WindowScroll(screen, 0);
 		if(screen->marginbell) {
 			col = screen->max_col - screen->nmarginbell;
 			if(screen->bellarmed >= 0) {
@@ -110,7 +141,7 @@ register XKeyPressedEvent *event;
 		}
 	}
 #ifdef ENABLE_PRINT
-	if (keycode == KC_F2) TekPrint();
+	if (keycode == XK_F2) TekPrint();
 #endif
 	return;
 }
@@ -118,32 +149,35 @@ register XKeyPressedEvent *event;
 funcvalue(keycode)
 {
 	switch (keycode) {
-		case KC_F1:	return(11);
-		case KC_F2:	return(12);
-		case KC_F3:	return(13);
-		case KC_F4:	return(14);
-		case KC_F5:	return(15);
-		case KC_F6:	return(17);
-		case KC_F7:	return(18);
-		case KC_F8:	return(19);
-		case KC_F9:	return(20);
-		case KC_F10:	return(21);
-		case KC_F11:	return(23);
-		case KC_F12:	return(24);
-		case KC_F13:	return(25);
-		case KC_F14:	return(26);
-		case KC_F15:	return(28);
-		case KC_F16:	return(29);
-		case KC_F17:	return(31);
-		case KC_F18:	return(32);
-		case KC_F19:	return(33);
-		case KC_F20:	return(34);
-		case KC_E1 :	return(1);
-		case KC_E2:	return(2);
-		case KC_E3:	return(3);
-		case KC_E4:	return(4);
-		case KC_E5:	return(5);
-		case KC_E6:	return(6);
+		case XK_F1:	return(11);
+		case XK_F2:	return(12);
+		case XK_F3:	return(13);
+		case XK_F4:	return(14);
+		case XK_F5:	return(15);
+		case XK_F6:	return(17);
+		case XK_F7:	return(18);
+		case XK_F8:	return(19);
+		case XK_F9:	return(20);
+		case XK_F10:	return(21);
+		case XK_F11:	return(23);
+		case XK_F12:	return(24);
+		case XK_F13:	return(25);
+		case XK_F14:	return(26);
+		case XK_F15:	return(28);
+		case XK_Help:	return(28);
+		case XK_F16:	return(29);
+		case XK_Menu:	return(29);
+		case XK_F17:	return(31);
+		case XK_F18:	return(32);
+		case XK_F19:	return(33);
+		case XK_F20:	return(34);
+
+		case XK_Find :	return(1);
+		case XK_Insert:	return(2);
+		case XK_Delete:	return(3);
+		case XK_Select:	return(4);
+		case XK_Prior:	return(5);
+		case XK_Next:	return(6);
 		default:	return(-1);
 	}
 }

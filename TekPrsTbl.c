@@ -1,15 +1,41 @@
 /*
- *	@Source: /u1/X/xterm/RCS/Tekparsetable.c,v @
- *	@Header: Tekparsetable.c,v 10.101 86/12/01 21:50:13 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/TekPrsTbl.c,v @
+ *	@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @
+ */
+
+
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
  */
 
 #ifndef lint
-static char *rcsid_Tekparsetable_c = "@Header: Tekparsetable.c,v 10.101 86/12/01 21:50:13 jg Rel @";
+static char *rcsid_Tekparsetable_c = "@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @";
 #endif	lint
 
 #include "Tekparse.h"
 #ifndef lint
-static char sccs_id[] = "@(#)Tekparsetable.c\tX10/6.6\t11/7/86";
+static char rcs_id[] = "@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @";
 #endif	lint
 
 int Talptable[] = {

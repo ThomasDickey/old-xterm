@@ -1,11 +1,34 @@
 /*
- *	@Source: /u1/X/xterm/RCS/button.c,v @
- *	@Header: button.c,v 10.105 86/12/24 08:30:18 swick Exp @
+ *	@Source: /orpheus/u1/X11/clients/xterm/RCS/button.c,v @
+ *	@Header: button.c,v 1.19 87/09/10 17:20:59 swick Exp @
  */
 
-#include <X/mit-copyright.h>
 
-/* Copyright    Massachusetts Institute of Technology    1984, 1985	*/
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
+
 /*
 button.c	Handles button events in the terminal emulator.
 		does cut/paste operations, change modes via menu,
@@ -13,14 +36,15 @@ button.c	Handles button events in the terminal emulator.
 				J. Gettys.
 */
 #ifndef lint
-static char sccs_id[] = "@(#)button.c\tX10/6.6\t11/7/86";
+static char rcs_id[] = "@Header: button.c,v 1.19 87/09/10 17:20:59 swick Exp @";
 #endif	lint
 #include <stdio.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <ctype.h>
-#include <X/Xlib.h>
-#include "scrollbar.h"
+#include <strings.h>
+#include <X11/Xlib.h>
+#include <X11/Intrinsic.h>
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
@@ -28,63 +52,40 @@ static char sccs_id[] = "@(#)button.c\tX10/6.6\t11/7/86";
 #include "menu.h"
 #endif MODEMENU
 
+extern char *malloc();
+
+#define KeyState(x) ((x) & (ShiftMask|ControlMask|Mod1Mask))
+#define X10Map(state) ((state&ShiftMask?4:0) + (state&ControlMask?16:0) \
+			+ (state&Mod1Mask?8:0))
+
+#define TEXTMODES 4
 #define NBUTS 3
 #define DIRS 2
 #define UP 1
 #define DOWN 0
 #define SHIFTS 8		/* three keys, so eight combinations */
-#define	Coordinate(r,c)		((r) * ncols + (c))
+#define	Coordinate(r,c)		((r) * (term.screen.max_col+1) + (c))
 
-char *GetRestOfLine();
 char *SaveText();
 extern UnSaltText();
 extern StartCut();
-extern ReExecute();
-extern EditorDown();
+extern StartExtend();
+extern EditorButton();
+extern TrackDown();
 
-extern ButtonUp();
-extern DownButtonDown();
-extern MiddleButtonDown();
-extern UpButtonDown();
 extern ModeMenu();
 extern char *xterm_name;
 extern Bogus(), Silence();
 extern GINbutton();
+
 /* due to LK201 limitations, not all of the below are actually possible */
-static int (*bfunc[SHIFTS][DIRS][NBUTS])() = {
+static int (*textfunc[TEXTMODES][SHIFTS][DIRS][NBUTS])() = {
 /*	left		middle		right	*/
-	EditorDown,	EditorDown,	EditorDown,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
+	StartCut,	Silence,	StartExtend,	/* down |	  */
+	Silence,	UnSaltText,	Silence,	/* up	|no shift */
 
-	ReExecute,	StartCut,	Silence,	/* down |	  */
-	Silence,	Silence,	UnSaltText,	/* up	|shift	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|control  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence		/* up	|meta shift*/
-
-};	/* button, shift keys, and direction */
-static int (*tfunc[SHIFTS][DIRS][NBUTS])() = {
-/*	left		middle		right	*/
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down |	  */
-	Silence,	Silence,	Silence,	/* up	|shift	  */
+	StartCut,	Silence,	StartExtend,	/* down |	  */
+	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
 
 	Bogus,		Bogus,		Bogus,		/* down	|	  */
 	Silence,	Silence,	Silence,	/* up	|meta	  */
@@ -99,46 +100,19 @@ static int (*tfunc[SHIFTS][DIRS][NBUTS])() = {
 	Silence,	Silence,	Silence,	/* up	|ctl shift */
 
 	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
+	Silence,	Silence,	Silence,	/* up	|ctl meta */
 
 	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence		/* up	|meta shift*/
+	Silence,	Silence,	Silence,	/* up	|meta shift*/
 
-};	/* button, shift keys, and direction */
-static int (*scrollfunc[SHIFTS][DIRS][NBUTS])() = {
+/* MIT mouse bogus sequence 			*/
+/* 	button, shift keys, and direction 	*/
 /*	left		middle		right	*/
-	UpButtonDown,	ModeMenu,	DownButtonDown,	/* down	|	  */
-	ButtonUp,	Silence,	ButtonUp,	/* up	|no shift */
-
-	UpButtonDown,	ModeMenu,	DownButtonDown,	/* down |	  */
-	ButtonUp,	Silence,	ButtonUp,	/* up	|shift	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	UpButtonDown,	ModeMenu,	DownButtonDown,	/* down	|	  */
-	ButtonUp,	Silence,	ButtonUp,	/* up	|control  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
+	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
 	Silence,	Silence,	Silence,	/* up	|no shift */
 
-	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence		/* up	|meta shift*/
-
-};	/* button, shift keys, and direction */
-static int (*Tbfunc[SHIFTS][DIRS][NBUTS])() = {
-/*	left		middle		right	*/
-	GINbutton,	GINbutton,	GINbutton,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
-
-	GINbutton,	GINbutton,	GINbutton,	/* down |	  */
-	Silence,	Silence,	Silence,	/* up	|shift	  */
+	StartCut,	Silence,	StartExtend,	/* down |	  */
+	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
 
 	Bogus,		Bogus,		Bogus,		/* down	|	  */
 	Silence,	Silence,	Silence,	/* up	|meta	  */
@@ -149,414 +123,755 @@ static int (*Tbfunc[SHIFTS][DIRS][NBUTS])() = {
 	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
 	Silence,	Silence,	Silence,	/* up	|control  */
 
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
+	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
 	Silence,	Silence,	Silence,	/* up	|ctl shift */
 
 	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
+	Silence,	Silence,	Silence,	/* up	|ctl meta */
 
 	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence		/* up	|meta shift*/
+	Silence,	Silence,	Silence,	/* up	|meta shift*/
 
-};	/* button, shift keys, and direction */
+/* DEC mouse bogus sequence 			*/
+/* 	button, shift keys, and direction 	*/
+/*	left		middle		right	*/
+	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
+	EditorButton,	EditorButton,	EditorButton,	/* up	|no shift */
+
+	StartCut,	Silence,	StartExtend,	/* down |	  */
+	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	  */
+	Silence,	Silence,	Silence,	/* up	|meta	  */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	  */
+	Silence,	Silence,	Silence,	/* up	|meta shift */
+
+	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
+	EditorButton,	EditorButton,	EditorButton,	/* up	|control  */
+
+	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
+	Silence,	Silence,	Silence,	/* up	|ctl shift */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	  */
+	Silence,	Silence,	Silence,	/* up	|ctl meta */
+
+	Bogus,		Bogus,		Bogus,		/* down	| control  */
+	Silence,	Silence,	Silence,	/* up	|meta shift*/
+
+/* Hilite tracking DEC mouse bogus sequence 	*/
+/* 	button, shift keys, and direction 	*/
+/*	left		middle		right	*/
+	TrackDown,	EditorButton,	EditorButton,	/* down	|	    */
+	EditorButton,	EditorButton,	EditorButton,	/* up	|no shift   */
+
+	StartCut,	Silence,	StartExtend,	/* down |	    */
+	Silence,	UnSaltText,	Silence,	/* up	|shift	    */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	    */
+	Silence,	Silence,	Silence,	/* up	|meta	    */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	    */
+	Silence,	Silence,	Silence,	/* up	|meta shift */
+
+	EditorButton,	EditorButton,	EditorButton,	/* down	|	    */
+	EditorButton,	EditorButton,	EditorButton,	/* up	|control    */
+
+	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	    */
+	Silence,	Silence,	Silence,	/* up	|ctl shift  */
+
+	Bogus,		Bogus,		Bogus,		/* down	|	    */
+	Silence,	Silence,	Silence,	/* up	|ctl meta   */
+
+	Bogus,		Bogus,		Bogus,		/* down	| control   */
+	Silence,	Silence,	Silence		/* up	|meta shift */
+
+};
+
+	/* button and shift keys for Tek mode */
+static int (*Tbfunc[SHIFTS][NBUTS])() = {
+/*	left		middle		right	*/
+	GINbutton,	GINbutton,	GINbutton,	/* down	|no shift   */
+
+	GINbutton,	GINbutton,	GINbutton,	/* down |shift	    */
+
+	Bogus,		Bogus,		Bogus,		/* down	|meta	    */
+
+	Bogus,		Bogus,		Bogus,		/* down	|meta shift */
+
+	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|control    */
+
+	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|ctl shift  */
+
+	Bogus,		Bogus,		Bogus,		/* down	|ctl meta   */
+
+	Bogus,		Bogus,		Bogus,		/* down	| all       */
+
+};	/* button and shift keys */
 
 extern Terminal term;
 
-static int crow, ccol;	/* cut row and column */
-static int ccoord;
-static int ncols;
+/* Selection/extension variables */
 
-HandleButtons(term, reply, pty)
-register Terminal *term;
-register XEvent *reply;
-int pty;			/* file descriptor of pty */
+/* Raw char position where the selection started */
+static int rawRow, rawCol;
+
+/* Hilited area */
+static int startHRow, startHCol, endHRow, endHCol, startHCoord, endHCoord = 0;
+
+/* Selected area before CHAR, WORD, LINE selectUnit processing */
+static int startRRow, startRCol, endRRow, endRCol = 0;
+
+/* Selected area after CHAR, WORD, LINE selectUnit processing */
+static int startSRow, startSCol, endSRow, endSCol = 0;
+
+/* Valid rows for selection clipping */
+static int firstValidRow, lastValidRow;
+
+/* Start, end of extension */
+static int startERow, startECol, endERow, endECol;
+
+/* Saved values of raw selection for extend to restore to */
+static int saveStartRRow, saveStartRCol, saveEndRRow, saveEndRCol;
+
+/* Multi-click handling */
+static int numberOfClicks = 0;
+static long int lastButtonUpTime = 0;
+typedef enum {SELECTCHAR, SELECTWORD, SELECTLINE} SelectUnit;
+static SelectUnit selectUnit;
+
+/* Send emacs escape code when done selecting or extending? */
+static int replyToEmacs;
+
+
+/*ARGSUSED*/
+XtEventReturnCode VTButtonPressed(event, eventdata)
+register XButtonEvent *event;
+caddr_t eventdata;
 {
-	register Screen *screen = &term->screen;
-	int (*bp)();
-	int dir = DOWN;
-	/* so table above will be nice, we change left to right */
-	int button = 2 - ((XKeyOrButtonEvent *)reply)->detail & 0177; 
-	int shift = KeyState(((XKeyOrButtonEvent *)reply)->detail);
+	register TScreen *screen = &term.screen;
+	/* so table above will be nice, we index from 0 */
+	int button = event->button - 1; 
+	int shift = KeyState(event->state);
 
-	switch (reply->type) {
-		case ButtonPressed:
-			dir = DOWN;
-			break;
-		case ButtonReleased:
-			dir = UP;
-			break;
-		default:
-			break;
-	}
-	if(L_flag && !checklogin()) {	/* if login window, check for login */
-		if(dir == DOWN)
-			Bell();
-		return;
-	}
-	bp = (screen->sb && (reply->window == screen->sb->bar ||
-	 GetButtonState(screen->sb) != BUTTON_NORMAL)) ?
-	 scrollfunc[shift][dir][button] :
-	 ((Titlebar(screen) && (reply->window == screen->title.tbar ||
-	 reply->window == screen->Ttitle.tbar)) ? tfunc[shift][dir][button] :
-	 ((reply->window == TWindow(screen)) ? Tbfunc[shift][dir][button] :
-	 bfunc[shift][dir][button]));
-	if (bp != NULL)
-		(*bp)(term, reply, pty);
-	else
-		Bell();
+	if (eventMode != NORMAL)
+		return (XteventHandled);
+	if (screen->incopy)
+		CopyWait (screen);
+	textfunc[screen->send_mouse_pos][shift][0][button](event);
+	return (XteventHandled);
 }
 
-UnSaltText(term, reply, pty)
-register Terminal *term;
-register XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+/*ARGSUSED*/
+XtEventReturnCode VTMouseMoved(event, eventdata)
+register XMotionEvent *event;
+caddr_t eventdata;
 {
+	switch (eventMode) {
+		case LEFTEXTENSION :
+		case RIGHTEXTENSION :
+			ExtendExtend(event->x, event->y);
+			break;
+		default :
+			/* Should get here rarely when everything
+			   fixed with windows and the event mgr */
+/*			fprintf(stderr, "Race mouse motion\n");
+*/			break;
+	}
+	return (XteventHandled);
+}
+
+
+/*ARGSUSED*/
+XtEventReturnCode VTButtonReleased(event, eventdata)
+register XButtonEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+	/* so table above will be nice, we index from 0 */
+	int button = event->button - 1; 
+	int shift = KeyState(event->state);
+
+	switch (eventMode) {
+		case NORMAL :
+			textfunc[screen->send_mouse_pos][shift][1][button]
+			 (event);
+			break;
+		case LEFTEXTENSION :
+		case RIGHTEXTENSION :
+			if AllButtonsUp(event->state, event->button)
+				EndExtend(event);
+			break;
+	}
+	return (XteventHandled);
+}
+
+/*ARGSUSED*/
+XtEventReturnCode TekButtonPressed(event, eventdata)
+register XButtonEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+	/* so table above will be nice, we index from 0 */
+	int button = event->button - 1; 
+	int shift = KeyState(event->state);
+
+	if (screen->incopy)
+		CopyWait (screen);
+	Tbfunc[shift][button](event);
+	return (XteventHandled);
+}
+
+
+/*ARGSUSED*/
+UnSaltText(event)
+XEvent *event;
+{
+	int pty = term.screen.respond;	/* file descriptor of pty */
 	char *line;
 	int nbytes;
 	register char *lag, *cp, *end;
+	register TScreen *screen = &term.screen;
 
-	line = XFetchBytes(&nbytes);
+	line = XFetchBytes(screen->display,&nbytes);
+	if (!nbytes) return;
 	end = &line[nbytes];
 	lag = line;
 	for (cp = line; cp != end; cp++)
 	{
 		if (*cp != '\n') continue;
 		*cp = '\r';
-		write(pty, lag, cp - lag + 1);
+		v_write(pty, lag, cp - lag + 1);
 		lag = cp + 1;
 	}
 	if (lag != end)
-		write(pty, lag, end - lag);
+		v_write(pty, lag, end - lag);
 	free (line);	/* free text from fetch */
 }
 
-ReExecute(term, reply, pty)
-register XKeyOrButtonEvent *reply;
-Terminal *term;
-int pty;
-{
-	XKeyOrButtonEvent xevent;
-	register XKeyOrButtonEvent *ev = &xevent;
-	register Screen *screen = &term->screen;
-	register int xrow, xcol, mask, cursor, ignore;
-	register char *line;
-	int row, col;
-
-	cursor = screen->curs;
-	if(!XGrabMouse(VWindow(screen), cursor,
-	 mask = ButtonReleased | EnterWindow | LeaveWindow | MouseMoved)) {
-		Bell();
-		return;
-	}
-	ncols = screen->max_col + 1;	/* needed by Coordinate() define */
-	if(NearestRowCol(reply->y, reply->x, &crow, &ccol) ||
-	 crow > screen->max_row) {
-		Bell();
-		XUngrabMouse();
-		return;
-	}
-	xrow = crow;
-	xcol = ccol;
-	crow++;
-	ccol = 0;
-	ccoord = Coordinate(crow, ccol);
-	if (screen->cursor_state)
-	    HideCursor ();
-	HiliteText(xrow, xcol, crow, 0, TRUE);
-	ignore = FALSE;
-	for( ; ; ) {
-		XMaskEvent(mask, ev);
-		switch(ev->type) {
-		 case ButtonReleased:
-			if(xrow == crow - 1) {
-				line = GetRestOfLine(screen, xrow, xcol);
-				row = strlen(line);
-				write(pty, line, row);
-				line[row] = '\n';
-				XStoreBytes(line, row);
-				free (line);	/* free text from fetch */
-				HiliteText(xrow, xcol, crow, 0, FALSE);
-			}
-			XUngrabMouse();
-			if (screen->cursor_set && !screen->cursor_state)
-			    ShowCursor ();
-			return;
-		 case LeaveWindow:
-			if(ev->window != VWindow(screen))
-				break;
-			if(xrow == crow - 1)
-				HiliteText(xrow, xcol, crow, 0, FALSE);
-			xrow = crow;
-			xcol = 0;
-			XGrabMouse(VWindow(screen), cursor, mask & ~MouseMoved);
-			ignore = TRUE;
-			break;
-		 case EnterWindow:
-			if(ev->window != VWindow(screen))
-				break;
-			XGrabMouse(VWindow(screen), cursor, mask);
-			ignore = FALSE;
-				/* drop through */
-		 case MouseMoved:
-			if(ignore)
-				break;
-			NearestRowCol(ev->y, ev->x, &row, &col);
-			if(row != crow - 1) {
-				if(xrow == crow - 1)
-					HiliteText(xrow, xcol, crow, 0, FALSE);
-			} else if(xrow == row)
-				TrackText(xrow, xcol, row, col);
-			else
-				HiliteText(row, col, crow, 0, TRUE);
-			xrow = row;
-			xcol = col;
-			break;
-		}
-	}
-}
 	
-char *GetRestOfLine(screen, row, col)
-register Screen *screen;
-register int row, col;
-{
-	char *line;
-	int i;
+#define MULTICLICKTIME 250
 
-	i = Length(screen, row, col, screen->max_col);
-	if((line = (char *)malloc(i + 2)) == NULL)
-		SysError(ERROR_BMALLOC);
-	SaveText(screen, row, col, screen->max_col, line);
-	line[i] = '\r';
-	line[i+1] = '\0';
-	return(line);
+SetSelectUnit(buttonDownTime, defaultUnit)
+unsigned long buttonDownTime;
+SelectUnit defaultUnit;
+{
+/* Do arithmetic as integers, but compare as unsigned solves clock wraparound */
+	if ((long unsigned)((long int)buttonDownTime - lastButtonUpTime)
+	 > MULTICLICKTIME) {
+		numberOfClicks = 1;
+		selectUnit = defaultUnit;
+	} else {
+		++numberOfClicks;
+		/* Don't bitch.  This is only temporary. */
+		selectUnit = (SelectUnit) (((int) selectUnit + 1) % 3);
+	}
 }
 
-StartCut(term, reply, pty)
-register XKeyOrButtonEvent *reply;
-Terminal *term;
-int pty;
+StartCut(event)
+register XButtonEvent *event;
 {
-	XKeyOrButtonEvent xevent;
-	register XKeyOrButtonEvent *ev = &xevent;
-	register Screen *screen = &term->screen;
-	register int xrow, xcol, mask, cursor, ignore;
-	int row, col;
+	register TScreen *screen = &term.screen;
+	int startrow, startcol;
 
-	cursor = screen->curs;
-	if(!XGrabMouse(VWindow(screen), cursor,
-	 mask = ButtonReleased | EnterWindow | LeaveWindow | MouseMoved)) {
-		Bell();
+	firstValidRow = 0;
+	lastValidRow  = screen->max_row;
+	SetSelectUnit(event->time, SELECTCHAR);
+	PointToRowCol(event->y, event->x, &startrow, &startcol);
+	replyToEmacs = FALSE;
+	StartSelect(startrow, startcol);
+}
+
+
+TrackDown(event)
+register XButtonEvent *event;
+{
+	int startrow, startcol;
+
+	SetSelectUnit(event->time, SELECTCHAR);
+	if (numberOfClicks > 1 ) {
+		PointToRowCol(event->y, event->x, &startrow, &startcol);
+		replyToEmacs = TRUE;
+		StartSelect(startrow, startcol);
+	} else {
+		waitingForTrackInfo = 1;
+		EditorButton(event);
+	}
+}
+
+
+TrackMouse(func, startrow, startcol, firstrow, lastrow)
+int func, startrow, startcol, firstrow, lastrow;
+{
+	if (!waitingForTrackInfo) {	/* Timed out, so ignore */
 		return;
 	}
-	ncols = screen->max_col + 1;	/* needed by Coordinate() define */
-	NearestRowCol(reply->y, reply->x, &crow, &ccol);
-	ccoord = Coordinate(crow, ccol);
-	xrow = crow;
-	xcol = ccol;
-	ignore = FALSE;
-	if (screen->cursor_state)
-	    HideCursor ();
-	for( ; ; ) {
-		XMaskEvent(mask, ev);
-		switch(ev->type) {
-		 case ButtonReleased:
-			if(!ignore) {
-				row = crow;
-				col = ccol; /* SaltTextAway may alter these */
-				SaltTextAway(term, xrow, xcol, pty);
-			}
-			HiliteText(row, col, xrow, xcol, FALSE);
-			XUngrabMouse();
-			if (screen->cursor_set && !screen->cursor_state)
-			    ShowCursor ();
-			return;
-		 case LeaveWindow:
-			if(ev->window != VWindow(screen))
-				break;
-			HiliteText(crow, ccol, xrow, xcol, FALSE);
-			xrow = crow;
-			xcol = ccol;
-			XGrabMouse(VWindow(screen), cursor, mask & ~MouseMoved);
-			ignore = TRUE;
-			break;
-		 case EnterWindow:
-			if(ev->window != VWindow(screen))
-				break;
-			XGrabMouse(VWindow(screen), cursor, mask);
-			ignore = FALSE;
-				/* drop through */
-		 case MouseMoved:
-			if(ignore)
-				break;
-			NearestRowCol(ev->y, ev->x, &row, &col);
-			if(row != xrow || col != xcol) {
-				TrackText(xrow, xcol, row, col);
-				xrow = row;
-				xcol = col;
-			}
-			break;
-		}
-	}
+	waitingForTrackInfo = 0;
+	if (func == 0) return;
+
+	firstValidRow = firstrow;
+	lastValidRow  = lastrow;
+	replyToEmacs = TRUE;
+	StartSelect(startrow, startcol);
 }
 
-int NearestRowCol(y, x, r, c)
+StartSelect(startrow, startcol)
+int startrow, startcol;
+{
+	TScreen *screen = &term.screen;
+
+	if (screen->cursor_state)
+	    HideCursor ();
+	if (numberOfClicks == 1) {
+		/* set start of selection */
+		rawRow = startrow;
+		rawCol = startcol;
+		
+	} /* else use old values in rawRow, Col */
+
+	saveStartRRow = startERow = rawRow;
+	saveStartRCol = startECol = rawCol;
+	saveEndRRow   = endERow   = rawRow;
+	saveEndRCol   = endECol   = rawCol;
+	if (Coordinate(startrow, startcol) < Coordinate(rawRow, rawCol)) {
+		eventMode = LEFTEXTENSION;
+		startERow = startrow;
+		startECol = startcol;
+	} else {
+		eventMode = RIGHTEXTENSION;
+		endERow = startrow;
+		endECol = startcol;
+	}
+	ComputeSelect(startERow, startECol, endERow, endECol);
+
+}
+
+EndExtend(event)
+XButtonEvent *event;
+{
+	int	row, col;
+	TScreen *screen = &term.screen;
+	char line[9];
+
+	ExtendExtend(event->x, event->y);
+
+	lastButtonUpTime = event->time;
+	PointToRowCol(event->y, event->x, &row, &col);
+	/* Only do select stuff if non-null select */
+	if (startSRow != endSRow || startSCol != endSCol) {
+		if (replyToEmacs) {
+			if (rawRow == startSRow && rawCol == startSCol 
+			 && row == endSRow && col == endSCol) {
+			 	/* Use short-form emacs select */
+				strcpy(line, "\033[t");
+				line[3] = ' ' + endSCol + 1;
+				line[4] = ' ' + endSRow + 1;
+				v_write(screen->respond, line, 5);
+			} else {
+				/* long-form, specify everything */
+				strcpy(line, "\033[T");
+				line[3] = ' ' + startSCol + 1;
+				line[4] = ' ' + startSRow + 1;
+				line[5] = ' ' + endSCol + 1;
+				line[6] = ' ' + endSRow + 1;
+				line[7] = ' ' + col + 1;
+				line[8] = ' ' + row + 1;
+				v_write(screen->respond, line, 9);
+			}
+		}
+		SaltTextAway(startSRow, startSCol, endSRow, endSCol);
+	}
+	TrackText(0, 0, 0, 0);
+	eventMode = NORMAL;
+}
+
+#define Abs(x)		((x) < 0 ? -(x) : (x))
+
+StartExtend(event)
+XButtonEvent *event;
+{
+	TScreen *screen = &term.screen;
+	int row, col, coord;
+
+	firstValidRow = 0;
+	lastValidRow  = screen->max_row;
+	SetSelectUnit(event->time, selectUnit);
+	replyToEmacs = FALSE;
+
+	if (numberOfClicks == 1) {
+		/* Save existing selection so we can reestablish it if the guy
+		   extends past the other end of the selection */
+		saveStartRRow = startERow = startRRow;
+		saveStartRCol = startECol = startRCol;
+		saveEndRRow   = endERow   = endRRow;
+		saveEndRCol   = endECol   = endRCol;
+	} else {
+		/* He just needed the selection mode changed, use old values. */
+		startERow = startRRow = saveStartRRow;
+		startECol = startRCol = saveStartRCol;
+		endERow   = endRRow   = saveEndRRow;
+		endECol   = endRCol   = saveEndRCol;
+
+	}
+	PointToRowCol(event->y, event->x, &row, &col);
+	coord = Coordinate(row, col);
+
+	if (Abs(coord - Coordinate(startSRow, startSCol))
+	     < Abs(coord - Coordinate(endSRow, endSCol))
+	    || coord < Coordinate(startSRow, startSCol)) {
+	 	/* point is close to left side of selection */
+		eventMode = LEFTEXTENSION;
+		startERow = row;
+		startECol = col;
+	} else {
+	 	/* point is close to left side of selection */
+		eventMode = RIGHTEXTENSION;
+		endERow = row;
+		endECol = col;
+	}
+	ComputeSelect(startERow, startECol, endERow, endECol);
+}
+
+ExtendExtend(x, y)
+int x, y;
+{
+	int row, col, coord;
+
+	PointToRowCol(y, x, &row, &col);
+	coord = Coordinate(row, col);
+	
+	if (eventMode == LEFTEXTENSION 
+	 && (coord + (selectUnit!=SELECTCHAR)) > Coordinate(endSRow, endSCol)) {
+		/* Whoops, he's changed his mind.  Do RIGHTEXTENSION */
+		eventMode = RIGHTEXTENSION;
+		startERow = saveStartRRow;
+		startECol = saveStartRCol;
+	} else if (eventMode == RIGHTEXTENSION
+	 && coord < Coordinate(startSRow, startSCol)) {
+	 	/* Whoops, he's changed his mind.  Do LEFTEXTENSION */
+		eventMode = LEFTEXTENSION;
+		endERow   = saveEndRRow;
+		endECol   = saveEndRCol;
+	}
+	if (eventMode == LEFTEXTENSION) {
+		startERow = row;
+		startECol = col;
+	} else {
+		endERow = row;
+		endECol = col;
+	}
+	ComputeSelect(startERow, startECol, endERow, endECol);
+}
+
+
+ScrollSelection(amount)
+int amount;
+{
+	/* Sent by scrollbar stuff, so amount never takes selection out of
+	   saved text */
+startRRow += amount; endRRow += amount; startSRow += amount; endSRow += amount;
+rawRow += amount;
+}
+
+
+PointToRowCol(y, x, r, c)
 register int y, x;
 int *r, *c;
+/* Convert pixel coordinates to character coordinates.
+   Rows are clipped between firstValidRow and lastValidRow.
+   Columns are clipped between to be 0 or greater, but are not clipped to some
+       maximum value. */
 {
-	register Screen *screen = &term.screen;
-	register row, col, i;
-	register char *ch;
-	register int passed_eol = FALSE;
+	register TScreen *screen = &term.screen;
+	register row, col;
 
-	if((row = (y - screen->border - Titlebar(screen)) / FontHeight(screen))
-	 < 0)
-		row = 0;
-	else if(row > screen->max_row)
-		row = screen->max_row;
-	i = FontWidth(screen);
-	if((col = (x - screen->border + (i / 3)) / i) < 0)
+	row = (y - screen->border) / FontHeight(screen);
+	if(row < firstValidRow)
+		row = firstValidRow;
+	else if(row > lastValidRow)
+		row = lastValidRow;
+	col = (x - screen->border - screen->scrollbar) / FontWidth(screen);
+	if(col < 0)
 		col = 0;
-	else if(col > screen->max_col) {
-		col = 0;
-		row++;	/* this can be screen->max_row + 1 */
-		passed_eol = TRUE;
-	}
-	if(col > 0) {
-		for(i = screen->max_col,
-		 ch = screen->buf[2 * (row + screen->topline)] + i ;
-		 i > 0 && *ch == 0 ; ch--, i--);
-		if(col > i + 1) {
-			col = 0;
-			row++;
-			passed_eol = TRUE;
-		}
+	else if(col > screen->max_col+1) {
+		col = screen->max_col+1;
 	}
 	*r = row;
 	*c = col;
-	return(passed_eol);
 }
+
+int LastTextCol(row)
+register int row;
+{
+	register TScreen *screen =  &term.screen;
+	register int i;
+	register char *ch;
+
+	for(i = screen->max_col,
+	 ch = screen->buf[2 * (row + screen->topline)] + i ;
+	 i > 0 && *ch == 0 ; ch--, i--);
+	return(i);
+}	
+
+static int charClass[128] = {
+/* NUL  SOH  STX  ETX  EOT  ENQ  ACK  BEL */
+    32,   1,   1,   1,   1,   1,   1,   1,
+/*  BS   HT   NL   VT   NP   CR   SO   SI */
+     1,  32,   1,   1,   1,   1,   1,   1,
+/* DLE  DC1  DC2  DC3  DC4  NAK  SYN  ETB */
+     1,   1,   1,   1,   1,   1,   1,   1,
+/* CAN   EM  SUB  ESC   FS   GS   RS   US */
+     1,   1,   1,   1,   1,   1,   1,   1,
+/*  SP    !    "    #    $    %    &    ' */
+    32,  33,  34,  35,  36,  37,  38,  39,
+/*   (    )    *    +    ,    -    .    / */
+    40,  41,  42,  43,  44,  45,  46,  47,
+/*   0    1    2    3    4    5    6    7 */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   8    9    :    ;    <    =    >    ? */
+    48,  48,  58,  59,  60,  61,  62,  63,
+/*   @    A    B    C    D    E    F    G */
+    64,  48,  48,  48,  48,  48,  48,  48,
+/*   H    I    J    K    L    M    N    O */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   P    Q    R    S    T    U    V    W */ 
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   X    Y    Z    [    \    ]    ^    _ */
+    48,  48,  48,  91,  92,  93,  94,  48,
+/*   `    a    b    c    d    e    f    g */
+    96,  48,  48,  48,  48,  48,  48,  48,
+/*   h    i    j    k    l    m    n    o */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   p    q    r    s    t    u    v    w */
+    48,  48,  48,  48,  48,  48,  48,  48,
+/*   x    y    z    {    |    }    ~  DEL */
+    48,  48,  48, 123, 124, 125, 126,   1};
+
+
+ComputeSelect(startRow, startCol, endRow, endCol)
+int startRow, startCol, endRow, endCol;
+{
+	register TScreen *screen = &term.screen;
+	register char *ptr;
+	register int length;
+	register int class;
+
+	if (Coordinate(startRow, startCol) <= Coordinate(endRow, endCol)) {
+		startSRow = startRRow = startRow;
+		startSCol = startRCol = startCol;
+		endSRow   = endRRow   = endRow;
+		endSCol   = endRCol   = endCol;
+	} else {	/* Swap them */
+		startSRow = startRRow = endRow;
+		startSCol = startRCol = endCol;
+		endSRow   = endRRow   = startRow;
+		endSCol   = endRCol   = startCol;
+	}	
+
+	switch (selectUnit) {
+		case SELECTCHAR :
+			if (startSCol > (LastTextCol(startSRow) + 1)) {
+				startSCol = 0;
+				startSRow++;
+			}
+			if (endSCol > (LastTextCol(endSRow) + 1)) {
+				endSCol = 0;
+				endSRow++;
+			}
+			break;
+		case SELECTWORD :
+			if (startSCol > (LastTextCol(startSRow) + 1)) {
+				startSCol = 0;
+				startSRow++;
+			} else {
+				ptr = screen->buf[2*(startSRow+screen->topline)]
+				 + startSCol;
+				class = charClass[*ptr];
+				do {
+					--startSCol;
+					--ptr;
+				} while (startSCol >= 0
+				 && charClass[*ptr] == class);
+				++startSCol;
+			}
+			if (endSCol > (LastTextCol(endSRow) + 1)) {
+				endSCol = 0;
+				endSRow++;
+			} else {
+				length = LastTextCol(endSRow);
+				ptr = screen->buf[2*(endSRow+screen->topline)]
+				 + endSCol;
+				class = charClass[*ptr];
+				do {
+					++endSCol;
+					++ptr;
+				} while (endSCol <= length
+				 && charClass[*ptr] == class);
+				/* Word select selects if pointing to any char
+				   in "word", especially in that it includes
+				   the last character in a word.  So no --endSCol
+				   and do special eol handling */
+				if (endSCol > length+1) {
+					endSCol = 0;
+					++endSRow;
+				}
+			}
+			break;
+		case SELECTLINE :
+			startSCol = 0;
+			endSCol = 0;
+			++endSRow;
+			break;
+	}
+	TrackText(startSRow, startSCol, endSRow, endSCol);
+	return;
+}
+
 
 TrackText(frow, fcol, trow, tcol)
 register int frow, fcol, trow, tcol;
+/* Guaranteed (frow, fcol) <= (trow, tcol) */
 {
-	register int f, t;
+	register int from, to;
+	register TScreen *screen = &term.screen;
 
-	f = Coordinate(frow, fcol);
-	t = Coordinate(trow, tcol);
-	if(f == t)
-		return;
-	if(f > ccoord) {
-		if(t < ccoord) {
-			HiliteText(crow, ccol, frow, fcol, FALSE);
-			HiliteText(trow, tcol, crow, ccol, TRUE);
-		} else if(t > f)
-			HiliteText(frow, fcol, trow, tcol, TRUE);
-		else
-			HiliteText(trow, tcol, frow, fcol, FALSE);
-	} else {
-		if(t > ccoord) {
-			HiliteText(frow, fcol, crow, ccol, FALSE);
-			HiliteText(crow, ccol, trow, tcol, TRUE);
-		} else if(t < f)
-			HiliteText(trow, tcol, frow, fcol, TRUE);
-		else
-			HiliteText(frow, fcol, trow, tcol, FALSE);
+	/* (frow, fcol) may have been scrolled off top of display */
+	if (frow < 0)
+		frow = fcol = 0;
+	/* (trow, tcol) may have been scrolled off bottom of display */
+	if (trow > screen->max_row+1) {
+		trow = screen->max_row+1;
+		tcol = 0;
 	}
+	from = Coordinate(frow, fcol);
+	to = Coordinate(trow, tcol);
+	if (to <= startHCoord || from > endHCoord) {
+		/* No overlap whatsoever between old and new hilite */
+		HiliteText(startHRow, startHCol, endHRow, endHCol, FALSE);
+		HiliteText(frow, fcol, trow, tcol, TRUE);
+	} else {
+		if (from < startHCoord) {
+			/* Extend left end */
+			HiliteText(frow, fcol, startHRow, startHCol, TRUE); 
+		} else if (from > startHCoord) {
+			/* Shorten left end */
+			HiliteText(startHRow, startHCol, frow, fcol, FALSE);
+		}
+		if (to > endHCoord) {
+			/* Extend right end */
+			HiliteText(endHRow, endHCol, trow, tcol, TRUE); 
+		} else if (to < endHCoord) {
+			/* Shorten right end */
+			HiliteText(trow, tcol, endHRow, endHCol, FALSE);
+		}
+	}
+	startHRow = frow;
+	startHCol = fcol;
+	endHRow   = trow;
+	endHCol   = tcol;
+	startHCoord = from;
+	endHCoord = to;
 }
 
 HiliteText(frow, fcol, trow, tcol, hilite)
 register int frow, fcol, trow, tcol;
 int hilite;
+/* Guaranteed that (frow, fcol) <= (trow, tcol) */
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register int i, j;
+	GC tempgc;
 
-	if((i = Coordinate(frow, fcol)) == (j = Coordinate(trow, tcol)))
+	if (frow == trow && fcol == tcol)
 		return;
-	else if(i > j) {
-		i = frow;
-		j = fcol;
-		frow = trow;
-		fcol = tcol;
-		trow = i;
-		tcol = j;
-	}
 	if(hilite) {
+		tempgc = screen->normalGC;
+		screen->normalGC = screen->reverseGC;
+		screen->reverseGC = tempgc;
+		tempgc = screen->normalboldGC;
+		screen->normalboldGC = screen->reverseboldGC;
+		screen->reverseboldGC = tempgc;
+
+
 		i = screen->foreground;
 		screen->foreground = screen->background;
 		screen->background = i;
+		XSetWindowBackground(screen->display,VWindow(screen),screen->background);
+
 	}
 	if(frow != trow) {	/* do multiple rows */
 		if((i = screen->max_col - fcol + 1) > 0) {	/* first row */
-			XPixSet(VWindow(screen), fcol * FontWidth(screen) +
-			 screen->border, frow * FontHeight(screen) +
-			 screen->border + Titlebar(screen), i * FontWidth(screen),
-			 FontHeight(screen), screen->background);
+			XClearArea(
+			    screen->display,
+			    VWindow(screen),
+			    (int) CursorX(screen, fcol),
+			    (int) frow * FontHeight(screen) + screen->border,
+			    (unsigned) i*FontWidth(screen),
+			    (unsigned) FontHeight(screen),
+			    FALSE);
 			ScrnRefresh(screen, frow, fcol, 1, i);
 		}
 		if((i = trow - frow - 1) > 0) {			/* middle rows*/
 			j = screen->max_col + 1;
-			XPixSet(VWindow(screen), screen->border, (frow + 1) *
-			 FontHeight(screen) + screen->border + Titlebar(screen),
-			 j * FontWidth(screen), i * FontHeight(screen),
-			 screen->background);
+			XClearArea(
+			    screen->display,
+			    VWindow(screen),
+			    (int) screen->border + screen->scrollbar,
+			    (int) (frow+1)*FontHeight(screen) + screen->border,
+			    (unsigned) j * FontWidth(screen),
+			    (unsigned) i * FontHeight(screen),
+			    FALSE);
 			ScrnRefresh(screen, frow + 1, 0, i, j);
 		}
 		if(tcol > 0 && trow <= screen->max_row) {	/* last row */
-			XPixSet(VWindow(screen), screen->border, trow *
-			 FontHeight(screen) + screen->border + Titlebar(screen),
-			 tcol * FontWidth(screen), FontHeight(screen),
-			 screen->background);
+			XClearArea(
+			    screen->display,
+			    VWindow(screen),
+			    (int) screen->border + screen->scrollbar,
+			    (int) trow * FontHeight(screen) + screen->border,
+			    (unsigned) tcol * FontWidth(screen),
+			    (unsigned) FontHeight(screen),
+			    FALSE);
 			ScrnRefresh(screen, trow, 0, 1, tcol);
 		}
 	} else {		/* do single row */
 		i = tcol - fcol;
-		XPixSet(VWindow(screen), fcol* FontWidth(screen) + screen->border,
-		 frow * FontHeight(screen) + screen->border + Titlebar(screen),
-		 i * FontWidth(screen), FontHeight(screen), screen->background);
+		XClearArea(
+		    screen->display,
+		    VWindow(screen), 
+		    (int) CursorX(screen, fcol),
+		    (int) frow * FontHeight(screen) + screen->border,
+		    (unsigned) i * FontWidth(screen),
+		    (unsigned) FontHeight(screen),
+		    FALSE);
 		ScrnRefresh(screen, frow, fcol, 1, tcol - fcol);
 	}
 	if(hilite) {
+		tempgc = screen->normalGC;
+		screen->normalGC = screen->reverseGC;
+		screen->reverseGC = tempgc;
+		tempgc = screen->normalboldGC;
+		screen->normalboldGC = screen->reverseboldGC;
+		screen->reverseboldGC = tempgc;
+
 		i = screen->foreground;
 		screen->foreground = screen->background;
 		screen->background = i;
+		XSetWindowBackground(screen->display,VWindow(screen),screen->background);
+
 	}
 }
 
-SaltTextAway(term, row, col, pty)
-Terminal *term;
-register row, col;
-int pty;
+SaltTextAway(crow, ccol, row, col)
+register crow, ccol, row, col;
+/* Guaranteed that (crow, ccol) <= (row, col), and that both points are valid
+   (may have row = screen->max_row+1, col = 0) */
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term.screen;
 	register int i, j = 0;
-	register char *str;		/* string to be saved */
 	char *line, *lp;
 
-	/* first order of business is to guarantee that crow,ccol is before */
-	/* row,col. */
-	if ( row == crow ) {		/* must exchange as pairs */
-		if ( ccol > col ) { 	/* may have to exchange columns */
-			register int tmp;
-			tmp = ccol; ccol = col; col = tmp;
-		}
-	}
-	else {
-		if ( crow > row ) {	/* may have to exchange row and col */
-			register int tmp;
-			tmp = ccol; ccol = col; col = tmp;
-			tmp = crow; crow = row; row = tmp;
-		}
-	}
-		
-	if (ccol < 0) ccol = 0;
-	else if (ccol > screen->max_col) { crow++; ccol = 0; }
-	if (crow < 0) crow = ccol = 0;
-	else if (crow > screen->max_row) { crow = screen->max_row; ccol = 0; }
-
-	if (row > screen->max_row) { row = screen->max_row + 1 ; col = 0; }
-	else if (--col > screen->max_col) col = screen->max_col;
-
+	--col;
 	/* first we need to know how long the string is before we can save it*/
 
 	if ( row == crow ) j = Length(screen, crow, ccol, col);
@@ -570,7 +885,7 @@ int pty;
 	
 	/* now get some memory to save it in */
 
-	if((line = (char *)malloc(j + 1)) == NULL)
+	if((line = malloc((unsigned) j + 1)) == (char *)NULL)
 		SysError(ERROR_BMALLOC2);
 	line[j] = '\0';		/* make sure it is null terminated */
 	lp = line;		/* lp points to where to save the text */
@@ -587,17 +902,16 @@ int pty;
 	}
 	*lp = '\0';		/* make sure we have end marked */
 	
-	XStoreBytes(line, j);
+	XStoreBytes(screen->display,line, j);
 	free(line);
 }
 
 /* returns number of chars in line from scol to ecol out */
 int Length(screen, row, scol, ecol)
 register int row, scol, ecol;
-register Screen *screen;
+register TScreen *screen;
 {
 	register char *ch;
-	int end = 0;
 
 	ch = screen->buf[2 * (row + screen->topline)];
 	while (ecol >= scol && ch[ecol] == 0)
@@ -609,7 +923,7 @@ register Screen *screen;
 char *SaveText(screen, row, scol, ecol, lp)
 int row;
 int scol, ecol;
-Screen *screen;
+TScreen *screen;
 register char *lp;		/* pointer to where to put the text */
 {
 	register int i = 0;
@@ -633,103 +947,82 @@ register char *lp;		/* pointer to where to put the text */
 	return(lp);
 }
 
-EditorDown (term, reply, pty)
-Terminal *term;
-register XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+EditorButton(event)
+register XButtonEvent *event;
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term.screen;
+	int pty = screen->respond;
 	char line[6];
 	register unsigned row, col;
 	int button; 
 
-	if (!screen->send_mouse_pos) {
-		Bell();
-		return;
+	button = event->button - 1; 
+
+	row = (event->y - screen->border) 
+	 / FontHeight(screen);
+	col = (event->x - screen->border - screen->scrollbar)
+	 / FontWidth(screen);
+	(void) strcpy(line, "\033[M");
+	if (screen->send_mouse_pos == 1) {
+		line[3] = ' ' + button;
+	} else {
+		line[3] = ' ' + X10Map(event->state) + 
+			((event->type == ButtonPress)? button:3);
 	}
-	button = 2 - reply->detail & 0177; 
-	row = (reply->y - screen->border - Titlebar(screen)) / FontHeight(screen);
-	col = (reply->x - screen->border) / FontWidth(screen);
-	strcpy(line, "\033[M");
-	line[3] = ' ' + button;
 	line[4] = ' ' + col + 1;
 	line[5] = ' ' + row + 1;
-	write(pty, line, 6);
+	v_write(pty, line, 6);
 }
 
 #ifdef MODEMENU
-#define	MAXWINDOWMENU	64
 #define	XTERMMENU	0
 #define	VTMENU		1
 #define	TEKMENU		2
-#define	SCROLLBARMENU	3
-#ifndef NOWINDOWMENU
-#define	WINDOWMENU	4
-#define	NMENUS		5
-#else NOWINDOWMENU
-#define	NMENUS		4
-#endif NOWINDOWMENU
+#define	NMENUS		3
 
 static Menu *menus[NMENUS];
-#ifndef NOWINDOWMENU
-static char *namebuf[MAXWINDOWMENU + 1];
-static char *wname;
-static Window windows[MAXWINDOWMENU];
-#endif NOWINDOWMENU
+static int type;
+extern TekLink *TekRefresh;
 
-ModeMenu(term, reply, pty)
-Terminal *term;
-register XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+ModeMenu(event)
+register XButtonEvent *event;
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term.screen;
 	register Menu *menu;
-	register int type, item;
+	register int item;
 	static int inited;
-	extern TekLink *TekRefresh;
-	extern int xeventpass();
 	extern Menu *setupmenu(), *Tsetupmenu(), *xsetupmenu();
-#ifndef NOWINDOWMENU
-	extern Menu *wsetupmenu();
-#endif NOWINDOWMENU
-	extern Menu *ssetupmenu();
 
-	if((reply->window == screen->title.tbar || reply->window ==
-	 screen->Ttitle.tbar) && InTitle(screen, reply->window,
-	 reply->x))
-		return;
+
 	if(!inited) {
 		extern Pixmap Gray_Tile;
 		extern Cursor Menu_DefaultCursor;
 		extern char *Menu_DefaultFont;
-		extern FontInfo *Menu_DefaultFontInfo;
+		extern XFontStruct *Menu_DefaultFontInfo;
 
 		inited++;
-		Gray_Tile = screen->graybordertile;
+		Gray_Tile = make_gray(BlackPixel(screen->display,
+					         DefaultScreen(screen->display)), 
+		 WhitePixel(screen->display, DefaultScreen(screen->display)), 1);
 		InitMenu(xterm_name);
 		Menu_DefaultCursor = screen->arrow;
-		if(strcmp(Menu_DefaultFont, f_t) == 0)
-			Menu_DefaultFontInfo = screen->titlefont;
+/*		if(XStrCmp(Menu_DefaultFont, f_t) == 0)
+			Menu_DefaultFontInfo = screen->fnt_norm;
+ */
 	}
-	if((reply->detail & 0177) == LeftButton)
+	if((event->button) == Button1)
 		type = XTERMMENU;
-	else if((reply->detail & 0177) == RightButton)
-#ifndef NOWINDOWMENU
-		type = WINDOWMENU;
-#else NOWINDOWMENU
+	else if((event->button) == Button3)
 		{
 		    Bell();
 		    return;
 		}
-#endif NOWINDOWMENU
-	else if(reply->window == VWindow(screen) || reply->window ==
-	 screen->title.tbar)
+	else if(event->window == VWindow(screen))
 		type = VTMENU;
-	else if(reply->window == TWindow(screen) || reply->window ==
-	 screen->Ttitle.tbar)
+	else if(event->window == TWindow(screen))
 		type = TEKMENU;
 	else
-		type = SCROLLBARMENU;
+		SysError(ERROR_BADMENU);
 	switch(type) {
 	 case XTERMMENU:
 		if((menu = xsetupmenu(&menus[XTERMMENU])) == NULL)
@@ -739,45 +1032,30 @@ int pty;			/* file descriptor of pty */
 		if((menu = setupmenu(&menus[VTMENU])) == NULL)
 			return;
 		break;
-#ifndef NOWINDOWMENU
-	 case WINDOWMENU:
-		wname = (reply->window == screen->title.tbar || reply->window
-		 == VWindow(screen)) ? screen->winname : screen->Twinname;
-		if((menu = wsetupmenu(&menus[WINDOWMENU])) == NULL)
-			return;
-		break;
-#endif NOWINDOWMENU
 	 case TEKMENU:
 		if((menu = Tsetupmenu(&menus[TEKMENU])) == NULL)
 			return;
 		screen->waitrefresh = TRUE;
 		break;
-	 case SCROLLBARMENU:
-		if((menu = ssetupmenu(&menus[SCROLLBARMENU])) == NULL)
-			return;
-		break;
 	}
 	/*
-	 * Make the window entry and leaving routines holdoff on setting
-	 * the timer and on selecting or unselecting any windows.  Then
-	 * set the select mode manually.
+	 * Set the select mode manually.
 	 */
-	screen->holdoff = TRUE;
-	SetMenuEventHandler(menu, xeventpass);
-	item = TrackMenu(menu, reply);
+	TrackMenu(menu, event); /* MenuButtonReleased calls FinishModeMenu */
+}
+
+FinishModeMenu(item)
+register int item;
+{
+	TScreen *screen = &term.screen;
+
 	menusync();
 	screen->waitrefresh = FALSE;
-	screen->timer = 0;
-	screen->holdoff = FALSE;
 	reselectwindow(screen);
 
 	if (item < 0) {
 		if(type == TEKMENU && TekRefresh)
 			dorefresh();
-#ifndef NOWINDOWMENU
-		else if(type == WINDOWMENU)
-			wfree(menu);
-#endif NOWINDOWMENU
 		return;
 	}
 	switch(type) {
@@ -787,39 +1065,22 @@ int pty;			/* file descriptor of pty */
 	 case VTMENU:
 		domenufunc(item);
 		break;
-#ifndef NOWINDOWMENU
-	 case WINDOWMENU:
-		wdomenufunc(item);
-		wfree(menu);
-		break;
-#endif NOWINDOWMENU
 	 case TEKMENU:
 		Tdomenufunc(item);
-		break;
-	 case SCROLLBARMENU:
-		sdomenufunc(item);
 		break;
 	}
 }
 
 menusync()
 {
-	XEvent ev;
-
-	XSync(0);
-	while(QLength() > 0) {
-		XNextEvent(&ev);
-		xeventpass(&ev);
-	}
+	TScreen *screen = &term.screen;
+	XSync(screen->display, 0);
+	if (QLength(screen->display) > 0)
+		xevents();
 }
 
-#define	XMENU_TITLE	0
-#define XMENU_ACTIVEICON (XMENU_TITLE+1)
-#define XMENU_ALLOWICONINPUT (XMENU_ACTIVEICON+1)
-#define	XMENU_AUTORAISE	(XMENU_ALLOWICONINPUT+1)
-#define	XMENU_VISUALBELL (XMENU_AUTORAISE+1)
-#define	XMENU_DEICONWARP (XMENU_VISUALBELL+1)
-#define	XMENU_LOG	(XMENU_DEICONWARP+1)
+#define	XMENU_VISUALBELL 0
+#define	XMENU_LOG	(XMENU_VISUALBELL+1)
 #define	XMENU_LINE	(XMENU_LOG+1)
 #define	XMENU_REDRAW	(XMENU_LINE+1)
 #define	XMENU_RESUME	(XMENU_REDRAW+1)
@@ -830,12 +1091,7 @@ menusync()
 #define	XMENU_KILL	(XMENU_TERM+1)
 
 static char *xtext[] = {
-	"Title Bar(s)",
-	"Active Icon",
-	"Allow Icon Input",
-	"Auto Raise",
 	"Visual Bell",
-	"Deiconify Warp",
 	"Logging",
 	"-",
 	"Redraw",
@@ -848,66 +1104,41 @@ static char *xtext[] = {
 	0,
 };
 
-static int xauto;
 static int xbell;
-static int xdeiconwarp;
 static int xlog;
-static int xtbar;
-static int xactive_icon;
-static int xallow_iconinput;
 
 Menu *xsetupmenu(menu)
 register Menu **menu;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register char **cp;
 	register int i;
 
 	if (*menu == NULL) {
-		if ((*menu = NewMenu("xterm X10/6.6A2", re_verse)) == NULL)
+		if ((*menu = NewMenu("xterm X11", re_verse)) == NULL)
 			return(NULL);
 		for(cp = xtext ; *cp ; cp++)
 			AddMenuItem(*menu, *cp);
-		if(xtbar = (Titlebar(screen) > 0))
-			CheckItem(*menu, XMENU_TITLE);
-		if(xactive_icon = screen->active_icon)
-			CheckItem(*menu, XMENU_ACTIVEICON);
-		if(xallow_iconinput = (term.flags & ICONINPUT))
-			CheckItem(*menu, XMENU_ALLOWICONINPUT);
-		if(xauto = screen->autoraise)
-			CheckItem(*menu, XMENU_AUTORAISE);
 		if(xbell = screen->visualbell)
 			CheckItem(*menu, XMENU_VISUALBELL);
-		if(xdeiconwarp = screen->deiconwarp)
-			CheckItem(*menu, XMENU_DEICONWARP);
 		if(xlog = screen->logging)
 			CheckItem(*menu, XMENU_LOG);
 		DisableItem(*menu, XMENU_LINE);
-		if(screen->inhibit & I_LOG)
+		if((screen->inhibit & I_LOG) ||
+		   /* if login window, check for completed login */
+		   (L_flag && !checklogin()))
 			DisableItem(*menu, XMENU_LOG);
 		if(screen->inhibit & I_SIGNAL)
 			for(i = XMENU_SUSPEND ; i <= XMENU_KILL ; i++)
 				DisableItem(*menu, i);
 		return(*menu);
 	}
-	if (xtbar != (Titlebar(screen) > 0))
-		SetItemCheck(*menu, XMENU_TITLE, (xtbar =
-		 (Titlebar(screen) > 0)));
-	if (xactive_icon != screen->active_icon)
-		SetItemCheck(*menu, XMENU_ACTIVEICON,
-			     (xactive_icon = screen->active_icon));
-	if (xallow_iconinput != (term.flags & ICONINPUT))
-		SetItemCheck(*menu, XMENU_ALLOWICONINPUT,
-			     (xallow_iconinput = (term.flags & ICONINPUT)));
-	if (xauto != screen->autoraise)
-		SetItemCheck(*menu, XMENU_AUTORAISE, (xauto =
-		 screen->autoraise));
+	/* if login window, check for completed login */
+	if (!(L_flag && !checklogin()) && !(screen->inhibit & I_LOG))
+		EnableItem(*menu, XMENU_LOG);
 	if (xbell != screen->visualbell)
 		SetItemCheck(*menu, XMENU_VISUALBELL, (xbell =
 		 screen->visualbell));
-	if (xdeiconwarp != screen->deiconwarp)
-		SetItemCheck(*menu, XMENU_DEICONWARP, (xdeiconwarp =
-		 screen->deiconwarp));
 	if (xlog != screen->logging)
 		SetItemCheck(*menu, XMENU_LOG, (xlog = screen->logging));
 	return(*menu);
@@ -916,84 +1147,9 @@ register Menu **menu;
 xdomenufunc(item)
 int item;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
 	switch (item) {
-	case XMENU_TITLE:
-		if(Titlebar(screen)) {
-		        screen->fullVwin.titlebar =
-			    screen->fullTwin.titlebar = 0;
-			if(VWindow(screen))
-				VTTitleHide();
-			if(TWindow(screen))
-				TekTitleHide();
-		} else {
-		        screen->fullVwin.titlebar =
-			    screen->fullTwin.titlebar = screen->titleheight;
-			if(VWindow(screen))
-				VTTitleShow(FALSE);
-			if(TWindow(screen))
-				TekTitleShow(FALSE);
-		}
-		break;
-
-	case XMENU_ACTIVEICON:
-		screen->active_icon = !screen->active_icon;
-		if (screen->active_icon && !screen->fnt_icon) {
-		    FontInfo *fInfo = XOpenFont( f_i );
-		    screen->fnt_icon = fInfo->id;
-		    screen->iconVwin.f_width = fInfo->width;
-		    screen->iconVwin.f_height = fInfo->height;
-		}
-
-		if (screen->iconVwin.window) {
-		    SetIconSize( screen );
-		    XSelectInput( screen->iconVwin.window,
-		    		  screen->active_icon
-				    ? ((term.flags & ICONINPUT)
-				      ? ICONWINDOWEVENTS | ICONINPUTEVENTS
-				      : ICONWINDOWEVENTS)
-				    : TICONWINDOWEVENTS );
-		}
-
-		if (screen->iconTwin.window) {
-		    TSetIconSize( screen );
-		    XSelectInput( screen->iconTwin.window,
-				  screen->active_icon
-				  && (term.flags & ICONINPUT)
-				    ? TICONWINDOWEVENTS | ICONINPUTEVENTS
-				    : TICONWINDOWEVENTS );
-		}
-
-		break;
-
-	case XMENU_ALLOWICONINPUT:
-		term.flags ^= ICONINPUT;
-		if (screen->iconVwin.window)
-		    XSelectInput( screen->iconVwin.window,
-				  screen->active_icon
-				    ? ((term.flags & ICONINPUT)
-				      ? ICONWINDOWEVENTS | ICONINPUTEVENTS
-				      : ICONWINDOWEVENTS)
-				    : TICONWINDOWEVENTS );
-
-		if (screen->iconTwin.window)
-		    XSelectInput( screen->iconTwin.window,
-				  screen->active_icon
-				  && (term.flags & ICONINPUT)
-				    ? TICONWINDOWEVENTS | ICONINPUTEVENTS
-				    : TICONWINDOWEVENTS );
-
-		break;
-
-	case XMENU_AUTORAISE:
-		screen->autoraise = !screen->autoraise;
-		break;
-
-	case XMENU_DEICONWARP:
-		screen->deiconwarp = !screen->deiconwarp;
-		break;
-
 	case XMENU_VISUALBELL:
 		screen->visualbell = !screen->visualbell;
 		break;
@@ -1041,81 +1197,13 @@ int item;
 	}
 }
 
-#ifndef NOWINDOWMENU
-Menu *wsetupmenu(menu)
-register Menu **menu;
-{
-	register Window *cp, *wp;
-	register char **np;
-	register int i, j;
-	Window win, *children;
-	int nchildren;
-	char *name;
-	WindowInfo winfo;
-
-	if(!XQueryTree(RootWindow, &win, &nchildren, &children))
-		return(NULL);
-	if(nchildren > MAXWINDOWMENU)
-		nchildren = MAXWINDOWMENU;
-	if ((*menu = NewMenu("Windows", re_verse)) == NULL) {
-		free((char *)children);
-		return(NULL);
-	}
-	np = namebuf;
-	wp = windows;
-	for(i = nchildren, j = 0, cp = children ; i > 0 ; cp++, i--) {
-		if(!XQueryWindow(*cp, &winfo))
-			goto failed;
-		if(winfo.mapped != IsMapped)
-			continue;
-		if(!XFetchName(*cp, &name)) {
-failed:
-			free((char *)children);
-			*np = NULL;
-			wfree(*menu);
-			return(NULL);
-		}
-		if(name == NULL)
-			continue;
-		AddMenuItem(*menu, *np++ = name);
-		*wp++ = *cp;
-		if(strcmp(wname, name) == 0)
-			CheckItem(*menu, j);
-		j++;
-	}
-	*np = NULL;
-	free((char *)children);
-	if(np > namebuf)
-		return(*menu);
-	DisposeMenu(*menu);
-	return(NULL);
-}
-
-wdomenufunc(item)
-int item;
-{
-	register Window w;
-
-	if((w = windows[item]) != NULL)
-		XRaiseWindow(w);
-}
-
-wfree(menu)
-Menu *menu;
-{
-	register char **np;
-
-	for(np = namebuf ; *np ; np++)
-		free(*np);
-	DisposeMenu(menu);
-}
-#endif NOWINDOWMENU
 
 MenuNewCursor(cur)
 register Cursor cur;
 {
 	register Menu **menu;
 	register int i;
+	register TScreen *screen = &term.screen;
 	extern Cursor Menu_DefaultCursor;
 
 	Menu_DefaultCursor = cur;
@@ -1124,37 +1212,25 @@ register Cursor cur;
 			continue;
 		(*menu)->menuCursor = cur;
 		if((*menu)->menuWindow)
-			XDefineCursor((*menu)->menuWindow, cur);
+			XDefineCursor(screen->display, (*menu)->menuWindow, 
+			 cur);
 	}
 }
 #else MODEMENU
 
-ModeMenu(term, reply, pty)
-Terminal *term;
-register XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
-{
-	register Screen *screen = &term->screen;
-
-	if((reply->window == screen->title.tbar || reply->window ==
-	 screen->Ttitle.tbar) && InTitle(screen, reply->window,
-	 reply->x))
-		return;
-	Bell();
-}
+/*ARGSUSED*/
+ModeMenu(event) register XButtonEvent *event; { Bell(); }
 #endif MODEMENU
 
-GINbutton(term, reply, pty)
-Terminal *term;
-XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+GINbutton(event)
+XButtonEvent *event;
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term.screen;
 	register int i;
 
 	if(screen->TekGIN) {
-		i = "rml"[reply->detail & 0xff];
-		if(reply->detail & ShiftMask)
+		i = "rml"[event->button - 1];
+		if(event->state & ShiftMask)
 			i = toupper(i);
 		TekEnqMouse(i | 0x80);	/* set high bit */
 		TekGINoff();
@@ -1162,17 +1238,15 @@ int pty;			/* file descriptor of pty */
 		Bell();
 }
 
-Bogus(term, reply, pty)
-Terminal *term;
-XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+/*ARGSUSED*/
+Bogus(event)
+XButtonEvent *event;
 {
 	Bell();
 }
 
-Silence(term, reply, pty)
-Terminal *term;
-XKeyOrButtonEvent *reply;
-int pty;			/* file descriptor of pty */
+/*ARGSUSED*/
+Silence(event)
+XButtonEvent *event;
 {
 }

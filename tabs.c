@@ -1,24 +1,44 @@
 /*
- *	@Source: /u1/X/xterm/RCS/tabs.c,v @
- *	@Header: tabs.c,v 10.100 86/12/01 14:45:38 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/tabs.c,v @
+ *	@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @
  */
 
 #ifndef lint
-static char *rcsid_tabs_c = "@Header: tabs.c,v 10.100 86/12/01 14:45:38 jg Rel @";
+static char *rcsid_tabs_c = "@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @";
 #endif	lint
 
-#include <X/mit-copyright.h>
+#include <X11/copyright.h>
 
-/* Copyright    Massachusetts Institute of Technology    1984	*/
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
 
 /* tabs.c */
 
 #ifndef lint
-static char sccs_id[] = "@(#)tabs.c\tX10/6.6\t11/3/86";
+static char rcs_id[] = "@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @";
 #endif	lint
 
-#include <X/Xlib.h>
-#include "scrollbar.h"
+#include <X11/Xlib.h>
 #include "ptyx.h"
 /*
  * This file presumes 32bits/word.  This is somewhat of a crock, and should
@@ -68,7 +88,7 @@ TabNext (tabs, col)
 Tabs	tabs;
 {
 	extern Terminal term;
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
 	if(screen->curses && screen->do_wrap && (term.flags & WRAPAROUND)) {
 		Index(screen, 1);

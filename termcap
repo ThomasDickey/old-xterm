@@ -1,7 +1,7 @@
 # @(#)termcap	X10/6.6	11/7/86
 vs|xterm|vs100|xterm terminal emulator (X window system):\
 	:cr=^M:do=^J:nl=^J:bl=^G:le=^H:ho=\E[H:\
-	:co#80:li#65:cl=\E[H\E[2J:bs:am:cm=\E[%i%d;%dH:nd=\E[C:up=\E[A:\
+	:co#80:li#65:cl=\E[H\E[2J:bs:cm=\E[%i%d;%dH:nd=\E[C:up=\E[A:\
 	:ce=\E[K:cd=\E[J:so=\E[7m:se=\E[m:us=\E[4m:ue=\E[m:\
 	:md=\E[1m:mr=\E[7m:me=\E[m:\
 	:ku=\EOA:kd=\EOB:kr=\EOC:kl=\EOD:kb=^H:\

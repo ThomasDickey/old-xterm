@@ -1,12 +1,35 @@
+
 /*
- *	@Source: /u1/X/xterm/RCS/charproc.c,v @
- *	@Header: charproc.c,v 10.103 86/12/08 09:31:15 swick Exp @
+ *	@Source: /orpheus/u1/X11/clients/xterm/RCS/charproc.c,v @
+ *	@Header: charproc.c,v 1.36 87/09/09 16:40:30 swick Exp @
  */
 
-#include <X/mit-copyright.h>
 
-/* Copyright (c) 1985 Massachusetts Institute of Technology		*/
-/* Copyright (c) 1985	Digital Equipment Corporation			*/
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
+
 
 /* charproc.c */
 
@@ -17,8 +40,10 @@
 #include <setjmp.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
-#include <X/Xlib.h>
-#include "scrollbar.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Intrinsic.h>
+#include <X11/Xatom.h>
 #include "ptyx.h"
 #include "VTparse.h"
 #include "data.h"
@@ -27,17 +52,20 @@
 #include "menu.h"
 #endif MODEMENU
 
+extern void exit(), bcopy();
+
 #define	DEFAULT		-1
 #define	TEXT_BUF_SIZE	256
+#define TRACKTIMESEC	4L
+#define TRACKTIMEUSEC	0L
 
-#define	input()		(bcnt-- > 0 ? *bptr++ : in_put())
+#define	doinput()		(bcnt-- > 0 ? *bptr++ : in_put())
 
 #ifndef lint
-static char sccs_id[] = "@(#)charproc.c\tX10/6.6\t11/10/86";
+static char rcs_id[] = "@Header: charproc.c,v 1.36 87/09/09 16:40:30 swick Exp @";
 #endif lint
 
 static long arg;
-static int ch;
 static int nparam;
 static ANSI reply;
 static int param[NPARAM];
@@ -45,6 +73,9 @@ static int param[NPARAM];
 static unsigned long ctotal;
 static unsigned long ntotal;
 static jmp_buf vtjmpbuf;
+
+extern XrmNameList nameList;
+extern XrmClassList classList;
 
 extern int groundtable[];
 extern int csitable[];
@@ -56,20 +87,31 @@ extern int igntable[];
 extern int scrtable[];
 extern int scstable[];
 
+
+/* event handlers */
+extern XtEventReturnCode HandleKeyPressed();
+extern XtEventReturnCode EventDoNothing();
+extern XtEventReturnCode HandleEnterWindow();
+extern XtEventReturnCode HandleLeaveWindow();
+extern XtEventReturnCode HandleFocusChange();
+extern XtEventReturnCode VTButtonPressed();
+extern XtEventReturnCode VTMouseMoved();
+extern XtEventReturnCode VTButtonReleased();
+
+
 VTparse()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register int *parsestate = groundtable;
 	register int c;
 	register char *cp;
 	register int row, col, top, bot, scstype;
-	WindowInfo wininfo;
-	extern int bitset(), bitclr(), finput();
+	extern int bitset(), bitclr(), finput(), TrackMouse();
 
 	if(setjmp(vtjmpbuf))
 		parsestate = groundtable;
 	for( ; ; )
-		switch(parsestate[c = input()]) {
+		switch(parsestate[c = doinput()]) {
 		 case CASE_GROUND_STATE:
 			/* exit ignore mode */
 			parsestate = groundtable;
@@ -111,15 +153,13 @@ VTparse()
 
 		 case CASE_VMOT:
 			/*
-			 * form feed, line feed, vertical tab, but not in
-			 * status line
+			 * form feed, line feed, vertical tab
 			 */
-			if(!screen->instatus)
-				Index(screen, 1);
+			Index(screen, 1);
 			if (term.flags & LINEFEED)
 				CarriageReturn(screen);
 			if(screen->display->qlen > 0 ||
-			 (ioctl(screen->display->fd, FIONREAD, &arg), arg) > 0)
+			 (ioctl(screen->display->fd, FIONREAD, (char *) &arg), arg) > 0)
 				xevents();
 			break;
 
@@ -199,23 +239,17 @@ VTparse()
 
 		 case CASE_CUU:
 			/* CUU */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((c = param[0]) < 1)
-					c = 1;
-				CursorUp(screen, c);
-			}
+			if((c = param[0]) < 1)
+				c = 1;
+			CursorUp(screen, c);
 			parsestate = groundtable;
 			break;
 
 		 case CASE_CUD:
 			/* CUD */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((c = param[0]) < 1)
-					c = 1;
-				CursorDown(screen, c);
-			}
+			if((c = param[0]) < 1)
+				c = 1;
+			CursorDown(screen, c);
 			parsestate = groundtable;
 			break;
 
@@ -237,14 +271,11 @@ VTparse()
 
 		 case CASE_CUP:
 			/* CUP | HVP */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((row = param[0]) < 1)
-					row = 1;
-				if(nparam < 2 || (col = param[1]) < 1)
-					col = 1;
-				CursorSet(screen, row-1, col-1, term.flags);
-			}
+			if((row = param[0]) < 1)
+				row = 1;
+			if(nparam < 2 || (col = param[1]) < 1)
+				col = 1;
+			CursorSet(screen, row-1, col-1, term.flags);
 			parsestate = groundtable;
 			break;
 
@@ -253,24 +284,15 @@ VTparse()
 			switch (param[0]) {
 			 case DEFAULT:
 			 case 0:
-				if(screen->instatus)
-					ClearRight(screen);
-				else
-					ClearBelow(screen);
+				ClearBelow(screen);
 				break;
 
 			 case 1:
-				if(screen->instatus)
-					ClearLeft(screen);
-				else
-					ClearAbove(screen);
+				ClearAbove(screen);
 				break;
 
 			 case 2:
-				if(screen->instatus)
-					ClearLine(screen);
-				else
-					ClearScreen(screen);
+				ClearScreen(screen);
 				break;
 			}
 			parsestate = groundtable;
@@ -295,23 +317,17 @@ VTparse()
 
 		 case CASE_IL:
 			/* IL */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((c = param[0]) < 1)
-					c = 1;
-				InsertLine(screen, c);
-			}
+			if((c = param[0]) < 1)
+				c = 1;
+			InsertLine(screen, c);
 			parsestate = groundtable;
 			break;
 
 		 case CASE_DL:
 			/* DL */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((c = param[0]) < 1)
-					c = 1;
-				DeleteLine(screen, c);
-			}
+			if((c = param[0]) < 1)
+				c = 1;
+			DeleteLine(screen, c);
 			parsestate = groundtable;
 			break;
 
@@ -321,6 +337,13 @@ VTparse()
 				c = 1;
 			DeleteChar(screen, c);
 			parsestate = groundtable;
+			break;
+
+		 case CASE_TRACK_MOUSE:
+		 	/* Track mouse as long as in window and between
+			   specified rows */
+			TrackMouse(param[0], param[2]-1, param[1]-1,
+			 param[3]-1, param[4]-2);
 			break;
 
 		 case CASE_DA1:
@@ -406,106 +429,18 @@ VTparse()
 
 		 case CASE_DECSTBM:
 			/* DECSTBM */
-			/* only if not in status line */
-			if(!screen->instatus) {
-				if((top = param[0]) < 1)
-					top = 1;
-				if(nparam < 2 || (bot = param[1]) == DEFAULT
-				   || bot > screen->max_row + 1
-				   || bot == 0)
-					bot = screen->max_row+1;
-				if (bot > top) {
-					if(screen->scroll_amt)
-						FlushScroll(screen);
-					screen->top_marg = top-1;
-					screen->bot_marg = bot-1;
-					CursorSet(screen, 0, 0, term.flags);
-				}
-			}
-			parsestate = groundtable;
-			break;
-
-		 case CASE_SUN_EMU:
-			/* sub-set of sun tty emulation */
-			switch(param[0]) {
-			 case 3:	/* move window */
-				if(nparam == 3) {
-					XMoveWindow(VWindow(screen), param[1],
-					 param[2]);
-					XSync(FALSE);	/* synchronize */
-					if(QLength() > 0)
-						xevents();
-				}
-				break;
-			 case 4:	/* resize window (pixels) */
-				if(nparam == 3) {
-					XChangeWindow (VWindow(screen), param[1],
-					 param[2]);
-					XSync(FALSE);	/* synchronize */
-					if(QLength() > 0)
-						xevents();
-				}
-				break;
-			 case 5:	/* raise window */
-				XRaiseWindow(VWindow(screen));
-				break;
-			 case 6:	/* lower window */
-				XLowerWindow(VWindow(screen));
-				break;
-			 case 7:	/* redisplay window */
-				Redraw();
-				break;
-			 case 8:	/* resize window (rows and columns) */
-				if(nparam == 3) {
-					XChangeWindow (VWindow(screen),
-					 FontWidth(screen) * param[2] +
-					 2 * screen->border + screen->scrollbar,
-					 FontHeight(screen) * param[1] +
-					 screen->statusheight + Titlebar(screen)
-					 + 2 * screen->border);
-					XSync(FALSE);	/* synchronize */
-					if(QLength() > 0)
-						xevents();
-				}
-				break;
-			 case 13:	/* send window position */
-				XQueryWindow(VWindow(screen), &wininfo);
-				reply.a_type = CSI;
-				reply.a_pintro = 0;
-				reply.a_nparam = 3;
-				reply.a_param[0] = 3;
-				reply.a_param[1] = wininfo.x;
-				reply.a_param[2] = wininfo.y;
-				reply.a_inters = 0;
-				reply.a_final  = 't';
-				unparseseq(&reply, screen->respond);
-				break;
-			 case 14:	/* send window size (pixels) */
-				reply.a_type = CSI;
-				reply.a_pintro = 0;
-				reply.a_nparam = 3;
-				reply.a_param[0] = 4;
-				reply.a_param[1] = (screen->max_col + 1) *
-				 FontWidth(screen) + 2 * screen->border +
-				 screen->scrollbar;
-				reply.a_param[2] = (screen->max_row + 1) *
-				 FontHeight(screen) + screen->statusheight +
-				 Titlebar(screen) + 2 * screen->border;
-				reply.a_inters = 0;
-				reply.a_final  = 't';
-				unparseseq(&reply, screen->respond);
-				break;
-			 case 18:	/* send window size (rows and cols) */
-				reply.a_type = CSI;
-				reply.a_pintro = 0;
-				reply.a_nparam = 3;
-				reply.a_param[0] = 8;
-				reply.a_param[1] = screen->max_row + 1;
-				reply.a_param[2] = screen->max_col + 1;
-				reply.a_inters = 0;
-				reply.a_final  = 't';
-				unparseseq(&reply, screen->respond);
-				break;
+			if((top = param[0]) < 1)
+				top = 1;
+			if(nparam < 2 || (bot = param[1]) == DEFAULT
+			   || bot > screen->max_row + 1
+			   || bot == 0)
+				bot = screen->max_row+1;
+			if (bot > top) {
+				if(screen->scroll_amt)
+					FlushScroll(screen);
+				screen->top_marg = top-1;
+				screen->bot_marg = bot-1;
+				CursorSet(screen, 0, 0, term.flags);
 			}
 			parsestate = groundtable;
 			break;
@@ -543,12 +478,6 @@ VTparse()
 		 case CASE_DECRST:
 			/* DECRST */
 			dpmodes(&term, bitclr);
-			parsestate = groundtable;
-			break;
-
-		 case CASE_HIDDEN:
-			/* special "hidden" sequence */
-			fprintf(stderr, "avg call = %ld char\n", ctotal/ntotal);
 			parsestate = groundtable;
 			break;
 
@@ -598,23 +527,19 @@ VTparse()
 
 		 case CASE_IND:
 			/* IND */
-			/* only if not in status line */
-			if(!screen->instatus)
-				Index(screen, 1);
+			Index(screen, 1);
 			if(screen->display->qlen > 0 ||
-			 (ioctl(screen->display->fd, FIONREAD, &arg), arg) > 0)
+			 (ioctl(screen->display->fd, FIONREAD, (char *)&arg), arg) > 0)
 				xevents();
 			parsestate = groundtable;
 			break;
 
 		 case CASE_NEL:
 			/* NEL */
-			/* only if not in status line */
-			if(!screen->instatus)
-				Index(screen, 1);
+			Index(screen, 1);
 			CarriageReturn(screen);
 			if(screen->display->qlen > 0 ||
-			 (ioctl(screen->display->fd, FIONREAD, &arg), arg) > 0)
+			 (ioctl(screen->display->fd, FIONREAD, (char *)&arg), arg) > 0)
 				xevents();
 			parsestate = groundtable;
 			break;
@@ -627,9 +552,7 @@ VTparse()
 
 		 case CASE_RI:
 			/* RI */
-			/* only if not in status line */
-			if(!screen->instatus)
-				RevIndex(screen, 1);
+			RevIndex(screen, 1);
 			parsestate = groundtable;
 			break;
 
@@ -694,33 +617,6 @@ VTparse()
 			parsestate = groundtable;
 			break;
 
-		 case CASE_TO_STATUS:
-			if((c = param[0]) < 1)
-				c = 1;
-			ToStatus(c - 1);
-			parsestate = groundtable;
-			break;
-
-		 case CASE_FROM_STATUS:
-			FromStatus();
-			parsestate = groundtable;
-			break;
-
-		 case CASE_SHOW_STATUS:
-			ShowStatus();
-			parsestate = groundtable;
-			break;
-
-		 case CASE_HIDE_STATUS:
-			HideStatus();
-			parsestate = groundtable;
-			break;
-
-		 case CASE_ERASE_STATUS:
-			EraseStatus();
-			parsestate = groundtable;
-			break;
-
 		 case CASE_XTERM_SAVE:
 			savemodes(&term);
 			parsestate = groundtable;
@@ -757,20 +653,101 @@ VTparse()
 
 finput()
 {
-	return(input());
+	return(doinput());
 }
 
 static int select_mask;
+static int write_mask;
+
+static char v_buffer[4096];
+static char *v_bufstr;
+static char *v_bufptr;
+static char *v_bufend;
+#define	ptymask()	(v_bufptr > v_bufstr ? pty_mask : 0)
+
+v_write(f, d, l)
+int f;
+char *d;
+int l;
+{
+	int r;
+	int c = l;
+
+	if (!v_bufstr) {
+		v_bufstr = v_buffer;
+		v_bufptr = v_buffer;
+		v_bufend = &v_buffer[4096];
+	}
+
+
+	if ((1 << f) != pty_mask)
+		return(write(f, d, l));
+
+	if (v_bufptr > v_bufstr) {
+		if (l) {
+			if (v_bufend > v_bufptr + l) {
+				bcopy(d, v_bufptr, l);
+				v_bufptr += l;
+			} else {
+				if (v_bufstr != v_buffer) {
+					bcopy(v_bufstr, v_buffer,
+					      v_bufptr - v_bufstr);
+					v_bufptr -= v_bufstr - v_buffer;
+					v_bufstr = v_buffer;
+				}
+				if (v_bufend > v_bufptr + l) {
+					bcopy(d, v_bufptr, l);
+					v_bufptr += l;
+				} else if (v_bufptr < v_bufend) {
+					fprintf(stderr, "Out of buffer space\n");
+					c = v_bufend - v_bufptr;
+					bcopy(d, v_bufptr, c);
+					v_bufptr = v_bufend;
+				} else {
+					fprintf(stderr, "Out of buffer space\n");
+					c = 0;
+				}
+			}
+		}
+		if (v_bufptr > v_bufstr) {
+			if ((r = write(f, v_bufstr, v_bufptr - v_bufstr)) <= 0)
+				return(r);
+			if ((v_bufstr += r) >= v_bufptr)
+				v_bufstr = v_bufptr = v_buffer;
+		}
+	} else if (l) {
+		if ((r = write(f, d, l)) < 0) {
+			if (errno == EWOULDBLOCK)
+				r = 0;
+			else if (errno == EINTR)
+				r = 0;
+			else
+				return(r);
+		}
+		if (l - r) {
+			if (l - r > v_bufend - v_buffer) {
+				fprintf(stderr, "Truncating to %d\n",
+						v_bufend - v_buffer);
+				l = (v_bufend - v_buffer) + r;
+			}
+			bcopy(d + r, v_buffer, l - r);
+			v_bufstr = v_buffer;
+			v_bufptr = v_buffer + (l - r);
+		}
+	}
+	return(c);
+}
 
 in_put()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register char *cp;
 	register int i;
+	static struct timeval trackTimeOut;
 
 	select_mask = pty_mask;	/* force initial read */
 	for( ; ; ) {
-		if(select_mask & pty_mask) {
+		if((select_mask & pty_mask) && (eventMode == NORMAL)) {
 			if(screen->logging)
 				FlushLog(screen);
 			if((bcnt = read(screen->respond, bptr = buffer,
@@ -782,18 +759,15 @@ in_put()
 				 "input: read returned unexpected error (%d)\n",
 					 errno);
 			} else if(bcnt == 0)
-				Panic("input: read returned zero\n");
+				Panic("input: read returned zero\n", 0);
 			else {
 				/* strip parity bit */
 				for(i = bcnt, cp = bptr ; i > 0 ; i--)
 					*cp++ &= CHAR;
-				if(screen->sb && screen->scrollinput &&
+				if(screen->scrollWindow && screen->scrollinput &&
 				 screen->topline < 0)
-					ScrollToBottom(screen->sb);
-				if(screen->icon_show && !screen->iconinput) {
-					screen->iconinput = TRUE;
-					IconBox(screen);
-				}
+					/* Scroll to bottom */
+					WindowScroll(screen, 0);
 				break;
 			}
 		}
@@ -810,26 +784,48 @@ in_put()
 			else
 				HideCursor();
 		}
-		if(QLength())
+		
+	if (waitingForTrackInfo) {
+			trackTimeOut.tv_sec = TRACKTIMESEC;
+			trackTimeOut.tv_usec = TRACKTIMEUSEC;
+			select_mask = pty_mask;
+			if ((i = select(max_plus1, &select_mask, (int *)NULL, (int *)NULL,
+			 &trackTimeOut)) < 0) {
+			 	if (errno != EINTR)
+					SysError(ERROR_SELECT);
+				continue;
+			} else if (i == 0) {
+				/* emacs just isn't replying, go on */
+				waitingForTrackInfo = 0;
+				Bell();
+				select_mask = Select_mask;
+			}
+		} else if (QLength(screen->display))
 			select_mask = X_mask;
 		else {
-			XFlush();
+			write_mask = ptymask();
+			XFlush(screen->display);
 			select_mask = Select_mask;
-			if((i = select(max_plus1, &select_mask, NULL, NULL,
-			 screen->timeout)) < 0){
+			if (eventMode != NORMAL)
+				select_mask = X_mask;
+			if(select(max_plus1, &select_mask, &write_mask, 
+				(int *)NULL, (struct timeval *) NULL) < 0){
 				if (errno != EINTR)
 					SysError(ERROR_SELECT);
 				continue;
-			} else if(i == 0) {
-				if(GetButtonState(screen->sb) & HILITED)
-					WindowScroll(screen,
-					 ButtonRegion(screen->sb));
-				screen->timeout->tv_usec = STEPTIME;
-				continue;
-			}
+			} 
 		}
-		if(select_mask & X_mask)
+		if (write_mask & ptymask())
+			v_write(screen->respond, 0, 0);	/* flush buffer */
+		if(select_mask & X_mask) {
+			if (bcnt <= 0) {
+				bcnt = 0;
+				bptr = buffer;
+			}
 			xevents();
+			if (bcnt > 0)
+				break;
+		}
 	}
 	bcnt--;
 	return(*bptr++);
@@ -840,7 +836,7 @@ in_put()
  * by charset.  worry about end of line conditions (wraparound if selected).
  */
 dotext(screen, flags, charset, buf, ptr)
-register Screen	*screen;
+register TScreen	*screen;
 unsigned	flags;
 char		charset;
 char	*buf;
@@ -852,22 +848,22 @@ char	*ptr;
 	register int	next_col;
 
 	switch (charset) {
-	case 'A':	/* United Kingdom set				*/
+	case 'A':	/* United Kingdom set			*/
 		for (s=buf; s<ptr; ++s)
 			if (*s == '#')
-				*s = '\036';	/* UK pound sign	*/
+				*s = '\036';	/* UK pound sign*/
 		break;
 
-	case 'B':	/* ASCII set					*/
+	case 'B':	/* ASCII set				*/
 		break;
 
-	case '0':	/* special graphics (line drawing)		*/
+	case '0':	/* special graphics (line drawing)	*/
 		for (s=buf; s<ptr; ++s)
 			if (*s>=0x5f && *s<=0x7e)
 				*s = *s == 0x5f ? 0x7f : *s - 0x5f;
 		break;
 
-	default:	/* any character sets we don't recognize	*/
+	default:	/* any character sets we don't recognize*/
 		return;
 	}
 
@@ -876,8 +872,7 @@ char	*ptr;
 	while (len > 0) {
 		n = screen->max_col-screen->cur_col+1;
 		if (n <= 1) {
-			if (screen->do_wrap && (flags&WRAPAROUND) &&
-			 !screen->instatus) {
+			if (screen->do_wrap && (flags&WRAPAROUND)) {
 				Index(screen, 1);
 				screen->cur_col = 0;
 				screen->do_wrap = 0;
@@ -905,19 +900,16 @@ char	*ptr;
  * the current cursor position.  update cursor position.
  */
 WriteText(screen, str, len, flags)
-register Screen	*screen;
+register TScreen	*screen;
 register char	*str;
 register int	len;
 unsigned	flags;
 {
-	register int pix, cx, cy;
+	register int cx, cy;
 	register unsigned fgs = flags;
-	Font	fnt;
+	GC	currentGC;
  
-   if(screen->instatus && screen->reversestatus)
-	fgs ^= INVERSE;
-   if(screen->cur_row - screen->topline <= screen->max_row ||
-     screen->instatus) {
+   if(screen->cur_row - screen->topline <= screen->max_row) {
 	/*
 	if(screen->cur_row == screen->cursor_row && screen->cur_col <=
 	 screen->cursor_col && screen->cursor_col <= screen->cur_col + len - 1)
@@ -925,30 +917,39 @@ unsigned	flags;
 	 */
 	if(screen->cursor_state)
 		HideCursor();
- 	fnt = ActiveIcon(screen) ? screen->fnt_icon
-	      : (fgs & BOLD) ? screen->fnt_bold : screen->fnt_norm;
+
+	/*
+	 *	make sure that the correct GC is current
+	 */
+
+	if (fgs & BOLD)
+		if (fgs & INVERSE)
+			currentGC = screen->reverseboldGC;
+		else	currentGC = screen->normalboldGC;
+	else  /* not bold */
+		if (fgs & INVERSE)
+			currentGC = screen->reverseGC;
+		else	currentGC = screen->normalGC;
+
 	if (fgs & INSERT)
 		InsertChar(screen, len);
       if (!(AddToRefresh(screen))) {
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 	cx = CursorX(screen, screen->cur_col);
-	cy = CursorY(screen, screen->cur_row);
-	if (screen->show || ActiveIcon(screen)) {
-	    if (fgs & INVERSE)
-		XText(VWindow(screen), cx, cy, str, len, fnt,
-		 pix = screen->background, screen->foreground);
-	    else
-	 	XText(VWindow(screen), cx, cy, str, len, fnt,
-		 pix = screen->foreground, screen->background);
-	    if((fgs & BOLD) && screen->enbolden)
-		XTextMask(VWindow(screen), cx + 1, cy, str, len, fnt, pix);
-	    if(fgs & UNDERLINE) {
-		cy += FontHeight(screen) - 2;
-		XLine(VWindow(screen), cx, cy, cx + len * FontWidth(screen),
-		 cy, 1, 1, pix, GXcopy, AllPlanes);
-	    }
-	}
+	cy = CursorY(screen, screen->cur_row)+screen->fnt_norm->max_bounds.ascent;
+ 	XDrawImageString(screen->display, TextWindow(screen), currentGC,
+			cx, cy, str, len);
+
+	if((fgs & BOLD) && screen->enbolden) 
+		if (currentGC == screen->normalGC || screen->reverseGC)
+			XDrawString(screen->display, TextWindow(screen),
+			      	currentGC,cx + 1, cy, str, len);
+
+	if(fgs & UNDERLINE) 
+		XDrawLine(screen->display, TextWindow(screen), currentGC,
+			cx, cy+1,
+			cx + len * FontWidth(screen), cy+1);
 	/*
 	 * the following statements compile data to compute the average 
 	 * number of characters written on each call to XText.  The data
@@ -969,7 +970,6 @@ modes(term, func)
 Terminal	*term;
 int		(*func)();
 {
-	register Screen	*screen	= &term->screen;
 	register int	i;
 
 	for (i=0; i<nparam; ++i) {
@@ -992,7 +992,7 @@ dpmodes(term, func)
 Terminal	*term;
 int		(*func)();
 {
-	register Screen	*screen	= &term->screen;
+	register TScreen	*screen	= &term->screen;
 	register int	i, j;
 	extern int bitset();
 
@@ -1008,14 +1008,17 @@ int		(*func)();
 				if((j = func == bitset ? 132 : 80) !=
 				 ((term->flags & IN132COLUMNS) ? 132 : 80) ||
 				 j != screen->max_col + 1) {
-					XChangeWindow (VWindow(screen),
-					 FontWidth(screen) * j + 2*screen->border
-					 + screen->scrollbar,
-					 FontHeight(screen) * (screen->max_row
-					 + 1) + screen->statusheight +
-					 Titlebar(screen) + 2 * screen->border);
-					XSync(FALSE);	/* synchronize */
-					if(QLength() > 0)
+					XResizeWindow(
+					    screen->display,
+					    TextWindow(screen),
+					    (unsigned) FontWidth(screen) * j
+					        + 2*screen->border
+						+ screen->scrollbar,
+					    (unsigned) FontHeight(screen)
+						* (screen->max_row + 1)
+						+ 2 * screen->border);
+					XSync(screen->display, FALSE);
+					if(QLength(screen->display) > 0)
 						xevents();
 				}
 				(*func)(&term->flags, IN132COLUMNS);
@@ -1050,12 +1053,15 @@ int		(*func)();
 			(*func)(&term->flags, AUTOREPEAT);
 			if ((term->flags ^ j) & AUTOREPEAT)
 				if(term->flags & AUTOREPEAT)
-					XAutoRepeatOn();
+					XAutoRepeatOn(screen->display);
 				else
-					XAutoRepeatOff();
+					XAutoRepeatOff(screen->display);
 			break;
 		case 9:			/* MIT bogus sequence		*/
-			(*func)(&screen->send_mouse_pos, 1);
+			if(func == bitset)
+				screen->send_mouse_pos = 1;
+			else
+				screen->send_mouse_pos = 0;
 			break;
 		case 38:		/* DECTEK			*/
 			if(func == bitset & !(screen->inhibit & I_TEK)) {
@@ -1071,16 +1077,6 @@ int		(*func)();
 			break;
 		case 41:		/* curses hack			*/
 			(*func)(&screen->curses, 1);
-			break;
-		case 42:		/* scrollbar			*/
-			if(func == bitset)
-				ScrollBarOn(screen, TRUE, FALSE);
-			else
-				ScrollBarOff(screen);
-			break;
-		case 43:		/* lines off top		*/
-			if(screen->sb)
-				SetSaveState(screen->sb, (func == bitset));
 			break;
 		case 44:		/* margin bell			*/
 			(*func)(&screen->marginbell, 1);
@@ -1102,18 +1098,17 @@ int		(*func)();
 			else
 				FromAlternate(screen);
 			break;
-		case 48:		/* reverse status line	*/
-			j = screen->reversestatus;
-			(*func)(&screen->reversestatus, 1);
-			if(j != screen->reversestatus)
-				ScrnRefresh(screen, screen->max_row + 1, 0, 1,
-				 screen->max_col + 1);
+		case 1000:		/* xtem bogus sequence		*/
+			if(func == bitset)
+				screen->send_mouse_pos = 2;
+			else
+				screen->send_mouse_pos = 0;
 			break;
-		case 49:		/* page mode		*/
-			j = screen->pagemode;
-			(*func)(&screen->pagemode, 1);
-			if(!j && screen->pagemode)
-				screen->pagecnt = 0;
+		case 1001:		/* xtem sequence w/hilite tracking */
+			if(func == bitset)
+				screen->send_mouse_pos = 3;
+			else
+				screen->send_mouse_pos = 0;
 			break;
 		}
 	}
@@ -1125,7 +1120,7 @@ int		(*func)();
 savemodes(term)
 Terminal *term;
 {
-	register Screen	*screen	= &term->screen;
+	register TScreen	*screen	= &term->screen;
 	register int i;
 
 	for (i = 0; i < nparam; i++) {
@@ -1155,7 +1150,7 @@ Terminal *term;
 		case 8:			/* DECARM			*/
 			screen->save_modes[6] = term->flags & AUTOREPEAT;
 			break;
-		case 9:			/* MIT bogus sequence		*/
+		case 9:			/* mouse bogus sequence */
 			screen->save_modes[7] = screen->send_mouse_pos;
 			break;
 		case 40:		/* 132 column mode		*/
@@ -1163,14 +1158,6 @@ Terminal *term;
 			break;
 		case 41:		/* curses hack			*/
 			screen->save_modes[9] = screen->curses;
-			break;
-		case 42:		/* scrollbar			*/
-			screen->save_modes[10] = screen->scrollbar;
-			break;
-		case 43:		/* lines off top		*/
-			if(screen->sb)
-				screen->save_modes[11] =
-				 GetSaveState(screen->sb);
 			break;
 		case 44:		/* margin bell			*/
 			screen->save_modes[12] = screen->marginbell;
@@ -1184,12 +1171,9 @@ Terminal *term;
 		case 47:		/* alternate buffer		*/
 			screen->save_modes[15] = screen->alternate;
 			break;
-		case 48:		/* reverse status line		*/
-			screen->save_modes[16] = screen->reversestatus;
-			break;
-		case 49:		/* page mode			*/
-			screen->save_modes[17] = screen->pagemode;
-			screen->save_modes[18] = screen->pagecnt;
+		case 1000:		/* mouse bogus sequence		*/
+		case 1001:
+			screen->save_modes[7] = screen->send_mouse_pos;
 			break;
 		}
 	}
@@ -1201,7 +1185,7 @@ Terminal *term;
 restoremodes(term)
 Terminal *term;
 {
-	register Screen	*screen	= &term->screen;
+	register TScreen	*screen	= &term->screen;
 	register int i, j;
 
 	for (i = 0; i < nparam; i++) {
@@ -1218,14 +1202,17 @@ Terminal *term;
 				if((j = (screen->save_modes[1] & IN132COLUMNS)
 				 ? 132 : 80) != ((term->flags & IN132COLUMNS)
 				 ? 132 : 80) || j != screen->max_col + 1) {
-					XChangeWindow (VWindow(screen),
-					 FontWidth(screen) * j + 2*screen->border
-					 + screen->scrollbar,
-					 FontHeight(screen) * (screen->max_row
-					 + 1) + screen->statusheight +
-					 Titlebar(screen) + 2 * screen->border);
-					XSync(FALSE);	/* synchronize */
-					if(QLength() > 0)
+					XResizeWindow(
+					    screen->display,
+					    TextWindow(screen),
+					    (unsigned) FontWidth(screen) * j 
+						+ 2*screen->border
+						+ screen->scrollbar,
+					    (unsigned) FontHeight(screen)
+						* (screen->max_row + 1)
+						+ 2*screen->border);
+					XSync(screen->display, FALSE);	/* synchronize */
+					if(QLength(screen->display) > 0)
 						xevents();
 				}
 				term->flags &= ~IN132COLUMNS;
@@ -1268,9 +1255,9 @@ Terminal *term;
 				term->flags |= screen->save_modes[6] &
 				 REVERSE_VIDEO;
 				if(term->flags & AUTOREPEAT)
-					XAutoRepeatOn();
+					XAutoRepeatOn(screen->display);
 				else
-					XAutoRepeatOff();
+					XAutoRepeatOff(screen->display);
 			}
 			break;
 		case 9:			/* MIT bogus sequence		*/
@@ -1281,16 +1268,6 @@ Terminal *term;
 			break;
 		case 41:		/* curses hack			*/
 			screen->curses = screen->save_modes[9];
-			break;
-		case 42:		/* scrollbar			*/
-			if(screen->save_modes[10])
-				ScrollBarOn(screen, TRUE, FALSE);
-			else
-				ScrollBarOff(screen);
-			break;
-		case 43:		/* lines off top		*/
-			if(screen->sb)
-				SetSaveState(screen->sb,screen->save_modes[11]);
 			break;
 		case 44:		/* margin bell			*/
 			if(!(screen->marginbell = screen->save_modes[12]))
@@ -1312,17 +1289,9 @@ Terminal *term;
 			else
 				FromAlternate(screen);
 			break;
-		case 48:		/* reverse status line		*/
-			if(screen->save_modes[16] != screen->reversestatus) {
-				screen->reversestatus = 
-				 screen->save_modes[16];
-				ScrnRefresh(screen, screen->max_row + 1, 0, 1,
-				 screen->max_col + 1);
-			}
-			break;
-		case 49:		/* page mode			*/
-			screen->pagemode = screen->save_modes[17];
-			screen->pagecnt = screen->save_modes[18];
+		case 1000:		/* mouse bogus sequence		*/
+		case 1001:
+			screen->send_mouse_pos = screen->save_modes[7];
 			break;
 		}
 	}
@@ -1362,33 +1331,37 @@ register ANSI	*ap;
 	c = ap->a_type;
 	if (c==ESC || c==DCS || c==CSI || c==OSC || c==PM || c==APC) {
 		if (ap->a_pintro != 0)
-			unparseputc(ap->a_pintro, fd);
+			unparseputc((char) ap->a_pintro, fd);
 		for (i=0; i<ap->a_nparam; ++i) {
 			if (i != 0)
 				unparseputc(';', fd);
-			unparseputn(ap->a_param[i], fd);
+			unparseputn((unsigned int) ap->a_param[i], fd);
 		}
 		inters = ap->a_inters;
-		for (i=3; i>=0; --i)
+		for (i=3; i>=0; --i) {
 			c = (inters >> (8*i)) & 0xff;
 			if (c != 0)
 				unparseputc(c, fd);
-		unparseputc(ap->a_final, fd);
+		}
+		unparseputc((char) ap->a_final, fd);
 	}
 }
 
 unparseputn(n, fd)
 unsigned int	n;
+int fd;
 {
 	unsigned int	q;
 
 	q = n/10;
 	if (q != 0)
 		unparseputn(q, fd);
-	unparseputc((n%10) + '0', fd);
+	unparseputc((char) ('0' + (n%10)), fd);
 }
 
 unparseputc(c, fd)
+char c;
+int fd;
 {
 	char	buf[2];
 	register i = 1;
@@ -1402,12 +1375,8 @@ unparseputc(c, fd)
 		Panic("unparseputc: error writing character\n", 0);
 }
 
-static int alt_pagecnt;
-static int alt_pagemode;
-static int alt_saving;
-
 ToAlternate(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	extern ScrnBuf Allocate();
 
@@ -1416,33 +1385,21 @@ register Screen *screen;
 	if(!screen->altbuf)
 		screen->altbuf = Allocate(screen->max_row + 1, screen->max_col
 		 + 1);
-	if(screen->sb) {
-		alt_saving = GetSaveState(screen->sb);
-		SetSaveState(screen->sb, FALSE);
-	} else
-		alt_saving = TRUE;
-	if(alt_pagemode = screen->pagemode)
-		alt_pagecnt = screen->pagecnt;
-	screen->pagemode = FALSE;
 	SwitchBufs(screen);
 	screen->alternate = TRUE;
 }
 
 FromAlternate(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	if(!screen->alternate)
 		return;
 	screen->alternate = FALSE;
-	if(screen->sb)
-		SetSaveState(screen->sb, alt_saving);
-	if(screen->pagemode = alt_pagemode)
-		screen->pagecnt = alt_pagecnt;
 	SwitchBufs(screen);
 }
 
 SwitchBufs(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	register int rows, top;
 	char *save [2 * MAX_ROWS];
@@ -1458,20 +1415,25 @@ register Screen *screen;
 	if((top = -screen->topline) <= screen->max_row) {
 		if(screen->scroll_amt)
 			FlushScroll(screen);
-		if(top == 0 && !screen->statusline)
-			XClear(VWindow(screen));
+		if(top == 0)
+			XClearWindow(screen->display, TextWindow(screen));
 		else
-			XTileSet(VWindow(screen), screen->border, top *
-			 FontHeight(screen) + screen->border + Titlebar(screen),
-			 Width(screen), (screen->max_row - top + 1) *
-			 FontHeight(screen), screen->bgndtile);
+			XClearArea(
+			    screen->display,
+			    TextWindow(screen),
+			    (int) screen->border + screen->scrollbar,
+			    (int) top * FontHeight(screen) + screen->border,
+			    (unsigned) Width(screen),
+			    (unsigned) (screen->max_row - top + 1)
+				* FontHeight(screen),
+			    FALSE);
 	}
 	ScrnRefresh(screen, 0, 0, rows, screen->max_col + 1);
 }
 
 VTRun()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register int i;
 	
 	if(!VWindow(screen) && !VTInit()) {
@@ -1483,22 +1445,12 @@ VTRun()
 	}
 	screen->cursor_state = OFF;
 	screen->cursor_set = ON;
-	if(screen->icon_show) {
-		if(screen->icon_show < 0) {
-			screen->icon_show = TRUE;
-			screen->mappedVwin = &screen->iconVwin;
-			XMapWindow(screen->iconVwin.window);
-		}
-	} else if(!screen->show) {
-		screen->show = TRUE;
-		screen->mappedVwin = &screen->fullVwin;
-		XMapWindow(VWindow(screen));
-	} else
-		XRaiseWindow(VWindow(screen));
+	XMapWindow(screen->display, VWindow(screen));
 	if(screen->select)
 		VTSelect();
 	if (L_flag > 0) {
-		XWarpMouse (VWindow(screen),
+		XWarpPointer (screen->display, None, VWindow(screen),
+			    0, 0, 0, 0,
 			    FullWidth(screen) >> 1, FullHeight(screen) >>1);
 		L_flag = -1;
 	}
@@ -1519,105 +1471,316 @@ VTRun()
 	VTUnselect();
 }
 
+/*ARGSUSED*/
+XtEventReturnCode VTExpose(event, eventdata)
+register XExposeEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+
+#ifdef DEBUG
+	if(debug)
+		fputs("Expose\n", stderr);
+#endif DEBUG
+	if (event->type == Expose) {
+		HandleExposure (screen, (XExposeEvent *)event);
+		return(XteventHandled);
+	}
+	if (screen->incopy <= 0) {
+		screen->incopy = 1;
+		if (screen->scrolls > 0)
+			screen->scrolls--;
+	}
+	if (event->type == GraphicsExpose)
+	  if (HandleExposure (screen, (XExposeEvent *)event))
+		screen->cursor_state = OFF;
+	if ((event->type == NoExpose) || event->count == 0) {
+		if (screen->incopy <= 0 && screen->scrolls > 0)
+			screen->scrolls--;
+		if (screen->scrolls)
+			screen->incopy = -1;
+		else
+			screen->incopy = 0;
+	}
+	return (XteventHandled);
+}
+
+
+
+/*ARGSUSED*/
+XtEventReturnCode VTConfigure(event, eventdata)
+XConfigureEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+
+	if (event->type ==ConfigureNotify ) {
+		ScreenResize (screen, event->width, event->height, &term.flags);
+		return(XteventHandled);
+	}	
+	if (event->type != UnmapNotify) return(XteventNotHandled);
+#ifdef DEBUG
+	if(debug)
+		fputs("UnmapWindow VT\n", stderr);
+#endif DEBUG
+	if(screen->Tshow) {
+		screen->Tshow = FALSE;
+		XUnmapWindow(screen->display,  screen->fullTwin.window );
+		SyncUnmap( screen->fullTwin.window, TWINDOWEVENTS );
+	}
+	reselectwindow(screen);
+	return (XteventHandled);
+}
+
+
+
 VTInit()
 {
-	int width, height;
-	FontInfo *fInfo, *ifInfo;
-	register Screen *screen = &term.screen;
-	register Vertex *vp;
+	unsigned int width, height;
+	register TScreen *screen = &term.screen;
 	register int i, j;
-	char *def = "=80x24+1+1";
-	char iconname[128];
+	XPoint	*vp;
 	static short failed;
-	Color cdef;
-	OpaqueFrame twindow;
-	WindowInfo wininfo;
-	int x, y;
-	Window win;
+	int x, y, root_x, root_y, xpos, ypos, pr;
+	Window win, root;
 	extern char *malloc();
+	XGCValues		xgcv;
+	GCMask			mask;
+	XSizeHints		sizehints;
+	XWMHints		wmhints;
+	extern int		VTgcFontMask;
 
 	if(failed)
 		return(FALSE);
 	
-	screen->mappedVwin = &screen->fullVwin;
-
 	TabReset (term.tabs);
 
-	screen->fnt_norm = screen->fnt_bold = screen->fnt_icon = NULL;
-	   
-	if ((fInfo = XOpenFont(f_n)) == NULL) {
-		fprintf(stderr, "%s: Could not open font %s!\n",
-			xterm_name, f_n);
-		failed = TRUE;
-		return(FALSE);
-	}
-	screen->fnt_norm = fInfo->id;
-	if (!f_b || !(screen->fnt_bold = XGetFont(f_b))) {
-		screen->fnt_bold = screen->fnt_norm;
-		screen->enbolden = TRUE;
-	}
-	screen->fullVwin.f_width = fInfo->width;
-	screen->fullVwin.f_height = fInfo->height;
+	screen->fnt_norm = screen->fnt_bold = NULL;
 	
-	if (screen->active_icon) {
-	    if (!screen->fnt_icon) {
-		if ((ifInfo = XOpenFont(f_i)) == NULL) {
-		    fprintf( stderr, "%s: Could not open font %s!\n",
-			     xterm_name, f_i);
-		    failed = TRUE;
-		    return( FALSE );
-		}
-		screen->fnt_icon = ifInfo->id;
-	    } else
-	    	XQueryFont( screen->fnt_icon, &ifInfo );
+	/* do the XFont calls */
 
-	    screen->iconVwin.f_width = ifInfo->width;
-	    screen->iconVwin.f_height = ifInfo->height;
+	if ((screen->fnt_norm = XLoadQueryFont(screen->display, f_n)) == NULL) {
+	    fprintf(stderr, "%s: Could not open font %s; using server default\n", 
+		    xterm_name, f_n);
+	    screen->fnt_norm =
+		  XQueryFont(screen->display,
+			     DefaultGC(screen->display,
+				       DefaultScreen(screen->display)
+				       )->gid
+			     );
+	    VTgcFontMask = 0;
 	}
 
-	screen->curs = make_xterm(screen->mousecolor, screen->background,
-	 GXcopy);
+	if (!f_b || !VTgcFontMask
+	    || !(screen->fnt_bold = XLoadQueryFont(screen->display, f_b))) {
+		screen->fnt_bold = screen->fnt_norm;
+		screen->enbolden = TRUE;  /*no bold font */
+	}
 
-	twindow.bdrwidth = screen->borderwidth;
-	twindow.border = screen->graybordertile;
-	twindow.background = screen->bgndtile;
-	if((screen->minrows = (MINSCROLLBARHEIGHT - 2 * screen->border +
-	 fInfo->height - 1) / fInfo->height) < 0)
-		screen->minrows = 0;
+	/* find the max width and higth of the font */
+
+	screen->fullVwin.f_width = screen->fnt_norm->max_bounds.width;
+	screen->fullVwin.f_height = screen->fnt_norm->max_bounds.ascent +
+				    screen->fnt_norm->max_bounds.descent;
+
+	/* making cursor -- won't work yet */
+
+	if (XStrCmp(curs_shape, "arrow") == 0) {
+		screen->curs = make_arrow(screen->mousecolor,
+			screen->background);
+	} else {
+		screen->curs = make_xterm(screen->mousecolor,
+			screen->background);
+	}
 
 	i = 2 * screen->border + screen->scrollbar;
-	j = 2 * screen->border + Titlebar(screen);
-	if(screen->statusline)
-		j += (screen->statusheight = fInfo->height + 2);
+	j = 2 * screen->border;
 
-	if((screen->fullVwin.window = XCreateTerm ("Terminal Emulator", xterm_name,
-	 geo_metry, def, &twindow, 12, screen->minrows, i, j, &width, &height,
-	 fInfo, fInfo->width, fInfo->height)) == NULL) {
+
+	/* set defaults */
+	xpos = 1; ypos = 1; width = 80; height = 24;
+
+	pr = XParseGeometry(geo_metry, &xpos, &ypos, &width, &height);
+
+	screen->max_col = width;
+	screen->max_row = height;
+	width = width * screen->fullVwin.f_width + i;
+	height = height * screen->fullVwin.f_height + j;
+
+	if ((pr & XValue) && (XNegative&pr)) 
+	  xpos += DisplayWidth(screen->display, DefaultScreen(screen->display)) 
+			- width;
+	if ((pr & YValue) && (YNegative&pr))
+	  ypos += DisplayHeight(screen->display, DefaultScreen(screen->display)) 
+			- height;
+
+	/* set up size hints for window manager */
+	sizehints.min_width = 2 * screen->border + screen->scrollbar;
+	sizehints.min_height = 2 * screen->border;
+	sizehints.width_inc = FontWidth(screen);
+	sizehints.height_inc = FontHeight(screen);
+	sizehints.flags = PMinSize|PResizeInc;
+	sizehints.x = xpos;
+	sizehints.y = ypos;
+	if ((XValue&pr) && (YValue&pr)) 
+	  sizehints.flags |= USPosition;
+	else sizehints.flags |= PPosition;
+	sizehints.width = width;
+	sizehints.height = height;
+	if ((WidthValue&pr) && (HeightValue&pr)) 
+	  sizehints.flags |= USSize;
+	else sizehints.flags |= PSize;
+
+        screen->fullVwin.fullwidth = width;
+        screen->fullVwin.fullheight = height;
+        screen->fullVwin.width = width - i;
+        screen->fullVwin.height = height - j;
+
+	
+	if((screen->fullVwin.window = XtCreateWindow(
+	    screen->display,
+	    DefaultRootWindow(screen->display), 
+	    xpos, ypos,
+	    width, height,
+	    screen->borderwidth, screen->bordercolor,
+	    screen->background, NorthWestGravity)) == NULL) {
 		fprintf(stderr, "%s: Can't create VT window\n");
-		XCloseFont(fInfo);
 		return(FALSE);
 	}
-	XSelectInput(VWindow(screen), WINDOWEVENTS);
+	/* crock to make configure notifies get through */
+	XtMakeMaster(screen->display, screen->fullVwin.window);
+
+	/* set size hints */
+	XSetNormalHints(screen->display, VWindow(screen), &sizehints);
+	/* do the GC stuff */
+
+	mask = VTgcFontMask | GCForeground | GCBackground 
+	  	| GCGraphicsExposures | GCFunction;
+
+	xgcv.graphics_exposures = TRUE;	/* default */
+	xgcv.function = GXcopy;
+	xgcv.font = screen->fnt_norm->fid;
+	xgcv.foreground = screen->foreground;
+	xgcv.background = screen->background;
+
+	screen->normalGC = XtGetGC(
+	    screen->display,
+	    (XContext)NULL, 
+	    DefaultRootWindow(screen->display),
+	    mask,
+	    &xgcv);
+
+	if (screen->enbolden) { /* there is no bold font */
+		xgcv.font = screen->fnt_norm->fid;
+		screen->normalboldGC = screen->normalGC;
+	} else {
+		xgcv.font = screen->fnt_bold->fid;
+		screen->normalboldGC = XtGetGC(
+		    screen->display,
+		    (XContext)NULL,
+		    DefaultRootWindow(screen->display),
+		    mask,
+		    &xgcv);
+	}
+
+	xgcv.font = screen->fnt_norm->fid;
+	xgcv.foreground = screen->background;
+	xgcv.background = screen->foreground;
+
+	screen->reverseGC = XtGetGC(
+	    screen->display,
+	    (XContext)NULL,
+	    DefaultRootWindow(screen->display),
+	    mask,
+	    &xgcv);
+
+	if (screen->enbolden) /* there is no bold font */
+		xgcv.font = screen->fnt_norm->fid;
+	else
+		xgcv.font = screen->fnt_bold->fid;
+
+	screen->reverseboldGC = XtGetGC(
+	    screen->display,
+	    (XContext)NULL,
+	    DefaultRootWindow(screen->display),
+	    mask,
+	    &xgcv);
+
+	/* we also need a set of caret (called a cursor here) gc's */
+
+	xgcv.font = screen->fnt_norm->fid;
+
+	if (screen->cursorcolor != screen->foreground) {
+		xgcv.foreground = screen->cursorcolor;
+		xgcv.background = screen->foreground;
+	} else {
+		xgcv.foreground = screen->foreground;
+		xgcv.background = screen->background;
+	}
+
+	screen->cursorGC = XtGetGC(
+	    screen->display,
+	    (XContext)NULL,
+	    DefaultRootWindow(screen->display),
+	    mask,
+	    &xgcv);
+
+	if (screen->cursorcolor != screen->background) {
+		xgcv.foreground = screen->cursorcolor;
+		xgcv.background = screen->background;
+	} else {
+		xgcv.foreground = screen->background;
+		xgcv.background = screen->foreground;
+	}
+
+	screen->reversecursorGC = XtGetGC(
+	    screen->display,
+	    (XContext)NULL,
+	    DefaultRootWindow(screen->display),
+	    mask,
+	    &xgcv);
+
+
+	/* setup toolkit stuff */
+
+	XtSetNameAndClass(screen->display, screen->fullVwin.window, 
+	  nameList, classList);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) HandleEnterWindow, EnterWindowMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) HandleLeaveWindow, LeaveWindowMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) HandleFocusChange, FocusChangeMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen),
+	 (XtEventHandler) VTButtonPressed, ButtonPressMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen),
+	 (XtEventHandler) VTButtonReleased, ButtonReleaseMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) VTMouseMoved, ButtonMotionMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) VTExpose, ExposureMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) VTConfigure, StructureNotifyMask, (caddr_t)NULL);
+	XtSetEventHandler(screen->display, VWindow(screen), 
+	 (XtEventHandler) HandleKeyPressed, KeyPressMask, (caddr_t)NULL);
+
 	/*
 	 * XCreateTerm flushes all events, which might include an EnterWindow
 	 * or LeaveWindow.  So if the cursor is not where it is supposed to
 	 * be, we set select to the appropriate thing.
 	 */
-	if(TWindow(screen) && XQueryMouse(RootWindow, &x, &y, &win)) {
-		if(screen->timer) {
-			Timer(0L);
-			screen->timer = 0;
-		}
+	if(TWindow(screen) && XQueryPointer(
+	    screen->display,
+	    DefaultRootWindow(screen->display), 
+	    &root, &win,
+	    &root_x, &root_y,
+	    &x, &y,
+	    &mask)) {
 		if(win == TWindow(screen))
 			screen->select |= INWINDOW;
 		else
 			screen->select &= ~INWINDOW;
 	}
-
-	screen->fullVwin.fullwidth = twindow.width;
-	screen->fullVwin.fullheight = twindow.height;
-	screen->fullVwin.width = twindow.width - i;
-	screen->fullVwin.height = twindow.height - j;
 
 	/* Reset variables used by ANSI emulation. */
 
@@ -1629,84 +1792,66 @@ VTInit()
 	screen->curgr = 2;			/* G2 => GR.		*/
 	screen->curss = 0;			/* No single shift.	*/
 
-	if(screen->iconTwin.window) {
-		XQueryWindow(screen->iconTwin.window, &wininfo);
-		x = wininfo.x;
-		y = wininfo.y;
-	} else {
-		x = twindow.x + (twindow.width - screen->iconVwin.width) / 2;
-		y = twindow.y + (twindow.height - screen->iconVwin.height) / 2;
-		IconGeometry(screen, &x, &y);
-	}
-	screen->iconVwin.window =
-		XCreateWindow( RootWindow, x, y, 1, 1, screen->borderwidth,
-			       screen->bordertile, screen->bgndtile );
+	wmhints.flags = StateHint | InputHint;
+	wmhints.input = True;
+	if (iconstartup) wmhints.initial_state = IconicState;
+	else wmhints.initial_state = NormalState;
+        if(icon_geom) {
+	   wmhints.icon_x = 1; wmhints.icon_y = 1; width = 1; height = 1;
+	   pr = XParseGeometry(
+	       icon_geom,
+	       &wmhints.icon_x, &wmhints.icon_y, 
+	       &width, &height);
+           if((pr & XValue) && (pr & XNegative))
+              wmhints.icon_x += 
+		 DisplayWidth(screen->display,DefaultScreen(screen->display)) 
+		  - width - 2 * screen->borderwidth;
+           if((pr & YValue) && (pr & YNegative))
+              wmhints.icon_y += 
+	         DisplayHeight(screen->display,DefaultScreen(screen->display))
+		  - height - 2 * screen->borderwidth;
+	   if ((XValue&pr) && (YValue&pr)) 
+	    wmhints.flags |= IconPositionHint;
+        }
+	XSetWMHints(screen->display, VWindow(screen), &wmhints);
 
-	XSetIconWindow( screen->fullVwin.window, screen->iconVwin.window );
+	XDefineCursor(screen->display, VWindow(screen), screen->curs );
+	XStoreName (screen->display, VWindow(screen), screen->titlename);
+	XChangeProperty(
+	    screen->display, VWindow(screen),
+	    XA_WM_ICON_NAME, XA_STRING,
+	    8, PropModeReplace,
+	    (unsigned char *)screen->iconname, screen->iconnamelen);
 
-	XDefineCursor( screen->iconVwin.window, screen->arrow );
-	XSelectInput( screen->iconVwin.window,
-		      screen->active_icon 
-		        ? ((term.flags & ICONINPUT)
-			  ? ICONWINDOWEVENTS | ICONINPUTEVENTS
-			  : ICONWINDOWEVENTS)
-			: TICONWINDOWEVENTS );
-
-	XDefineCursor( VWindow(screen), screen->curs );
-	XStoreName (VWindow(screen), screen->winname);
-	strcpy(iconname, screen->winname);
-	strcat(iconname, " (icon)");
-	XStoreName (screen->iconVwin.window, iconname);
-	XSetResizeHint (VWindow(screen), 2 * screen->border + screen->scrollbar,
-	 2 * screen->border + Titlebar(screen) + screen->statusheight,
-	 fInfo->width, fInfo->height);
-
-	screen->cur_col = screen->cur_row = 0;
-	screen->max_col = Width(screen)  / fInfo->width - 1;
+        screen->cur_col = screen->cur_row = 0;
+	screen->max_col = Width(screen)  / screen->fullVwin.f_width - 1;
 	screen->top_marg = 0;
-	screen->bot_marg = screen->max_row = Height(screen) / fInfo->height - 1;
+	screen->bot_marg = screen->max_row = Height(screen) /
+				screen->fullVwin.f_height - 1;
 
 	screen->sc.row = screen->sc.col = screen->sc.flags = NULL;
 
-	SetIconSize( screen );		/* requires max_col, max_row */
-
-	/* allocate memory for screen buffer (including one for status line */
-	screen->buf = screen->allbuf = (ScrnBuf) Allocate (screen->max_row + 2,
+	/* allocate memory for screen buffer */
+	screen->buf = screen->allbuf = (ScrnBuf) Allocate (screen->max_row + 1,
 					  screen->max_col +1);
 
 	screen->do_wrap = NULL;
 	screen->scrolls = screen->incopy = 0;
-	free((char *)fInfo);
+/*	free((char *)fInfo);	*/
 	vp = &VTbox[1];
 	(vp++)->x = FontWidth(screen) - 1;
 	(vp++)->y = FontHeight(screen) - 1;
 	(vp++)->x = -(FontWidth(screen) - 1);
 	vp->y = -(FontHeight(screen) - 1);
 	screen->box = VTbox;
-	status_box[0].x = screen->border - 1;
+
 	screen->savelines = save_lines;
+	screen->savedlines = 0;
 	if(screen->scrollbar) {
 		screen->scrollbar = 0;
-		ScrollBarOn(screen, TRUE, TRUE);
-		screen->sb->action = NONE;
+		ScrollBarOn(screen, TRUE);
 	}
-	screen->nmarginbell = n_marginbell;
-	if(Titlebar(screen))
-		VTTitleShow(TRUE);
 	return(TRUE);
-}
-
-VTExpose(rep)
-register XExposeWindowEvent *rep;
-{
-	register Screen *screen = &term.screen;
-
-	if (rep && ScreenResize (screen, rep->width, rep->height, &term.flags)
-	 == -1)
-		return;
-	XClear (VWindow(screen));
-	ScrnRefresh(screen, 0, 0, screen->max_row + 1 + screen->statusline,
-	 screen->max_col + 1);
 }
 
 /*
@@ -1714,63 +1859,69 @@ register XExposeWindowEvent *rep;
  */
 ShowCursor()
 {
-	register Screen *screen = &term.screen;
-	register int fg;
-	register int bg;
-	register int x, y, flags;
-	register Font fnt;
+	register TScreen *screen = &term.screen;
+	register int x, y, flags, y1, x1;
 	char c;
+	GC	currentGC;
 
-	if (screen->icon_show && !screen->active_icon) return;
+	if (eventMode != NORMAL) return;
 
-	if(!screen->instatus && screen->cur_row - screen->topline >
-	 screen->max_row)
+	if (screen->cur_row - screen->topline > screen->max_row)
 		return;
 	c = screen->buf[y = 2 * (screen->cursor_row = screen->cur_row)]
 	 [x = screen->cursor_col = screen->cur_col];
 	flags = screen->buf[y + 1][x];
 	if (c == 0)
 		c = ' ';
-	if(screen->instatus)
-		flags ^= INVERSE;
+
 	if(screen->select) {
-		if(flags & INVERSE) {
-			if(screen->cursorcolor != screen->foreground) {
-				fg = screen->foreground;
-				bg = screen->cursorcolor;
+
+		if(flags & INVERSE) { /* is reverse video */
+			if (flags & BOLD) {
+				currentGC = screen->normalboldGC;
 			} else {
-				fg = screen->background;
-				bg = screen->foreground;
+				currentGC = screen->normalGC;
 			}
-		} else {
-			fg = screen->background;
-			bg = screen->cursorcolor;
+
+		} else { /* normal video */
+			if (flags & BOLD) {
+				currentGC = screen->reverseboldGC;
+			} else {
+				currentGC = screen->reverseGC;
+			}
 		}
+	} else { /* not selected */
+		if(flags & INVERSE) { /* is reverse video */
+			currentGC = screen->reverseGC;
+		} else { /* normal video */
+			currentGC = screen->normalGC;
+		}
+	    
+	}
+
+
+	x = CursorX (screen, screen->cur_col);
+	y = CursorY(screen, screen->cur_row) + 
+	  screen->fnt_norm->max_bounds.ascent;
+	XDrawImageString(screen->display, TextWindow(screen), currentGC,
+		x, y, &c, 1);
+
+	if((flags & BOLD) && screen->enbolden) /* no bold font */
+		XDrawString(screen->display, TextWindow(screen), currentGC,
+			x + 1, y, &c, 1);
+	if(flags & UNDERLINE) 
+		XDrawLine(screen->display, TextWindow(screen), currentGC,
+			x, y+1, x + FontWidth(screen), y+1);
+	if(screen->select) {
+ 	       y1 = y - screen->fnt_norm->max_bounds.ascent;
+	       x1 = x + screen->fnt_norm->max_bounds.lbearing;
+               XDrawLine(screen->display, TextWindow(screen), currentGC,
+		         x1, y1, x1, y1 + FontHeight(screen)-1);
 	} else {
-		if(flags & INVERSE) {
-			fg = screen->background;
-			bg = screen->foreground;
-		} else {
-			fg = screen->foreground;
-			bg = screen->background;
-		}
-	}
-	fnt = ActiveIcon(screen) ? screen->fnt_icon
-	      : (flags & BOLD) ? screen->fnt_bold : screen->fnt_norm;
-	XText(VWindow(screen), x = CursorX (screen, screen->cur_col),
-	 y = CursorY(screen, screen->cur_row), &c, 1, fnt, fg, bg);
-	if((flags & BOLD) && screen->enbolden)
-		XTextMask(VWindow(screen), x + 1, y, &c, 1, fnt, fg);
-	if(flags & UNDERLINE) {
-		bg = y + FontHeight(screen) - 2;
-		XLine(VWindow(screen), x, bg, x + FontWidth(screen), bg,
-		 1, 1, fg, GXcopy, AllPlanes);
-	}
-	if(!screen->select && !ActiveIcon(screen)) {
-		screen->box->x = x;
-		screen->box->y = y;
-		XDraw(VWindow(screen), screen->box, NBOX, 1, 1, fg, GXcopy,
-		 AllPlanes);
+		screen->box->x = x + screen->fnt_norm->max_bounds.lbearing;
+		screen->box->y = y - screen->fnt_norm->max_bounds.ascent;
+		XDrawLines(screen->display, TextWindow(screen), currentGC,
+			screen->box, NBOX, CoordModePrevious);
 	}
 	screen->cursor_state = ON;
 }
@@ -1780,70 +1931,66 @@ ShowCursor()
  */
 HideCursor()
 {
-	register Screen *screen = &term.screen;
-	register int fg;
-	register int bg;
-	register int x, y, flags, instatus;
-	register Font fnt;
+	register TScreen *screen = &term.screen;
+	GC	currentGC;
+	register int x, y, flags;
 	char c;
 
-	if (screen->icon_show && !screen->active_icon) return;
-
-	if(!(instatus = screen->cursor_row > screen->max_row) &&
-	 screen->cursor_row - screen->topline > screen->max_row)
+	if(screen->cursor_row - screen->topline > screen->max_row)
 		return;
 	c = screen->buf[y = 2 * screen->cursor_row][x = screen->cursor_col];
 	flags = screen->buf[y + 1][x];
-	if(instatus)
-		flags ^= INVERSE;
+
 	if(flags & INVERSE) {
-		fg = screen->background;
-		bg = screen->foreground;
+		if(flags & BOLD) {
+			currentGC = screen->reverseboldGC;
+		} else {
+			currentGC = screen->reverseGC;
+		}
 	} else {
-		fg = screen->foreground;
-		bg = screen->background;
+		if(flags & BOLD) {
+			currentGC = screen->normalboldGC;
+		} else {
+			currentGC = screen->normalGC;
+		}
 	}
+
 	if (c == 0)
 		c = ' ';
-	y = (instatus ? (screen->cursor_row * FontHeight(screen) + 1) :
-	 ((screen->cursor_row - screen->topline) * FontHeight(screen))) +
-	 Titlebar(screen) + screen->border;
-	fnt = ActiveIcon(screen) ? screen->fnt_icon
-	      : (flags & BOLD) ? screen->fnt_bold : screen->fnt_norm;
-	XText(VWindow(screen), x = CursorX (screen, screen->cursor_col),
-	 y, &c, 1, fnt, fg, bg);
+	x = CursorX (screen, screen->cursor_col);
+	y = (((screen->cursor_row - screen->topline) * FontHeight(screen))) +
+	 screen->border;
+	y = y+screen->fnt_norm->max_bounds.ascent;
+	XDrawImageString(screen->display, TextWindow(screen), currentGC,
+		x, y, &c, 1);
 	if((flags & BOLD) && screen->enbolden)
-		XTextMask(VWindow(screen), x + 1, y, &c, 1, fnt, fg);
-	if(flags & UNDERLINE) {
-		y += FontHeight(screen) - 2;
-		XLine(VWindow(screen), x, y, x + FontWidth(screen), y,
-		 1, 1, fg, GXcopy, AllPlanes);
-	}
+		XDrawString(screen->display, TextWindow(screen), currentGC,
+			x + 1, y, &c, 1);
+	if(flags & UNDERLINE) 
+		XDrawLine(screen->display, TextWindow(screen), currentGC,
+			x, y+1, x + FontWidth(screen), y+1);
 	screen->cursor_state = OFF;
 }
 
 VTSelect()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
-	XChangeBorder(VWindow(screen), screen->bordertile);
-	if(Titlebar(screen))
-		VTTitleHilite();
+	XSetWindowBorder(screen->display, TextWindow(screen), screen->bordercolor);
 }
 
 VTUnselect()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
-	XChangeBorder(VWindow(screen), screen->graybordertile);
-	if(Titlebar(screen))
-		VTTitleUnhilite();
+	XSetWindowBorderPixmap(screen->display, TextWindow(screen), 
+	  screen->graybordertile);
 }
 
 VTReset(full)
 int full;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
 	/* reset scrolling region */
 	screen->top_marg = 0;
@@ -1862,19 +2009,21 @@ int full;
 		ClearScreen(screen);
 		screen->cursor_state = OFF;
 		if(!(term.flags & AUTOREPEAT))
-			XAutoRepeatOn();
+			XAutoRepeatOn(screen->display);
 		if (term.flags & REVERSE_VIDEO)
 			ReverseVideo(&term);
 
 		term.flags = term.initflags;
 		if(screen->c132 && (term.flags & IN132COLUMNS)) {
-			XChangeWindow (VWindow(screen), 80 * FontWidth(screen) +
-			 2 * screen->border + screen->scrollbar,
-			 FontHeight(screen) * (screen->max_row + 1) +
-			 screen->statusheight + Titlebar(screen) +
-			 2 * screen->border);
-			XSync(FALSE);	/* synchronize */
-			if(QLength() > 0)
+			XResizeWindow(
+			    screen->display,
+			    TextWindow(screen),
+			    (unsigned) 80*FontWidth(screen)
+				+ 2 * screen->border + screen->scrollbar,
+			    (unsigned) FontHeight(screen)
+			        * (screen->max_row + 1) + 2 * screen->border);
+			XSync(screen->display, FALSE);	/* synchronize */
+			if(QLength(screen->display) > 0)
 				xevents();
 		}
 		CursorSet(screen, 0, 0, term.flags);
@@ -1882,261 +2031,29 @@ int full;
 	longjmp(vtjmpbuf, 1);	/* force ground state in parser */
 }
 
-ToStatus(col)
-int col;
-{
-	register Screen *screen = &term.screen;
-
-	if(col > screen->max_col)
-		col = screen->max_col;
-	if(!screen->instatus) {
-		if(!screen->statusline)
-			ShowStatus();
-		CursorSave(&term, &screen->statussc);
-		screen->instatus = TRUE;
-		screen->cur_row = screen->max_row + 1;
-	}
-	screen->cur_col = col;
-}
-
-FromStatus()
-{
-	register Screen *screen = &term.screen;
-
-	if(!screen->instatus)
-		return;
-	screen->instatus = FALSE;
-	CursorRestore(&term, &screen->statussc);
-}
-
-ShowStatus()
-{
-	register Screen *screen = &term.screen;
-	register int border = 2 * screen->border;
-
-	if(screen->statusline)
-		return;
-	screen->statusline = 1;
-	screen->statusheight = FontHeight(screen) + 2;
-	XSetResizeHint(VWindow(screen), border + screen->scrollbar, border +
-	 Titlebar(screen) + screen->statusheight, FontWidth(screen),
-	 FontHeight(screen));
-	XChangeWindow (VWindow(screen), FontWidth(screen) * (screen->max_col + 1)
-	 + border + screen->scrollbar, FontHeight(screen) *
-	 (screen->max_row + 1) + screen->statusheight + Titlebar(screen) +
-	 border);
-}
-
-HideStatus()
-{
-	register Screen *screen = &term.screen;
-	register int border = 2 * screen->border;
-	register int i, j;
-
-	if(!screen->statusline)
-		return;
-	if(screen->instatus)
-		FromStatus();
-	screen->statusline = 0;
-	screen->statusheight = 0;
-	bzero(screen->buf[i = 2 * (screen->max_row + 1)], j = screen->max_col +
-	 1);
-	bzero(screen->buf[i + 1], j);
-	XSetResizeHint(VWindow(screen), border + screen->scrollbar, border +
-	 Titlebar(screen), FontWidth(screen), FontHeight(screen));
-	XChangeWindow (VWindow(screen), FontWidth(screen) * j + border +
-	 screen->scrollbar, FontHeight(screen) * (screen->max_row + 1) +
-	 border + Titlebar(screen));
-}
-
-EraseStatus()
-{
-	register Screen *screen = &term.screen;
-	register int i, j, pix;
-
-	if(!screen->statusline)
-		return;
-	bzero(screen->buf[i = 2 * (screen->max_row + 1)], j = screen->max_col +
-	 1);
-	bzero(screen->buf[i + 1], j);
-	XPixSet(VWindow(screen), screen->border - 1, (screen->max_row + 1) *
-	 FontHeight(screen) + screen->border + Titlebar(screen), j *
-	 FontWidth(screen) + 2, screen->statusheight, screen->reversestatus ?
-	 screen->foreground : screen->background);
-	if(!screen->reversestatus)
-		StatusBox(screen);
-}
-
-StatusBox(screen)
-register Screen *screen;
-{
-	status_box[0].y = (screen->max_row + 1) * FontHeight(screen) +
-	 screen->border + Titlebar(screen);
-	status_box[3].x = -(status_box[1].x = (screen->max_col + 1) *
-	 FontWidth(screen) + 1);
-	status_box[4].y = -(status_box[2].y = FontHeight(screen) + 1);
-	XDraw(VWindow(screen), status_box, NBOX, 1, 1, screen->foreground,
-	 GXcopy, AllPlanes);
-}
-
-VTTitleShow(init)
-int init;
-{
-	register Screen *screen = &term.screen;
-	register int border = 2 * screen->border;
-
-	if(!screen->title.tbar)
-		VTTitleInit();
-	if(!init) {
-		XSetResizeHint(VWindow(screen), border + screen->scrollbar,
-		 border + Titlebar(screen) + screen->statusheight,
-		 FontWidth(screen), FontHeight(screen));
-		XChangeWindow (VWindow(screen), FontWidth(screen) *
-		 (screen->max_col + 1) + border + screen->scrollbar,
-		 FontHeight(screen) * (screen->max_row + 1) + screen->statusheight
-		 + Titlebar(screen) + border);
-	}
-	if(screen->select && !screen->TekEmu)
-		VTTitleHilite();
-	else
-		VTTitleUnhilite();
-	XMapWindow(screen->title.tbar);
-}
-
-VTTitleHide()
-{
-	register Screen *screen = &term.screen;
-	register int border = 2 * screen->border;
-
-	XUnmapWindow(screen->title.tbar);
-	XSetResizeHint(VWindow(screen), border + screen->scrollbar, border +
-	 screen->statusheight, FontWidth(screen), FontHeight(screen));
-	XChangeWindow (VWindow(screen), FontWidth(screen) * (screen->max_col + 1)
-	 + border + screen->scrollbar, FontHeight(screen) *
-	 (screen->max_row + 1) + screen->statusheight + border);
-}
-
-VTTitleHilite()
-{
-	register Screen *screen = &term.screen;
-
-	if(screen->title.hilited)
-		return;
-	XMapWindow(screen->title.left);
-	XMapWindow(screen->title.right);
-	screen->title.hilited = TRUE;
-}
-
-VTTitleUnhilite()
-{
-	register Screen *screen = &term.screen;
-
-	if(!screen->title.hilited)
-		return;
-	XUnmapWindow(screen->title.left);
-	XUnmapWindow(screen->title.right);
-	screen->title.hilited = FALSE;
-}
-
-VTTitleResize(width)
-register int width;
-{
-	register Screen *screen = &term.screen;
-	register int i, j;
-
-	if((screen->title.width = i = screen->title.fullwidth) >
-	 (j = width - 2 * (MINHILITE + screen->title_n_size + 1)))
-		screen->title.width = (i = j) + screen->title_n_size;
-	j = width - i - 2 * (screen->title_n_size + 1);
-	i = j / 2;
-	j -= i;
-	screen->title.x = i + 1 + screen->title_n_size;
-	XChangeWindow(screen->title.tbar, width, screen->titleheight - 1);
-	XChangeWindow(screen->title.left, i, screen->titlefont->height);
-	XConfigureWindow(screen->title.right, width - j - 1, TITLEPAD, j,
-	 screen->titlefont->height);
-}
-
-VTTitleExpose(rep)
-register XExposeWindowEvent *rep;
-{
-	register Screen *screen = &term.screen;
-
-	if(rep && (rep->x > (screen->title.x + screen->title.width) ||
-	 (rep->x + rep->width) < screen->title.x ||
-	 rep->y > (screen->title.y + screen->titlefont->height) ||
-	 (rep->y + rep->height) < screen->title.y))
-		return;
-	XText(screen->title.tbar, screen->title.x, screen->title.y,
-	 screen->winname, screen->winnamelen, screen->titlefont->id,
-	 screen->foreground, screen->background);
-}
-
-VTTitleInit()
-{
-	register Screen *screen = &term.screen;
-	register int w, i, j;
-	OpaqueFrame hilite[2];
-	extern Pixmap make_hilite();
-
-	if((screen->title.tbar = XCreateWindow(VWindow(screen), -1, -1,
-	 w = FullWidth(screen), screen->titleheight - 1, 1, screen->bordertile,
-	 screen->bgndtile)) == NULL)
-		Error(ERROR_CRTITLE);
-	XSelectInput(screen->title.tbar, ButtonPressed | ButtonReleased |
-	 ExposeWindow | EnterWindow | LeaveWindow | UnmapWindow);
-	XDefineCursor(screen->title.tbar, screen->arrow);
-	if(!screen->hilitetile && (screen->hilitetile =
-	 make_hilite(screen->foreground, screen->background)) == NULL)
-		Error(ERROR_HILITE);
-	screen->title.fullwidth = XQueryWidth(screen->winname,
-	 screen->titlefont->id);
-	if((screen->title.width = i = screen->title.fullwidth) >
-	 (j = w - 2 * (MINHILITE + screen->title_n_size + 1)))
-		screen->title.width = (i = j) + screen->title_n_size;
-	j = w - i - 2 * (screen->title_n_size + 1);
-	i = j / 2;
-	j -= i;
-	screen->title.x = i + 1 + screen->title_n_size;
-	screen->title.y = TITLEPAD;
-	hilite[0].x = 1;
-	hilite[1].x = w - j - 1;
-	hilite[0].y = hilite[1].y = TITLEPAD;
-	hilite[0].width = i;
-	hilite[1].width = j;
-	hilite[0].height = hilite[1].height = screen->titlefont->height;
-	hilite[0].bdrwidth = hilite[1].bdrwidth = 0;
-	hilite[0].border = hilite[1].border = NULL;
-	hilite[0].background = hilite[1].background = screen->hilitetile;
-	if(XCreateWindows(screen->title.tbar, hilite, 2) != 2)
-		Error(ERROR_CRLFRG);
-	screen->title.left = hilite[0].self;
-	screen->title.right = hilite[1].self;
-}
 
 #ifdef MODEMENU
-#define	MMENU_SCROLL	0
-#define	MMENU_VIDEO	(MMENU_SCROLL+1)
-#define	MMENU_WRAP	(MMENU_VIDEO+1)
-#define	MMENU_REVERSEWRAP (MMENU_WRAP+1)
-#define	MMENU_NLM	(MMENU_REVERSEWRAP+1)
-#define	MMENU_CURSOR	(MMENU_NLM+1)
-#define	MMENU_PAD	(MMENU_CURSOR+1)
-#define	MMENU_REPEAT	(MMENU_PAD+1)
-#define	MMENU_SCROLLBAR	(MMENU_REPEAT+1)
-#define	MMENU_PAGEMODE	(MMENU_SCROLLBAR+1)
-#define	MMENU_STATUS	(MMENU_PAGEMODE+1)
-#define	MMENU_REVSTATUS	(MMENU_STATUS+1)
-#define	MMENU_C132	(MMENU_REVSTATUS+1)
-#define	MMENU_CURSES	(MMENU_C132+1)
-#define	MMENU_MARGBELL	(MMENU_CURSES+1)
-#define	MMENU_TEKWIN	(MMENU_MARGBELL+1)
-#define	MMENU_ALTERN	(MMENU_TEKWIN+1)
-#define	MMENU_LINE	(MMENU_ALTERN+1)
-#define	MMENU_RESET	(MMENU_LINE+1)
-#define	MMENU_FULLRESET	(MMENU_RESET+1)
-#define	MMENU_TEKMODE	(MMENU_FULLRESET+1)
-#define	MMENU_HIDEVT	(MMENU_TEKMODE+1)
+#define	MMENU_SCROLL		0
+#define	MMENU_VIDEO		(MMENU_SCROLL+1)
+#define	MMENU_WRAP		(MMENU_VIDEO+1)
+#define	MMENU_REVERSEWRAP	(MMENU_WRAP+1)
+#define	MMENU_NLM		(MMENU_REVERSEWRAP+1)
+#define	MMENU_CURSOR		(MMENU_NLM+1)
+#define	MMENU_PAD		(MMENU_CURSOR+1)
+#define	MMENU_REPEAT		(MMENU_PAD+1)
+#define	MMENU_SCROLLBAR		(MMENU_REPEAT+1)
+#define	MMENU_SCROLLKEY		(MMENU_SCROLLBAR+1)
+#define	MMENU_SCROLLINPUT	(MMENU_SCROLLKEY+1)
+#define	MMENU_C132		(MMENU_SCROLLINPUT+1)
+#define	MMENU_CURSES		(MMENU_C132+1)
+#define	MMENU_MARGBELL		(MMENU_CURSES+1)
+#define	MMENU_TEKWIN		(MMENU_MARGBELL+1)
+#define	MMENU_ALTERN		(MMENU_TEKWIN+1)
+#define	MMENU_LINE		(MMENU_ALTERN+1)
+#define	MMENU_RESET		(MMENU_LINE+1)
+#define	MMENU_FULLRESET		(MMENU_RESET+1)
+#define	MMENU_TEKMODE		(MMENU_FULLRESET+1)
+#define	MMENU_HIDEVT		(MMENU_TEKMODE+1)
 
 static char *vtext[] = {
 	"Jump Scroll",
@@ -2148,9 +2065,8 @@ static char *vtext[] = {
 	"Application Pad",
 	"Auto Repeat",
 	"Scrollbar",
-	"Page Scroll",
-	"Status Line",
-	"Reverse Status Line",
+	"Scroll to bottom on key",
+	"Scroll to bottom on input",
 	"80 <-> 132 Columns",
 	"Curses Emulation",
 	"Margin Bell",
@@ -2171,16 +2087,15 @@ static int t132;
 static int taltern;
 static int tcurses;
 static int tmarginbell;
-static int tpagemode;
-static int trevstatus;
 static int tscrollbar;
+static int tscrollkey;
+static int tscrollinput;
 static int tshow;
-static int tstatusline;
 
 Menu *setupmenu(menu)
 register Menu **menu;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register char **cp;
 	register int flags = term.flags;
 	register int kflags = term.keyboard.flags;
@@ -2206,14 +2121,18 @@ register Menu **menu;
 			CheckItem(*menu, MMENU_PAD);
 		if(flags & AUTOREPEAT)
 			CheckItem(*menu, MMENU_REPEAT);
-		if(tscrollbar = (screen->scrollbar > 0))
+		if(tscrollbar = (screen->scrollbar > 0)) {
 			CheckItem(*menu, MMENU_SCROLLBAR);
-		if(tpagemode = screen->pagemode)
-			CheckItem(*menu, MMENU_PAGEMODE);
-		if(tstatusline = screen->statusline)
-			CheckItem(*menu, MMENU_STATUS);
-		if(trevstatus = screen->reversestatus)
-			CheckItem(*menu, MMENU_REVSTATUS);
+			if(tscrollkey = screen->scrollkey)
+				CheckItem(*menu, MMENU_SCROLLKEY);
+			if(tscrollinput = screen->scrollinput)
+				CheckItem(*menu, MMENU_SCROLLINPUT);
+		} else {
+			tscrollkey = FALSE;
+			DisableItem(*menu, MMENU_SCROLLKEY);
+			tscrollinput = FALSE;
+			DisableItem(*menu, MMENU_SCROLLINPUT);
+		}
 		if(t132 = screen->c132)
 			CheckItem(*menu, MMENU_C132);
 		if(tcurses = screen->curses)
@@ -2227,7 +2146,6 @@ register Menu **menu;
 		DisableItem(*menu, MMENU_ALTERN);
 		if(taltern = screen->alternate) {
 			CheckItem(*menu, MMENU_ALTERN);
-			DisableItem(*menu, MMENU_PAGEMODE);
 		}
 		DisableItem(*menu, MMENU_LINE);
 		if(screen->inhibit & I_TEK) {
@@ -2238,7 +2156,9 @@ register Menu **menu;
 		menukbdflags = kflags;
 		return(*menu);
 	}
-	if ((menutermflags ^= flags) & SMOOTHSCROLL)
+	menutermflags ^= flags;
+	menukbdflags ^= kflags;
+	if (menutermflags & SMOOTHSCROLL)
 		SetItemCheck(*menu, MMENU_SCROLL, !(flags & SMOOTHSCROLL));
 	if (menutermflags & REVERSE_VIDEO)
 		SetItemCheck(*menu, MMENU_VIDEO, flags & REVERSE_VIDEO);
@@ -2248,22 +2168,29 @@ register Menu **menu;
 		SetItemCheck(*menu, MMENU_REVERSEWRAP, flags & REVERSEWRAP);
 	if (menutermflags & LINEFEED)
 		SetItemCheck(*menu, MMENU_NLM, flags & LINEFEED);
-	if ((menukbdflags ^= kflags) & CURSOR_APL)
+	if (menukbdflags & CURSOR_APL)
 		SetItemCheck(*menu, MMENU_CURSOR, kflags & CURSOR_APL);
 	if (menukbdflags & KYPD_APL)
-		SetItemCheck(*menu, MMENU_PAD, NULL, kflags & KYPD_APL);
-	if(tscrollbar != (screen->scrollbar > 0))
+		SetItemCheck(*menu, MMENU_PAD, kflags & KYPD_APL);
+        if (menutermflags & AUTOREPEAT)
+                SetItemCheck(*menu, MMENU_REPEAT, flags & AUTOREPEAT);
+	if(tscrollbar != (screen->scrollbar > 0)) {
 		SetItemCheck(*menu, MMENU_SCROLLBAR, (tscrollbar =
 		 (screen->scrollbar > 0)));
-	if(tpagemode != screen->pagemode)
-		SetItemCheck(*menu, MMENU_PAGEMODE, (tpagemode =
-		 screen->pagemode));
-	if(tstatusline != screen->statusline)
-		SetItemCheck(*menu, MMENU_STATUS, (tstatusline =
-		 screen->statusline));
-	if(trevstatus != screen->reversestatus)
-		SetItemCheck(*menu, MMENU_REVSTATUS, (trevstatus =
-		 screen->reversestatus));
+		SetItemDisable(*menu, MMENU_SCROLLKEY, !tscrollbar);
+		SetItemCheck(*menu, MMENU_SCROLLKEY,
+		 tscrollkey = (tscrollbar && screen->scrollkey));
+		SetItemDisable(*menu, MMENU_SCROLLINPUT, !tscrollbar);
+		SetItemCheck(*menu, MMENU_SCROLLINPUT,
+		 tscrollinput = (tscrollbar && screen->scrollinput));
+	} else if (tscrollbar) {
+		if (tscrollkey != screen->scrollkey)
+			SetItemCheck(*menu, MMENU_SCROLLKEY,
+			 tscrollkey = screen->scrollkey);
+		if (tscrollinput != screen->scrollinput)
+			SetItemCheck(*menu, MMENU_SCROLLINPUT,
+			 tscrollinput = screen->scrollinput);
+	}
 	if(t132 != screen->c132)
 		SetItemCheck(*menu, MMENU_C132, (t132 = screen->c132));
 	if(tcurses != screen->curses)
@@ -2278,7 +2205,6 @@ register Menu **menu;
 	if(taltern != screen->alternate) {
 		SetItemCheck(*menu, MMENU_ALTERN, (taltern =
 		 screen->alternate));
-		SetItemDisable(*menu, MMENU_PAGEMODE, taltern);
 	}
 	menutermflags = flags;
 	menukbdflags = kflags;
@@ -2288,7 +2214,7 @@ register Menu **menu;
 domenufunc(item)
 int item;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
 	switch (item) {
 	case MMENU_SCROLL:
@@ -2329,36 +2255,27 @@ int item;
 	case MMENU_REPEAT:
 		term.flags ^= AUTOREPEAT;
 		if (term.flags & AUTOREPEAT)
-			XAutoRepeatOn();
+			XAutoRepeatOn(screen->display);
 		else
-			XAutoRepeatOff();
+			XAutoRepeatOff(screen->display);
 		break;
 
 	case MMENU_SCROLLBAR:
 		if(screen->scrollbar)
 			ScrollBarOff(screen);
 		else
-			ScrollBarOn(screen, TRUE, FALSE);
+			ScrollBarOn(screen, FALSE);
 		break;
 
-	case MMENU_PAGEMODE:
-		if(screen->pagemode = !screen->pagemode)
-			screen->pagecnt = 0;
+	case MMENU_SCROLLKEY:
+		screen->scrollkey = !screen->scrollkey;
 		break;
 
-	case MMENU_STATUS:
-		if(screen->statusline)
-			HideStatus();
-		else
-			ShowStatus();
+	case MMENU_SCROLLINPUT:
+		screen->scrollinput = !screen->scrollinput;
 		break;
 
-	case MMENU_REVSTATUS:
-		screen->reversestatus = !screen->reversestatus;
-		ScrnRefresh(screen, screen->max_row + 1, 0, 1, screen->max_col
-		 + 1);
-		break;
-
+		
 	case MMENU_C132:
 		screen->c132 = !screen->c132;
 		break;
@@ -2381,8 +2298,7 @@ int item;
 		break;
 
 	case MMENU_HIDEVT:
-		screen->show = FALSE;
-		XUnmapWindow(VWindow(screen));
+		XUnmapWindow(screen->display, VWindow(screen));
 		reselectwindow(screen);
 		SyncUnmap(VWindow(screen), WINDOWEVENTS);
 			/* drop through */
@@ -2393,25 +2309,20 @@ int item;
 				screen->logstart = Tbuffer;
 			}
 			screen->TekEmu = TRUE;
-			if(screen->pagemode) {
-				Scroll(screen, screen->pagecnt);
-				screen->pagecnt = 0;
-				ioctl(screen->respond, TIOCSTART, NULL);
-			}
 			longjmp(VTend, 1);
 		} else
-			XRaiseWindow(TWindow(screen));
+			XRaiseWindow(screen->display, TWindow(screen));
 		break;
 
 	case MMENU_TEKWIN:
 		if(screen->Tshow = !screen->Tshow) {
 			if(TWindow(screen) || TekInit()) {
-				XMapWindow(TWindow(screen));
+				XMapWindow(screen->display, TWindow(screen));
 				screen->Tshow = TRUE;
 			}
 		} else {
 			screen->Tshow = FALSE;
-			XUnmapWindow(TWindow(screen));
+			XUnmapWindow(screen->display, TWindow(screen));
 			SyncUnmap(TWindow(screen), TWINDOWEVENTS);
 			if(screen->TekEmu) {
 				if(screen->logging) {
@@ -2426,3 +2337,4 @@ int item;
 	}
 }
 #endif MODEMENU
+
