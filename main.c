@@ -1,5 +1,5 @@
 #ifndef lint
-static char *rid="$XConsortium: main.c /main/247 1996/11/29 10:33:51 swick $";
+static char *rid="$TOG: main.c /main/250 1998/02/09 14:17:13 kaleb $";
 #endif /* lint */
 
 /*
@@ -18,14 +18,9 @@ static char *rid="$XConsortium: main.c /main/247 1996/11/29 10:33:51 swick $";
 /***********************************************************
 
 
-Copyright (c) 1987, 1988  X Consortium
+Copyright 1987, 1988, 1998  The Open Group
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+All Rights Reserved.
 
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
@@ -33,13 +28,13 @@ all copies or substantial portions of the Software.
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-X CONSORTIUM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+OPEN GROUP BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
 AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Except as contained in this notice, the name of the X Consortium shall not be
+Except as contained in this notice, the name of The Open Group shall not be
 used in advertising or otherwise to promote the sale, use or other dealings
-in this Software without prior written authorization from the X Consortium.
+in this Software without prior written authorization from The Open Group.
 
 
 Copyright 1987, 1988 by Digital Equipment Corporation, Maynard.
@@ -149,6 +144,13 @@ static Bool IsPts = False;
 #else /* USE_TERMIOS */
 #ifdef SYSV
 #include <sys/termio.h>
+#else /* SYSV */
+#if defined(sun) && !defined(SVR4)
+#include <sys/ttycom.h>
+#ifdef TIOCSWINSZ
+#undef TIOCSSIZE
+#endif
+#endif
 #endif /* SYSV */
 #endif /* USE_TERMIOS else */
 
@@ -172,7 +174,9 @@ static Bool IsPts = False;
 #define USE_SYSV_TERMIO
 #define USE_SYSV_SIGNALS
 #define	USE_SYSV_PGRP
+#ifndef TIOCSWINSZ
 #define USE_SYSV_ENVVARS		/* COLUMNS/LINES vs. TERMCAP */
+#endif
 /*
  * now get system-specific includes
  */
@@ -1822,11 +1826,9 @@ spawn ()
 	char buf[64];
 	char *TermName = NULL;
 	int ldisc = 0;
-#if defined(sun) && !defined(SVR4)
-#ifdef TIOCSSIZE
+#if defined(TIOCSSIZE) && (defined(sun) && !defined(SVR4))
 	struct ttysize ts;
-#endif	/* TIOCSSIZE */
-#else	/* not sun */
+#else	/* not old SunOS */
 #ifdef TIOCSWINSZ
 	struct winsize ws;
 #endif	/* TIOCSWINSZ */
@@ -2038,8 +2040,7 @@ spawn ()
 	    }
 	}
 
-#if defined(sun) && !defined(SVR4)
-#ifdef TIOCSSIZE
+#if defined(TIOCSSIZE) && (defined(sun) && !defined(SVR4))
 	/* tell tty how big window is */
 	if(screen->TekEmu) {
 		ts.ts_lines = 38;
@@ -2048,8 +2049,7 @@ spawn ()
 		ts.ts_lines = screen->max_row + 1;
 		ts.ts_cols = screen->max_col + 1;
 	}
-#endif	/* TIOCSSIZE */
-#else	/* not sun */
+#else	/* not old SunOS */
 #ifdef TIOCSWINSZ
 	/* tell tty how big window is */
 	if(screen->TekEmu) {
@@ -2518,9 +2518,7 @@ spawn ()
 		envsize += 1;   /* LOGNAME */
 #endif /* UTMP */
 #ifdef USE_SYSV_ENVVARS
-#ifndef TIOCSWINSZ		/* window size not stored in driver? */
 		envsize += 2;	/* COLUMNS, LINES */
-#endif /* TIOCSWINSZ */
 #ifdef UTMP
 		envsize += 2;   /* HOME, SHELL */
 #endif /* UTMP */
@@ -2800,12 +2798,10 @@ spawn ()
 		    if(handshake.rows > 0 && handshake.cols > 0) {
 			screen->max_row = handshake.rows;
 			screen->max_col = handshake.cols;
-#if defined(sun) && !defined(SVR4)
-#ifdef TIOCSSIZE
+#if defined(TIOCSSIZE) && (defined(sun) && !defined(SVR4))
 			ts.ts_lines = screen->max_row + 1;
 			ts.ts_cols = screen->max_col + 1;
-#endif /* TIOCSSIZE */
-#else /* !sun */
+#else /* not old SunOS */
 #ifdef TIOCSWINSZ
 			ws.ws_row = screen->max_row + 1;
 			ws.ws_col = screen->max_col + 1;
@@ -2818,12 +2814,10 @@ spawn ()
 #endif /* USE_HANDSHAKE */
 
 #ifdef USE_SYSV_ENVVARS
-#ifndef TIOCSWINSZ
 		sprintf (numbuf, "%d", screen->max_col + 1);
 		Setenv("COLUMNS=", numbuf);
 		sprintf (numbuf, "%d", screen->max_row + 1);
 		Setenv("LINES=", numbuf);
-#endif
 #ifdef UTMP
 		if (pw) {	/* SVR4 doesn't provide these */
 		    if (!getenv("HOME"))
@@ -2856,11 +2850,9 @@ spawn ()
 
 
 		/* need to reset after all the ioctl bashing we did above */
-#if defined(sun) && !defined(SVR4)
-#ifdef TIOCSSIZE
+#if defined(TIOCSSIZE) && (defined(sun) && !defined(SVR4))
 		ioctl  (0, TIOCSSIZE, &ts);
-#endif	/* TIOCSSIZE */
-#else	/* not sun */
+#else	/* not old SunOS */
 #ifdef TIOCSWINSZ
 		ioctl (0, TIOCSWINSZ, (char *)&ws);
 #endif	/* TIOCSWINSZ */

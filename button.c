@@ -1,4 +1,4 @@
-/* $XConsortium: button.c /main/75 1996/11/29 10:33:33 swick $ */
+/* $TOG: button.c /main/76 1997/07/30 16:56:19 kaleb $ */
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *
@@ -1137,12 +1137,21 @@ int *format;
     if (*target == XA_STRING ||
 	*target == XA_TEXT(d) ||
 	*target == XA_COMPOUND_TEXT(d)) {
-	if (*target == XA_COMPOUND_TEXT(d))
+	if (*target == XA_COMPOUND_TEXT(d)) {
+	    XTextProperty textprop;
+
+	    *value = (XtPointer) xterm->screen.selection;
+	    if (XmbTextListToTextProperty (d, (char**)value, 1,
+					   XCompoundTextStyle, &textprop)
+			< Success) return False;
+	    *value = (XtPointer) textprop.value;
+	    *length = textprop.nitems;
 	    *type = *target;
-	else
+	} else {
 	    *type = XA_STRING;
-	*value = xterm->screen.selection;
-	*length = xterm->screen.selection_length;
+	    *value = xterm->screen.selection;
+	    *length = xterm->screen.selection_length;
+	}
 	*format = 8;
 	return True;
     }
