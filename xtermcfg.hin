@@ -1,10 +1,12 @@
+/* $XTermId: xtermcfg.hin,v 1.126 2004/05/26 01:19:55 tom Exp $ */
+
 /*
- * $XFree86: xc/programs/xterm/xtermcfg.hin,v 3.46 2003/05/21 22:59:14 dickey Exp $
+ * $XFree86: xc/programs/xterm/xtermcfg.hin,v 3.51 2004/05/26 01:19:55 dickey Exp $
  */
 
 /************************************************************
 
-Copyright 1997-2002,2003 by Thomas E. Dickey
+Copyright 1997-2003,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -41,6 +43,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef DFT_TERMTYPE		/* AC_ARG_WITH(default-term-type) */
 #undef HAVE_GETHOSTNAME		/* AC_CHECK_FUNCS(gethostname) */
 #undef HAVE_GETLOGIN		/* AC_CHECK_FUNCS(getlogin) */
+#undef HAVE_LANGINFO_CODESET	/* AM_LANGINFO_CODESET */
 #undef HAVE_LASTLOG_H		/* CF_LASTLOG */
 #undef HAVE_LIB_NEXTAW		/* CF_X_ATHENA(--with-neXtaw) */
 #undef HAVE_LIB_XAW		/* CF_X_ATHENA */
@@ -73,11 +76,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef OPT_88_COLORS		/* CF_ARG_ENABLE(88-color) */
 #undef OPT_AIX_COLORS		/* CF_ARG_DISABLE(16-color) */
 #undef OPT_BLINK_CURS		/* CF_ARG_DISABLE(blink-cursor) */
+#undef OPT_BLINK_TEXT		/* CF_ARG_DISABLE(blink-text) */
 #undef OPT_BOX_CHARS		/* CF_ARG_DISABLE(boxchars) */
 #undef OPT_BROKEN_OSC		/* CF_ARG_ENABLE(broken-osc) */
 #undef OPT_BROKEN_ST		/* CF_ARG_DISABLE(broken-st) */
 #undef OPT_C1_PRINT		/* CF_ARG_DISABLE(c1-print) */
 #undef OPT_COLOR_CLASS		/* CF_ARG_DISABLE(color-class) */
+#undef OPT_DABBREV		/* CF_ARG_ENABLE(dabbrev) */
 #undef OPT_DEC_CHRSET		/* CF_ARG_DISABLE(doublechars) */
 #undef OPT_DEC_LOCATOR		/* CF_ARG_ENABLE(dec-locator) */
 #undef OPT_HIGHLIGHT_COLOR	/* CF_ARG_DISABLE(highlighting) */
@@ -94,6 +99,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef OPT_PTY_HANDSHAKE	/* CF_ARG_ENABLE(pty-handshake) */
 #undef OPT_SAME_NAME
 #undef OPT_SCO_FUNC_KEYS	/* CF_ARG_ENABLE(sco-fkeys) */
+#undef OPT_SESSION_MGT		/* CF_ARG_DISABLE(session-mgt) */
 #undef OPT_TCAP_QUERY
 #undef OPT_TEK4014		/* CF_ARG_DISABLE(tek4014) */
 #undef OPT_TOOLBAR		/* CF_ARG_ENABLE(toolbar) */

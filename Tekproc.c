@@ -1,13 +1,15 @@
+/* $XTermId: Tekproc.c,v 1.105 2004/06/06 22:15:25 tom Exp $ */
+
 /*
  * $Xorg: Tekproc.c,v 1.5 2001/02/09 02:06:02 xorgcvs Exp $
  *
  * Warning, there be crufty dragons here.
  */
-/* $XFree86: xc/programs/xterm/Tekproc.c,v 3.45tsi Exp $ */
+/* $XFree86: xc/programs/xterm/Tekproc.c,v 3.49 2004/06/06 22:15:25 dickey Exp $ */
 
 /*
 
-Copyright 2001-2002,2003 by Thomas E. Dickey
+Copyright 2001-2003,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -147,7 +149,6 @@ in this Software without prior written authorization from The Open Group.
 #define	TekMove(x,y)	screen->cur_X = x; screen->cur_Y = y
 #define	input()		Tinput()
 #define	unput(c)	*Tpushback++ = c
-
 /* *INDENT-OFF* */
 static struct Tek_Char {
     int hsize;			/* in Tek units */
@@ -252,12 +253,6 @@ static Dimension defOne = 1;
 
 static XtResource resources[] =
 {
-#ifdef VMS
-    Cres(XtNbackground, XtCBackground, core.background_pixel, "White"),
-    {XtNforeground, XtCForeground, XtRPixel, sizeof(Pixel),
-     XtOffset(TekWidget, Tforeground),
-     XtRString, "Black"},
-#endif
     {XtNwidth, XtCWidth, XtRDimension, sizeof(Dimension),
      XtOffsetOf(CoreRec, core.width), XtRDimension, (caddr_t) & defOne},
     {XtNheight, XtCHeight, XtRDimension, sizeof(Dimension),
@@ -361,11 +356,15 @@ TekInit(void)
 				    XtNmenuBar, menu_top,
 				    XtNresizable, True,
 				    XtNfromVert, menu_top,
+				    XtNtop, XawChainTop,
 				    XtNleft, XawChainLeft,
 				    XtNright, XawChainRight,
 				    XtNbottom, XawChainBottom,
 #endif
 				    (XtPointer) 0);
+#if OPT_TOOLBAR
+	SetupToolbar((Widget) tekWidget);
+#endif
     }
     return (!Tfailed);
 }
@@ -376,15 +375,12 @@ TekInit(void)
 int
 TekPtyData(void)
 {
-    if (Tbuffer == 0) {
-	if ((Tbuffer = (PtyData *) malloc(sizeof(PtyData))) == NULL
-	    || (Tpushb = (Char *) malloc(10)) == NULL
+    if (Tpushb == 0) {
+	if ((Tpushb = (Char *) malloc(10)) == NULL
 	    || (Tline = (XSegment *) malloc(MAX_VTX * sizeof(XSegment))) == NULL) {
 	    fprintf(stderr, "%s: Not enough core for Tek mode\n", xterm_name);
 	    if (Tpushb)
 		free((char *) Tpushb);
-	    if (Tbuffer)
-		free((char *) Tbuffer);
 	    Tfailed = TRUE;
 	    return 0;
 	}
@@ -438,12 +434,7 @@ Tekparse(void)
 	    TRACE(("case: special return to vt102 mode\n"));
 	    Tparsestate = curstate;
 	    TekRecord->ptr[-1] = NAK;	/* remove from recording */
-#ifdef ALLOWLOGGING
-	    if (screen->logging) {
-		FlushLog(screen);
-		screen->logstart = DecodedData(&(VTbuffer));
-	    }
-#endif
+	    FlushLog(screen);
 	    return;
 
 	case CASE_SPT_STATE:
@@ -458,8 +449,9 @@ Tekparse(void)
 	    screen->TekGIN = &TekRecord->ptr[-1];
 	    /* Set cross-hair cursor raster array */
 	    if ((GINcursor =
-		 make_colored_cursor(XC_tcross, screen->mousecolor,
-				     screen->mousecolorback)) != 0) {
+		 make_colored_cursor(XC_tcross,
+				     T_COLOR(screen, MOUSE_FG),
+				     T_COLOR(screen, MOUSE_BG))) != 0) {
 		XDefineCursor(screen->display, TWindow(screen),
 			      GINcursor);
 	    }
@@ -523,7 +515,7 @@ Tekparse(void)
 	    if (screen->TekGIN)
 		TekGINoff();
 	    /* if in one of graphics states, move alpha cursor */
-	    if (nplot > 0)	/* flush line Tbuffer */
+	    if (nplot > 0)	/* flush line VTbuffer */
 		TekFlush();
 	    Tparsestate = curstate = Talptable;
 	    break;
@@ -663,7 +655,7 @@ Tekparse(void)
 	    TRACE(("case: CR\n"));
 	    if (screen->TekGIN)
 		TekGINoff();
-	    if (nplot > 0)	/* flush line Tbuffer */
+	    if (nplot > 0)	/* flush line VTbuffer */
 		TekFlush();
 	    screen->cur_X = screen->margin == MARGIN1 ? 0 :
 		TEKWIDTH / 2;
@@ -748,11 +740,7 @@ Tekparse(void)
 
 static int rcnt;
 static char *rptr;
-#ifdef VMS
-static int Tselect_mask;
-#else /* VMS */
-static fd_set Tselect_mask;
-#endif /* VMS */
+static PtySelect Tselect_mask;
 
 static IChar
 Tinput(void)
@@ -776,8 +764,10 @@ Tinput(void)
 	longjmp(Tekjump, 1);
     }
   again:
-    if (Tbuffer->cnt-- <= 0) {
-	if (nplot > 0)		/* flush line Tbuffer */
+    if (VTbuffer.next >= VTbuffer.last) {
+	int update = VTbuffer.update;
+
+	if (nplot > 0)		/* flush line */
 	    TekFlush();
 #ifdef VMS
 	Tselect_mask = pty_mask;	/* force a read */
@@ -793,28 +783,9 @@ Tinput(void)
 			  &Tselect_mask, NULL, NULL,
 			  &crocktimeout);
 #endif
-#ifdef VMS
-	    if (Tselect_mask & pty_mask) {
-#ifdef ALLOWLOGGING
-		if (screen->logging)
-		    FlushLog(screen);
-#endif
-		if (read_queue.flink != 0) {
-		    Tbuffer->cnt = tt_read(Tbuffer->ptr = Tbuffer->buf);
-		    if (Tbuffer->cnt == 0) {
-			Panic("input: read returned zero\n", 0);
-		    } else {
-			break;
-		    }
-		} else {
-		    sys$hiber();
-		}
-	    }
-#else /* VMS */
-	    if (getPtyData(screen, &Tselect_mask, Tbuffer)) {
+	    if (readPtyData(screen, &Tselect_mask, &VTbuffer)) {
 		break;
 	    }
-#endif /* VMS */
 	    if (Ttoggled && curstate == Talptable) {
 		TCursorToggle(TOGGLE);
 		Ttoggled = FALSE;
@@ -842,18 +813,17 @@ Tinput(void)
 #ifdef VMS
 	    if (Tselect_mask & X_mask) {
 		xevents();
-		if (Tbuffer->cnt > 0)
+		if (VTbuffer.update != update)
 		    goto again;
 	    }
 #else /* VMS */
 	    if (FD_ISSET(ConnectionNumber(screen->display), &Tselect_mask)) {
 		xevents();
-		if (Tbuffer->cnt > 0)
+		if (VTbuffer.update != update)
 		    goto again;
 	    }
 #endif /* VMS */
 	}
-	Tbuffer->cnt--;
 	if (!Ttoggled && curstate == Talptable) {
 	    TCursorToggle(TOGGLE);
 	    Ttoggled = TRUE;
@@ -872,7 +842,9 @@ Tinput(void)
 	tek->ptr = tek->data;
     }
     tek->count++;
-    return (*tek->ptr++ = *(Tbuffer->ptr)++);
+
+    (void) morePtyData(screen, &VTbuffer);
+    return (*tek->ptr++ = nextPtyData(screen, &VTbuffer));
 }
 
 /* this should become the Tek Widget's Resize proc */
@@ -936,8 +908,9 @@ dorefresh(void)
     static Cursor wait_cursor = None;
 
     if (wait_cursor == None)
-	wait_cursor = make_colored_cursor(XC_watch, screen->mousecolor,
-					  screen->mousecolorback);
+	wait_cursor = make_colored_cursor(XC_watch,
+					  T_COLOR(screen, MOUSE_FG),
+					  T_COLOR(screen, MOUSE_BG));
     XDefineCursor(screen->display, TWindow(screen), wait_cursor);
     XFlush(screen->display);
     if (!setjmp(Tekjump))
@@ -1242,7 +1215,6 @@ void
 TekRun(void)
 {
     register TScreen *screen = &term->screen;
-    register int i;
 
     if (!TWindow(screen) && !TekInit()) {
 	if (VWindow(screen)) {
@@ -1260,10 +1232,6 @@ TekRun(void)
     set_tekhide_sensitivity();
 
     Tpushback = Tpushb;
-    Tbuffer->ptr = DecodedData(Tbuffer);
-    for (i = Tbuffer->cnt = VTbuffer.cnt; i > 0; i--)
-	*(Tbuffer->ptr)++ = *(VTbuffer.ptr)++;
-    Tbuffer->ptr = DecodedData(Tbuffer);
     Ttoggled = TRUE;
     if (!setjmp(Tekend))
 	Tekparse();
@@ -1366,12 +1334,6 @@ TekRealize(Widget gw,
     if (!TekPtyData())
 	return;
 
-    screen->xorplane = 1;
-
-    screen->Tbackground = term->core.background_pixel;
-    screen->Tforeground = screen->foreground;
-    screen->Tcursorcolor = screen->cursorcolor;
-
     if (term->misc.T_geometry == NULL) {
 	int defwidth, defheight;
 
@@ -1454,7 +1416,7 @@ TekRealize(Widget gw,
     XFlush(XtDisplay(tw));	/* get it out to window manager */
 
     values->win_gravity = NorthWestGravity;
-    values->background_pixel = screen->Tbackground;
+    values->background_pixel = T_COLOR(screen, TEK_BG);
 
     XtWindow(tw) = TWindow(screen) =
 	XCreateWindow(screen->display,
@@ -1504,8 +1466,8 @@ TekRealize(Widget gw,
 
     gcv.graphics_exposures = TRUE;	/* default */
     gcv.font = tw->tek.Tfont[screen->cur.fontsize]->fid;
-    gcv.foreground = screen->Tforeground;
-    gcv.background = screen->Tbackground;
+    gcv.foreground = T_COLOR(screen, TEK_FG);
+    gcv.background = T_COLOR(screen, TEK_BG);
 
     /* if font wasn't successfully opened, then gcv.font will contain
        the Default GC's ID, meaning that we must use the server default font.
@@ -1516,14 +1478,14 @@ TekRealize(Widget gw,
 				   GCForeground | GCBackground), &gcv);
 
     gcv.function = GXinvert;
-    gcv.plane_mask = screen->xorplane = (screen->Tbackground ^
-					 screen->Tcursorcolor);
+    gcv.plane_mask = (T_COLOR(screen, TEK_BG) ^
+		      T_COLOR(screen, TEK_CURSOR));
     gcv.join_style = JoinMiter;	/* default */
     gcv.line_width = 1;
     screen->TcursorGC = XCreateGC(screen->display, TWindow(screen),
 				  (GCFunction | GCPlaneMask), &gcv);
 
-    gcv.foreground = screen->Tforeground;
+    gcv.foreground = T_COLOR(screen, TEK_FG);
     gcv.line_style = LineOnOffDash;
     gcv.line_width = 0;
     for (i = 0; i < TEKNUMLINES; i++) {
@@ -1570,7 +1532,6 @@ TekRealize(Widget gw,
     tek->count = 0;
     tek->ptr = tek->data;
     Tpushback = Tpushb;
-    Tbuffer->ptr = DecodedData(Tbuffer);
     screen->cur_X = 0;
     screen->cur_Y = TEKHOME;
     line_pt = Tline;
@@ -1616,39 +1577,45 @@ ChangeTekColors(register TScreen * screen, ScrnColors * pNew)
     XGCValues gcv;
 
     if (COLOR_DEFINED(pNew, TEK_FG)) {
-	screen->Tforeground = COLOR_VALUE(pNew, TEK_FG);
-	XSetForeground(screen->display, screen->TnormalGC,
-		       screen->Tforeground);
+	T_COLOR(screen, TEK_FG) = COLOR_VALUE(pNew, TEK_FG);
+	TRACE(("... TEK_FG: %#lx\n", T_COLOR(screen, TEK_FG)));
     }
     if (COLOR_DEFINED(pNew, TEK_BG)) {
-	screen->Tbackground = COLOR_VALUE(pNew, TEK_BG);
-	XSetBackground(screen->display, screen->TnormalGC,
-		       screen->Tbackground);
+	T_COLOR(screen, TEK_BG) = COLOR_VALUE(pNew, TEK_BG);
+	TRACE(("... TEK_BG: %#lx\n", T_COLOR(screen, TEK_BG)));
+    }
+    if (COLOR_DEFINED(pNew, TEK_CURSOR)) {
+	T_COLOR(screen, TEK_CURSOR) = COLOR_VALUE(pNew, TEK_CURSOR);
+	TRACE(("... TEK_CURSOR: %#lx\n", T_COLOR(screen, TEK_CURSOR)));
+    } else {
+	T_COLOR(screen, TEK_CURSOR) = T_COLOR(screen, TEK_FG);
+	TRACE(("... TEK_CURSOR: %#lx\n", T_COLOR(screen, TEK_CURSOR)));
     }
 
     if (tekWidget) {
-	if (tekWidget->core.border_pixel == screen->Tbackground) {
-	    tekWidget->core.border_pixel = screen->Tforeground;
-	    XtParent(tekWidget)->core.border_pixel =
-		screen->Tforeground;
+	XSetForeground(screen->display, screen->TnormalGC,
+		       T_COLOR(screen, TEK_FG));
+	XSetBackground(screen->display, screen->TnormalGC,
+		       T_COLOR(screen, TEK_BG));
+	if (tekWidget->core.border_pixel == T_COLOR(screen, TEK_BG)) {
+	    tekWidget->core.border_pixel = T_COLOR(screen, TEK_FG);
+	    XtParent(tekWidget)->core.border_pixel = T_COLOR(screen, TEK_FG);
 	    if (XtWindow(XtParent(tekWidget)))
 		XSetWindowBorder(screen->display,
 				 XtWindow(XtParent(tekWidget)),
 				 tekWidget->core.border_pixel);
 	}
+
+	for (i = 0; i < TEKNUMLINES; i++) {
+	    XSetForeground(screen->display, screen->linepat[i],
+			   T_COLOR(screen, TEK_FG));
+	}
+
+	gcv.plane_mask = (T_COLOR(screen, TEK_BG) ^
+			  T_COLOR(screen, TEK_CURSOR));
+	XChangeGC(screen->display, screen->TcursorGC, GCPlaneMask, &gcv);
+	TekBackground(screen);
     }
-
-    for (i = 0; i < TEKNUMLINES; i++) {
-	XSetForeground(screen->display, screen->linepat[i],
-		       screen->Tforeground);
-    }
-
-    screen->Tcursorcolor = screen->Tforeground;
-
-    gcv.plane_mask = screen->xorplane = (screen->Tbackground ^
-					 screen->Tcursorcolor);
-    XChangeGC(screen->display, screen->TcursorGC, GCPlaneMask, &gcv);
-    TekBackground(screen);
     return;
 }
 
@@ -1658,38 +1625,33 @@ TekReverseVideo(register TScreen * screen)
     register int i;
     XGCValues gcv;
 
-    i = screen->Tbackground;
-    screen->Tbackground = screen->Tforeground;
-    screen->Tforeground = i;
+    EXCHANGE(T_COLOR(screen, TEK_FG), T_COLOR(screen, TEK_BG), i);
 
-    XSetForeground(screen->display, screen->TnormalGC,
-		   screen->Tforeground);
-    XSetBackground(screen->display, screen->TnormalGC,
-		   screen->Tbackground);
+    T_COLOR(screen, TEK_CURSOR) = T_COLOR(screen, TEK_FG);
 
     if (tekWidget) {
-	if (tekWidget->core.border_pixel == screen->Tbackground) {
-	    tekWidget->core.border_pixel = screen->Tforeground;
-	    XtParent(tekWidget)->core.border_pixel =
-		screen->Tforeground;
+	XSetForeground(screen->display, screen->TnormalGC, T_COLOR(screen, TEK_FG));
+	XSetBackground(screen->display, screen->TnormalGC, T_COLOR(screen, TEK_BG));
+
+	if (tekWidget->core.border_pixel == T_COLOR(screen, TEK_BG)) {
+	    tekWidget->core.border_pixel = T_COLOR(screen, TEK_FG);
+	    XtParent(tekWidget)->core.border_pixel = T_COLOR(screen, TEK_FG);
 	    if (XtWindow(XtParent(tekWidget)))
 		XSetWindowBorder(screen->display,
 				 XtWindow(XtParent(tekWidget)),
 				 tekWidget->core.border_pixel);
 	}
+
+	for (i = 0; i < TEKNUMLINES; i++) {
+	    XSetForeground(screen->display, screen->linepat[i],
+			   T_COLOR(screen, TEK_FG));
+	}
+
+	gcv.plane_mask = (T_COLOR(screen, TEK_BG) ^
+			  T_COLOR(screen, TEK_CURSOR));
+	XChangeGC(screen->display, screen->TcursorGC, GCPlaneMask, &gcv);
+	TekBackground(screen);
     }
-
-    for (i = 0; i < TEKNUMLINES; i++) {
-	XSetForeground(screen->display, screen->linepat[i],
-		       screen->Tforeground);
-    }
-
-    screen->Tcursorcolor = screen->Tforeground;
-
-    gcv.plane_mask = screen->xorplane = (screen->Tbackground ^
-					 screen->Tcursorcolor);
-    XChangeGC(screen->display, screen->TcursorGC, GCPlaneMask, &gcv);
-    TekBackground(screen);
 }
 
 static void
@@ -1697,7 +1659,7 @@ TekBackground(register TScreen * screen)
 {
     if (TWindow(screen))
 	XSetWindowBackground(screen->display, TWindow(screen),
-			     screen->Tbackground);
+			     T_COLOR(screen, TEK_BG));
 }
 
 /*

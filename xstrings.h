@@ -1,4 +1,4 @@
-/* $XFree86: xc/programs/xterm/xstrings.h,v 1.3 2002/08/12 00:36:33 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/xstrings.h,v 1.4 2002/08/17 19:52:27 dickey Exp $ */
 
 /************************************************************
 

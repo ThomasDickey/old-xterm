@@ -2,7 +2,7 @@
  *	$Xorg: scrollbar.c,v 1.4 2000/08/17 19:55:09 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/scrollbar.c,v 3.38 2003/09/21 17:12:48 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/scrollbar.c,v 3.39 2003/10/20 00:58:55 dickey Exp $ */
 
 /*
  * Copyright 2000-2002,2003 by Thomas E. Dickey

@@ -1,8 +1,10 @@
+/* $XTermId: main.h,v 1.25 2004/07/13 00:41:29 tom Exp $ */
+
 /*
  *	$Xorg: main.h,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/main.h,v 3.7 2002/08/17 19:52:26 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/main.h,v 3.11 2004/07/13 00:41:29 dickey Exp $ */
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -41,15 +43,46 @@
 #define DEFFACENAME		NULL
 #define DEFFACESIZE		14
 
+#if OPT_BLINK_TEXT
+#define DEFBLINKASBOLD		FALSE
+#else
+#define DEFBLINKASBOLD		TRUE
+#endif
+
 #ifndef DEFDELETE_DEL
-#define DEFDELETE_DEL 2
+#define DEFDELETE_DEL		2
+#endif
+
+#ifndef DEF_BACKARO_ERASE
+#define DEF_BACKARO_ERASE	FALSE
+#endif
+
+#ifndef DEF_COLOR4
+#define DEF_COLOR4		"blue2"		/* see XTerm-col.ad */
+#endif
+
+#ifndef DEF_COLOR12
+#define DEF_COLOR12		"rgb:5c/5c/ff"	/* see XTerm-col.ad */
+#endif
+
+#ifndef DEF_INITIAL_ERASE
+#define DEF_INITIAL_ERASE	FALSE
 #endif
 
 #ifndef PROJECTROOT
 #define PROJECTROOT		"/usr/X11R6"
 #endif
 
+/*
+ * The configure script quotes PROJECTROOT's value.
+ * imake does not quote PROJECTROOT's value.
+ */
+#ifdef HAVE_CONFIG_H
+#define DEFLOCALEFILTER2(x)	x
+#else
 #define DEFLOCALEFILTER2(x)	#x
+#endif
+
 #define DEFLOCALEFILTER1(x)	DEFLOCALEFILTER2(x)
 #define DEFLOCALEFILTER		DEFLOCALEFILTER1(PROJECTROOT) "/bin/luit"
 

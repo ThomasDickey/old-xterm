@@ -1,6 +1,6 @@
 #!/bin/sh
-# $XdotOrg: xc/programs/xterm/uxterm,v 1.1.4.2.4.2 2004/03/05 12:46:32 eich Exp $
-# $XFree86: xc/programs/xterm/uxterm,v 1.6 2003/03/09 23:39:14 dickey Exp $
+# $XTermId: uxterm,v 1.15 2004/07/13 00:41:30 tom Exp $
+# $XFree86: xc/programs/xterm/uxterm,v 1.9 2004/07/13 00:41:30 dickey Exp $
 # wrapper script to setup xterm with UTF-8 locale
 
 program=xterm
@@ -24,7 +24,10 @@ do
 	eval 'value=$'$name
 	if test -n "$value" ; then
 		case $value in
-		*.UTF-8)
+		*.utf8|*.UTF8|*.utf-8|*.UTF-8)
+			found=yes
+			;;
+		*.utf8@*|*.UTF8@*|*.utf-8@*|*.UTF-8@*)
 			found=yes
 			;;
 		C|POSIX)

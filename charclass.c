@@ -20,7 +20,7 @@
  * but merging in new intervals is significantly more hassle and
  * not worth the effort here.
  */
-/* $XFree86: xc/programs/xterm/charclass.c,v 1.2 2000/12/28 00:51:50 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/charclass.c,v 1.3 2002/04/28 19:04:19 dickey Exp $ */
 
 #include <xterm.h>
 #include <charclass.h>

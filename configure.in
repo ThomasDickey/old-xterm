@@ -1,9 +1,10 @@
+dnl $XTermId: configure.in,v 1.170 2004/08/15 21:07:59 tom Exp $
 dnl
-dnl $XFree86: xc/programs/xterm/configure.in,v 3.61 2003/09/21 17:12:47 dickey Exp $
+dnl $XFree86: xc/programs/xterm/configure.in,v 3.66 2004/08/15 21:07:59 dickey Exp $
 dnl
 dnl ---------------------------------------------------------------------------
 dnl
-dnl Copyright 1997-2002,2003 by Thomas E. Dickey
+dnl Copyright 1997-2003,2004 by Thomas E. Dickey
 dnl
 dnl                         All Rights Reserved
 dnl
@@ -64,6 +65,7 @@ termios.h \
 unistd.h \
 )
 AC_HEADER_TIME
+AM_LANGINFO_CODESET
 
 ###	checks for typedefs
 CF_SIZE_T
@@ -126,7 +128,14 @@ LIBS="$LIBS $X_EXTRA_LIBS"
 
 # Check for openpty() in -lutil if the UNIX98-style pty functions are not
 # available. E.g. for GNU libc 2.0.
-AC_CHECK_FUNCS(grantpt, [], AC_CHECK_LIB(util,openpty))
+case $host_os in #(vi
+netbsd*)	# 2004/8/15 - revisit this if/when grantpt is known to work.
+	AC_CHECK_LIB(util,openpty)
+	;;
+*)
+	AC_CHECK_FUNCS(grantpt, [], AC_CHECK_LIB(util,openpty))
+	;;
+esac
 
 AC_PATH_PROG(XTERM_PATH,xterm)
 
@@ -137,7 +146,7 @@ AC_CHECK_FUNCS(Xutf8LookupString, [],[
 	EXTRAOBJS="$EXTRAOBJS xutf8.o"
 ])
 
-CF_WITH_IMAKE_CFLAGS('$(MAIN_DEFINES)')
+CF_WITH_IMAKE_CFLAGS($(MAIN_DEFINES) $(VENDORMANDEFS))
 
 AC_MSG_CHECKING(for default terminal-id)
 AC_ARG_WITH(terminal-id,
@@ -519,26 +528,7 @@ CF_ARG_ENABLE(toolbar,
 	[enable_toolbar=no])
 AC_MSG_RESULT($enable_toolbar)
 if test "$enable_toolbar" = yes ; then
-	# The Xaw library in XFree86 4.x is broken.  Let's try to avoid using
-	# that for the toolbar.
-	cf_broken_xaw=no
-	AC_MSG_CHECKING(for broken Xaw library)
-	AC_TRY_COMPILE([
-#include <X11/Intrinsic.h>
-#include <X11/Xaw/XawInit.h>
-	],[
-#if defined(XawVersion) && XawVersion > 7000000L
-make an error
-#endif
-	],[
-	cf_broken_xaw=no
-	],[
-	cf_broken_xaw=yes
-	])
-	AC_MSG_RESULT($cf_broken_xaw)
-	if test "$cf_broken_xaw" = no ; then
-		AC_DEFINE(OPT_TOOLBAR,1)
-	fi
+	AC_DEFINE(OPT_TOOLBAR,1)
 fi
 
 AC_MSG_CHECKING(if you want VT52 emulation)
@@ -571,6 +561,16 @@ if test "$enable_wchar" = yes ; then
 	EXTRAHDRS="$EXTRAHDRS charclass.h precompose.h wcwidth.h"
 	EXTRASRCS="$EXTRASRCS charclass.c precompose.c wcwidth.c"
 	EXTRAOBJS="$EXTRAOBJS charclass.o precompose.o wcwidth.o"
+fi
+
+AC_MSG_CHECKING(if you want dynamic-abbreviation support)
+CF_ARG_ENABLE(dec-locator,
+	[  --enable-dabbrev        enable dynamic-abbreviation support],
+	[enable_dabbrev=yes],
+	[enable_dabbrev=no])
+AC_MSG_RESULT($enable_dabbrev)
+if test "$enable_dabbrev" = yes ; then
+	AC_DEFINE(OPT_DABBREV,1)
 fi
 
 AC_MSG_CHECKING(if you want DECterm Locator support)

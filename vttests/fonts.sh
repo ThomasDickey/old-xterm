@@ -1,5 +1,5 @@
 #!/bin/sh
-# $XFree86: xc/programs/xterm/vttests/fonts.sh,v 1.3 2002/09/30 00:39:08 dickey Exp $
+# $XFree86: xc/programs/xterm/vttests/fonts.sh,v 1.4 2003/05/19 00:52:30 dickey Exp $
 #
 # -- Thomas Dickey (1999/3/27)
 # Demonstrate the use of dynamic colors by setting the background successively

@@ -1,11 +1,13 @@
+/* $XTermId: ptyx.h,v 1.328 2004/07/28 00:53:26 tom Exp $ */
+
 /*
  *	$Xorg: ptyx.h,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/ptyx.h,v 3.110 2003/10/27 01:07:57 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/ptyx.h,v 3.119 2004/07/28 00:53:26 dickey Exp $ */
 
 /*
- * Copyright 1999-2002,2003 by Thomas E. Dickey
+ * Copyright 1999-2003,2004 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *
@@ -357,61 +359,7 @@ typedef struct {
 #define	SAVELINES		64      /* default # lines to save      */
 #define SCROLLLINES 1			/* default # lines to scroll    */
 
-/***====================================================================***/
-
-#define	TEXT_FG		0
-#define	TEXT_BG		1
-#define	TEXT_CURSOR	2
-#define	MOUSE_FG	3
-#define	MOUSE_BG	4
-#define	TEK_FG		5
-#define	TEK_BG		6
-#define	HIGHLIGHT_BG	7
-#define	NCOLORS		8
-
-#define EXCHANGE(a,b,tmp) tmp = a; a = b; b = tmp;
-
-#define	COLOR_DEFINED(s,w)	((s)->which&(1<<(w)))
-#define	COLOR_VALUE(s,w)	((s)->colors[w])
-#define	SET_COLOR_VALUE(s,w,v)	(((s)->colors[w]=(v)),((s)->which|=(1<<(w))))
-
-#define	COLOR_NAME(s,w)		((s)->names[w])
-#define	SET_COLOR_NAME(s,w,v)	(((s)->names[w]=(v)),((s)->which|=(1<<(w))))
-
-#define	UNDEFINE_COLOR(s,w)	((s)->which&=(~((w)<<1)))
-#define	OPPOSITE_COLOR(n)	(((n)==TEXT_FG?TEXT_BG:\
-				 ((n)==TEXT_BG?TEXT_FG:\
-				 ((n)==MOUSE_FG?MOUSE_BG:\
-				 ((n)==MOUSE_BG?MOUSE_FG:\
-				 ((n)==TEK_FG?TEK_BG:\
-				 ((n)==TEXT_BG?TEK_FG:(n))))))))
-
-#ifndef RES_OFFSET
-#define RES_OFFSET(offset) XtOffsetOf(XtermWidgetRec, offset)
-#endif
-
-#define RES_NAME(name) name
-#define RES_CLASS(name) name
-
-#define Bres(name,class,offset,value) \
-	{RES_NAME(name), RES_CLASS(class), XtRBoolean, sizeof(Boolean), \
-	 RES_OFFSET(offset), XtRImmediate, (XtPointer) value}
-
-#define Cres(name,class,offset,value) \
-	{RES_NAME(name), RES_CLASS(class), XtRPixel, sizeof(Pixel), \
-	 RES_OFFSET(offset), XtRString, (XtPointer) value}
-
-#define Fres(name,class,offset,value) \
-	{RES_NAME(name), RES_CLASS(class), XtRFontStruct, sizeof(XFontStruct *), \
-	 RES_OFFSET(offset), XtRString, (XtPointer) value}
-
-#define Ires(name,class,offset,value) \
-	{RES_NAME(name), RES_CLASS(class), XtRInt, sizeof(int), \
-	 RES_OFFSET(offset), XtRImmediate, (XtPointer) value}
-
-#define Sres(name,class,offset,value) \
-	{RES_NAME(name), RES_CLASS(class), XtRString, sizeof(char *), \
-	 RES_OFFSET(offset), XtRString, (XtPointer) value}
+#define EXCHANGE(a,b,tmp) tmp = a; a = b; b = tmp
 
 /***====================================================================***/
 
@@ -427,6 +375,10 @@ typedef struct {
 
 #ifndef OPT_BLINK_CURS
 #define OPT_BLINK_CURS  1 /* true if xterm has blinking cursor capability */
+#endif
+
+#ifndef OPT_BLINK_TEXT
+#define OPT_BLINK_TEXT  OPT_BLINK_CURS /* true if xterm has blinking text capability */
 #endif
 
 #ifndef OPT_BOX_CHARS
@@ -459,6 +411,15 @@ typedef struct {
 
 #ifndef OPT_COLOR_RES
 #define OPT_COLOR_RES   1 /* true if xterm delays color-resource evaluation */
+#undef  OPT_COLOR_RES2
+#endif
+
+#ifndef OPT_COLOR_RES2
+#define OPT_COLOR_RES2 OPT_COLOR_RES /* true to avoid using extra resources */
+#endif
+
+#ifndef OPT_DABBREV
+#define OPT_DABBREV 0	/* dynamic abbreviations */
 #endif
 
 #ifndef OPT_DEC_CHRSET
@@ -557,6 +518,22 @@ typedef struct {
 #define OPT_READLINE	0 /* mouse-click/paste support for readline */
 #endif
 
+#ifndef OPT_RENDERFONT
+#ifdef XRENDERFONT
+#define OPT_RENDERFONT 1
+#else
+#define OPT_RENDERFONT 0
+#endif
+#endif
+
+#ifndef OPT_RENDERWIDE
+#if OPT_RENDERFONT && OPT_WIDE_CHARS && defined(HAVE_TYPE_XFTCHARSPEC)
+#define OPT_RENDERWIDE 1
+#else
+#define OPT_RENDERWIDE 0
+#endif
+#endif
+
 #ifndef OPT_SAME_NAME
 #define OPT_SAME_NAME   1 /* suppress redundant updates of title, icon, etc. */
 #endif
@@ -621,6 +598,18 @@ typedef struct {
 #define OPT_AIX_COLORS 0
 #endif
 
+#if OPT_COLOR_RES && !OPT_ISO_COLORS
+/* You must have ANSI/ISO colors to support ColorRes logic */
+#undef  OPT_COLOR_RES
+#define OPT_COLOR_RES 0
+#endif
+
+#if OPT_COLOR_RES2 && !(OPT_256_COLORS || OPT_88_COLORS)
+/* You must have 88/256 colors to need fake-resource logic */
+#undef  OPT_COLOR_RES2
+#define OPT_COLOR_RES2 0
+#endif
+
 #if OPT_PC_COLORS && !OPT_ISO_COLORS
 /* You must have ANSI/ISO colors to support PC colors */
 #undef  OPT_PC_COLORS
@@ -653,9 +642,40 @@ typedef struct {
 
 /***====================================================================***/
 
+/* indices for the normal terminal colors in screen.Tcolors[] */
+typedef enum {
+    TEXT_FG = 0			/* text foreground */
+    , TEXT_BG = 1		/* text background */
+    , TEXT_CURSOR = 2		/* text cursor */
+    , MOUSE_FG = 3		/* mouse foreground */
+    , MOUSE_BG = 4		/* mouse background */
+#if OPT_TEK4014
+    , TEK_FG = 5		/* tektronix foreground */
+    , TEK_BG = 6		/* tektronix background */
+#endif
+#if OPT_HIGHLIGHT_COLOR
+    , HIGHLIGHT_BG = 7		/* highlight background */
+#endif
+#if OPT_TEK4014
+    , TEK_CURSOR = 8		/* tektronix cursor */
+#endif
+    , NCOLORS			/* total number of colors */
+} TermColors;
+
+#define	COLOR_DEFINED(s,w)	((s)->which & (1<<(w)))
+#define	COLOR_VALUE(s,w)	((s)->colors[w])
+#define	SET_COLOR_VALUE(s,w,v)	(((s)->colors[w] = (v)), ((s)->which |= (1<<(w))))
+
+#define	COLOR_NAME(s,w)		((s)->names[w])
+#define	SET_COLOR_NAME(s,w,v)	(((s)->names[w] = (v)), ((s)->which |= (1<<(w))))
+
+#define	UNDEFINE_COLOR(s,w)	((s)->which &= (~((w)<<1)))
+
+/***====================================================================***/
+
 #if OPT_ISO_COLORS
 #define if_OPT_ISO_COLORS(screen, code) if(screen->colorMode) code
-#define TERM_COLOR_FLAGS (term->flags & (FG_COLOR|BG_COLOR))
+#define TERM_COLOR_FLAGS (term->flags & (BG_COLOR))
 #define COLOR_0		0
 #define COLOR_1		1
 #define COLOR_2		2
@@ -672,16 +692,17 @@ typedef struct {
 #define COLOR_13	13
 #define COLOR_14	14
 #define COLOR_15	15
+#define MIN_ANSI_COLORS 16
 
 #if OPT_256_COLORS
 # define NUM_ANSI_COLORS 256
 #elif OPT_88_COLORS
 # define NUM_ANSI_COLORS 88
 #else
-# define NUM_ANSI_COLORS 16
+# define NUM_ANSI_COLORS MIN_ANSI_COLORS
 #endif
 
-#if NUM_ANSI_COLORS > 16
+#if NUM_ANSI_COLORS > MIN_ANSI_COLORS
 # define OPT_EXT_COLORS  1
 #else
 # define OPT_EXT_COLORS  0
@@ -746,8 +767,10 @@ typedef struct {
 
 #if OPT_COLOR_RES
 #define COLOR_RES(root,offset,value) Sres(COLOR_RES_NAME(root), COLOR_RES_CLASS(root), offset.resource, value)
+#define COLOR_RES2(name,class,offset,value) Sres(name, class, offset.resource, value)
 #else
 #define COLOR_RES(root,offset,value) Cres(COLOR_RES_NAME(root), COLOR_RES_CLASS(root), offset, value)
+#define COLOR_RES2(name,class,offset,value) Cres(name, class, offset, value)
 #endif
 
 /***====================================================================***/
@@ -864,43 +887,88 @@ typedef unsigned char IChar;	/* for 8-bit characters */
 
 /***====================================================================***/
 
+#ifndef RES_OFFSET
+#define RES_OFFSET(offset) XtOffsetOf(XtermWidgetRec, offset)
+#endif
+
+#define RES_NAME(name) name
+#define RES_CLASS(name) name
+
+#define Bres(name, class, offset, dftvalue) \
+	{RES_NAME(name), RES_CLASS(class), XtRBoolean, sizeof(Boolean), \
+	 RES_OFFSET(offset), XtRImmediate, (XtPointer) dftvalue}
+
+#define Cres(name, class, offset, dftvalue) \
+	{RES_NAME(name), RES_CLASS(class), XtRPixel, sizeof(Pixel), \
+	 RES_OFFSET(offset), XtRString, (XtPointer) dftvalue}
+
+#define Tres(name, class, offset, dftvalue) \
+	COLOR_RES2(name, class, screen.Tcolors[offset], dftvalue) \
+
+#define Fres(name, class, offset, dftvalue) \
+	{RES_NAME(name), RES_CLASS(class), XtRFontStruct, sizeof(XFontStruct *), \
+	 RES_OFFSET(offset), XtRString, (XtPointer) dftvalue}
+
+#define Ires(name, class, offset, dftvalue) \
+	{RES_NAME(name), RES_CLASS(class), XtRInt, sizeof(int), \
+	 RES_OFFSET(offset), XtRImmediate, (XtPointer) dftvalue}
+
+#define Sres(name, class, offset, dftvalue) \
+	{RES_NAME(name), RES_CLASS(class), XtRString, sizeof(char *), \
+	 RES_OFFSET(offset), XtRString, (XtPointer) dftvalue}
+
+/***====================================================================***/
+
 #define BUF_SIZE 4096
+#define FRG_SIZE 128
 
 typedef struct {
-	int	cnt;		/* number of chars left to process */
-	IChar *	ptr;		/* pointer into decoded data */
-	Char	buf[BUF_SIZE];	/* we read directly into this */
+	Char	buffer[BUF_SIZE + FRG_SIZE];
+	Char *	next;
+	Char *	last;
+	int	update;		/* HandleInterpret */
 #if OPT_WIDE_CHARS
-	IChar	buf2[BUF_SIZE];	/* ...and may decode into this */
-#define DecodedData(data) (data)->buf2
-#else
-#define DecodedData(data) (data)->buf
+	IChar	utf_data;	/* resulting character */
+	int	utf_size;	/* ...number of bytes decoded */
 #endif
-	} PtyData;
+} PtyData;
 
 /***====================================================================***/
 
 #if OPT_TRACE
 #include <trace.h>
-#else
+#endif
+
 #ifndef TRACE
 #define TRACE(p) /*nothing*/
 #endif
+
 #ifndef TRACE_ARGV
 #define TRACE_ARGV(tag,argv) /*nothing*/
 #endif
+
 #ifndef TRACE_CHILD
 #define TRACE_CHILD /*nothing*/
 #endif
+
 #ifndef TRACE_HINTS
 #define TRACE_HINTS(hints) /*nothing*/
 #endif
+
 #ifndef TRACE_OPTS
 #define TRACE_OPTS(opts,ress,lens) /*nothing*/
 #endif
+
 #ifndef TRACE_TRANS
 #define TRACE_TRANS(name,w) /*nothing*/
 #endif
+
+#ifndef TRACE_XRES
+#define TRACE_XRES() /*nothing*/
+#endif
+
+#ifndef TRACE2
+#define TRACE2(p) /*nothing*/
 #endif
 
 /***====================================================================***/
@@ -996,7 +1064,7 @@ typedef enum {
 	DP_CRS_BLINK,
 #endif
 	DP_LAST
-	} SaveModes;
+} SaveModes;
 
 #define DoSM(code,value) screen->save_modes[code] = value
 #define DoRM(code,value) value = screen->save_modes[code]
@@ -1023,7 +1091,7 @@ typedef struct {
 #endif
 
 typedef struct {
-	unsigned	which;	/* must have NCOLORS bits */
+	unsigned	which;		/* must have NCOLORS bits */
 	Pixel		colors[NCOLORS];
 	char		*names[NCOLORS];
 } ScrnColors;
@@ -1101,10 +1169,7 @@ typedef struct {
 	GC		fillCursorGC;	/* special cursor painting	*/
 	GC		reversecursorGC;/* reverse cursor painting	*/
 	GC		cursoroutlineGC;/* for painting lines around    */
-	Pixel		foreground;	/* foreground color		*/
-	Pixel		cursorcolor;	/* Cursor color			*/
-	Pixel		mousecolor;	/* Mouse color			*/
-	Pixel		mousecolorback;	/* Mouse color background	*/
+	ColorRes	Tcolors[NCOLORS]; /* terminal colors		*/
 #if OPT_ISO_COLORS
 	ColorRes	Acolors[MAXCOLORS]; /* ANSI color emulation	*/
 	int		veryBoldColors;	/* modifier for boldColors	*/
@@ -1115,9 +1180,6 @@ typedef struct {
 	Boolean		colorBLMode;	/* use color for blink?		*/
 	Boolean		colorRVMode;	/* use color for reverse?	*/
 	Boolean		colorAttrMode;	/* prefer colorUL/BD to SGR	*/
-#endif
-#if OPT_HIGHLIGHT_COLOR
-	Pixel		highlightcolor;	/* Highlight background color	*/
 #endif
 #if OPT_DEC_CHRSET
 	Boolean		font_doublesize;/* enable font-scaling		*/
@@ -1180,7 +1242,7 @@ typedef struct {
 	int		logging;	/* logging mode			*/
 	int		logfd;		/* file descriptor of log	*/
 	char		*logfile;	/* log file name		*/
-	IChar		*logstart;	/* current start of log buffer	*/
+	Char		*logstart;	/* current start of log buffer	*/
 #endif
 	int		inhibit;	/* flags for inhibiting changes	*/
 
@@ -1206,6 +1268,7 @@ typedef struct {
 	Boolean		fnt_boxes;	/* true if font has box-chars	*/
 #if OPT_BOX_CHARS
 	Boolean		force_box_chars;/* true if we assume that	*/
+	Boolean		force_all_chars;/* true to outline missing chars*/
 #endif
 	Dimension	fnt_wide;
 	Dimension	fnt_high;
@@ -1223,15 +1286,26 @@ typedef struct {
 	XPoint		*box;		/* draw unselected cursor	*/
 
 	int		cursor_state;	/* ON, OFF, or BLINKED_OFF	*/
+	int		cursor_busy;	/* do not redraw...		*/
 #if OPT_BLINK_CURS
 	Boolean		cursor_blink;	/* cursor blink enable		*/
-	int		cursor_on;	/* cursor on time (msecs)	*/
-	int		cursor_off;	/* cursor off time (msecs)	*/
-	XtIntervalId	cursor_timer;	/* timer-id for cursor-proc	*/
+	Boolean		cursor_blink_res; /* initial cursor blink value	*/
+	Boolean		cursor_blink_esc; /* cursor blink escape-state	*/
 #endif
+#if OPT_BLINK_TEXT
+	Boolean		blink_as_bold;	/* text blink disable		*/
+#endif
+#if OPT_BLINK_CURS || OPT_BLINK_TEXT
+	int		blink_state;	/* ON, OFF, or BLINKED_OFF	*/
+	int		blink_on;	/* cursor on time (msecs)	*/
+	int		blink_off;	/* cursor off time (msecs)	*/
+	XtIntervalId	blink_timer;	/* timer-id for cursor-proc	*/
+#endif
+	int		cursor_GC;	/* see ShowCursor()		*/
 	int		cursor_set;	/* requested state		*/
 	int		cursor_col;	/* previous cursor column	*/
 	int		cursor_row;	/* previous cursor row		*/
+	Boolean		cursor_moved;	/* scrolling makes cursor move	*/
 	int		cur_col;	/* current cursor column	*/
 	int		cur_row;	/* current cursor row		*/
 	int		max_col;	/* rightmost column		*/
@@ -1300,8 +1374,8 @@ typedef struct {
 
 #if OPT_MAXIMIZE
 	Boolean		restore_data;
-	unsigned	restore_x;
-	unsigned	restore_y;
+	int		restore_x;
+	int		restore_y;
 	unsigned	restore_width;
 	unsigned	restore_height;
 #endif
@@ -1325,11 +1399,7 @@ typedef struct {
 /* Tektronix window parameters */
 	GC		TnormalGC;	/* normal painting		*/
 	GC		TcursorGC;	/* normal cursor painting	*/
-	Pixel		Tforeground;	/* foreground color		*/
-	Pixel		Tbackground;	/* Background color		*/
-	Pixel		Tcursorcolor;	/* Cursor color			*/
 
-	int		Tcolor;		/* colors used			*/
 	Boolean		Tshow;		/* Tek window showing		*/
 	Boolean		waitrefresh;	/* postpone refresh		*/
 	struct _tekwin	fullTwin;
@@ -1338,7 +1408,6 @@ typedef struct {
 	struct _tekwin *whichTwin;
 #endif /* NO_ACTIVE_ICON */
 
-	int		xorplane;	/* z plane for inverts		*/
 	GC		linepat[TEKNUMLINES]; /* line patterns		*/
 	Boolean		TekEmu;		/* true if Tektronix emulation	*/
 	int		cur_X;		/* current x			*/
@@ -1378,18 +1447,25 @@ typedef struct {
 	Boolean		backarrow_key;		/* backspace/delete */
 	Boolean		meta_sends_esc;		/* Meta-key sends ESC prefix */
 	Pixmap		menu_item_bitmap;	/* mask for checking items */
+	String		bold_font_names[NMENUFONTS];
 	String		menu_font_names[NMENUFONTS];
 	long		menu_font_sizes[NMENUFONTS];
 	int		menu_font_number;
 	XIC		xic;
-#ifdef XRENDERFONT
-	XftFont		*renderFont;
-	XftFont		*renderFontBold;
-	XftDraw		*renderDraw;
+#if OPT_RENDERFONT
+	XftFont *	renderFontNorm[NMENUFONTS];
+	XftFont *	renderFontBold[NMENUFONTS];
+	XftFont *	renderWideNorm[NMENUFONTS];
+	XftFont *	renderWideBold[NMENUFONTS];
+	XftDraw *	renderDraw;
 #endif
 #if OPT_INPUT_METHOD
 	XFontSet	fs;		/* fontset for XIM preedit */
 	int		fs_ascent;	/* ascent of fs */
+#endif
+#if OPT_DABBREV
+	int		dabbrev_working;	/* nonzero during dabbrev process */
+	unsigned char	dabbrev_erase_char;	/* used for deleting inserted completion */
 #endif
 } TScreen;
 
@@ -1429,6 +1505,10 @@ typedef enum {
     keyboardIsSun,
     keyboardIsVT220
 } xtermKeyboardType;
+
+#if OPT_TRACE
+extern	const char * visibleKeyboardType(xtermKeyboardType);
+#endif
 
 typedef struct
 {
@@ -1493,6 +1573,7 @@ typedef struct _Misc {
     char* input_method;
     char* preedit_type;
     Boolean open_im;
+    Boolean cannot_im;		/* true if we cannot use input-method */
 #endif
     Boolean dynamicColors;
     Boolean shared_ic;
@@ -1520,9 +1601,11 @@ typedef struct _Misc {
     unsigned long meta_left;	/* modifier for Meta_L */
     unsigned long meta_right;	/* modifier for Meta_R */
 #endif
-#ifdef XRENDERFONT
+#if OPT_RENDERFONT
     char *face_name;
+    char *face_wide_name;
     int face_size;
+    Boolean render_font;
 #endif
 } Misc;
 
@@ -1614,6 +1697,12 @@ typedef struct _TekWidgetRec {
 				   screen.  Used to distinguish blanks from
 				   empty parts of the screen when selecting */
 
+#if OPT_BLINK_CURS
+#define BOLDATTR(screen) (BOLD | ((screen)->blink_as_bold ? BLINK : 0))
+#else
+#define BOLDATTR(screen) (BOLD | BLINK)
+#endif
+
 /* The following attributes make sense in the argument of drawXtermText()  */
 #define NOBACKGROUND	0x100	/* Used for overstrike */
 #define NOTRANSLATION	0x200	/* No scan for chars missing in font */
@@ -1668,6 +1757,11 @@ typedef struct _TekWidgetRec {
 #else
 #define OriginX(screen) (ScrollbarWidth(screen) + screen->border)
 #endif
+
+#define CursorMoved(screen) \
+		((screen)->cursor_moved || \
+		    ((screen)->cursor_col != (screen)->cur_col || \
+		     (screen)->cursor_row != (screen)->cur_row))
 
 #define CursorX(screen,col) ((col) * FontWidth(screen) + OriginX(screen))
 #define CursorY(screen,row) ((((row) - screen->topline) * FontHeight(screen)) \

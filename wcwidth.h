@@ -1,4 +1,4 @@
-/* $XFree86: xc/programs/xterm/wcwidth.h,v 1.3 2002/08/12 00:36:33 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/wcwidth.h,v 1.4 2002/09/30 00:39:07 dickey Exp $ */
 
 #ifndef	included_wcwidth_h
 #define	included_wcwidth_h 1
