@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: scrollbar.c,v 1.17 88/11/23 13:56:05 rws Exp $
+ *	$XConsortium: scrollbar.c,v 1.32 89/12/15 11:45:51 kit Exp $
  */
 
 #include <X11/copyright.h>
@@ -28,21 +28,25 @@
  */
 
 #include <stdio.h>
+#include <ctype.h>
 #include <setjmp.h>
-#include <X11/Xlib.h>
 #include <X11/Xatom.h>
-#include <X11/Xutil.h>
+
+#include "ptyx.h"		/* X headers included here. */
+
 #include <X11/StringDefs.h>
-#include "ptyx.h"
-#include "data.h"
-#include <X11/Scroll.h> /* should come from Xaw/Scroll.h at some point */
-#include "error.h"
 #include <X11/Shell.h>
 
-extern void Bcopy();
+#include <X11/Xaw/Scrollbar.h>
+
+#include "data.h"
+#include "error.h"
+#include "menu.h"
+
+extern void bcopy();
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: scrollbar.c,v 1.17 88/11/23 13:56:05 rws Exp $";
+static char rcs_id[] = "$XConsortium: scrollbar.c,v 1.32 89/12/15 11:45:51 kit Exp $";
 #endif	/* lint */
 
 /* Event handlers */
@@ -84,24 +88,28 @@ static void ResizeScreen(xw, min_width, min_height )
 	};
 
 #ifndef nothack
+	long supp;
+
 	/* %%% gross hack caused by our late processing of geometry
 	   (in VTRealize) and setting of size hints there, leaving
 	   Shell with insufficient information to do the job properly here.
 	   Instead of doing it properly, we save and restore the
 	   size hints around Shell.SetValues and Shell.GeometryManager
 	 */
-	if (!XGetNormalHints(screen->display, XtWindow(XtParent(xw)),
-			     &sizehints))
+	if (!XGetWMNormalHints (screen->display, XtWindow(XtParent(xw)),
+				&sizehints, &supp))
 	    sizehints.flags = 0;
-	sizehints.min_width = min_width;
-	sizehints.min_height = min_height;
+	sizehints.base_width = min_width;
+	sizehints.base_height = min_height;
 	sizehints.width_inc = FontWidth(screen);
 	sizehints.height_inc = FontHeight(screen);
+	sizehints.min_width = sizehints.base_width + sizehints.width_inc;
+	sizehints.min_height = sizehints.base_height + sizehints.height_inc;
 	sizehints.width =  (screen->max_col + 1) * FontWidth(screen)
 				+ min_width;
 	sizehints.height = FontHeight(screen) * (screen->max_row + 1)
 				+ min_height;
-	sizehints.flags |= PMinSize|PResizeInc;
+	sizehints.flags |= (PBaseSize|PMinSize|PResizeInc);
 #endif
 
 	argList[0].value = (XtArgVal)min_width;
@@ -131,12 +139,12 @@ static void ResizeScreen(xw, min_width, min_height )
 					     &repWidth, &repHeight);
 
 #ifndef nothack
-	XSetNormalHints(screen->display, XtWindow(XtParent(xw)), &sizehints);
+	XSetWMNormalHints(screen->display, XtWindow(XtParent(xw)), &sizehints);
 #endif
 
 	if (oldWidth != reqWidth || oldHeight != reqHeight) {
 	    /* wait for a window manager to actually do it */
-	    XIfEvent (screen->display, &event, IsEventType, ConfigureNotify);
+	    XIfEvent (screen->display, &event, IsEventType, (char *)ConfigureNotify);
 	}
 
 	newAttributes.event_mask = oldAttributes.your_event_mask;
@@ -146,13 +154,21 @@ static void ResizeScreen(xw, min_width, min_height )
 				 &newAttributes );
 }
 
+void DoResizeScreen (xw)
+    register XtermWidget xw;
+{
+    int border = 2 * xw->screen.border;
+    int sb = (xw->screen.scrollbar ? xw->screen.scrollWidget->core.width : 0);
+
+    ResizeScreen (xw, border + sb, border);
+}
+
 
 static Widget CreateScrollBar(xw, x, y, height)
 	XtermWidget xw;
 	int x, y, height;
 {
 	Widget scrollWidget;
-	TScreen *screen = &xw->screen;
 
 	static Arg argList[] = {
 	   {XtNx,		(XtArgVal) 0},
@@ -186,10 +202,25 @@ static void RealizeScrollBar (sbw, screen)
 ScrollBarReverseVideo(scrollWidget)
 	register Widget scrollWidget;
 {
-	Arg argList[1];
+	Arg args[4];
+	int nargs = XtNumber(args);
+	unsigned long bg, fg, bdr;
+	Pixmap bdpix;
 
-	XtSetArg(argList[0], XtNreverseVideo, term->misc.re_verse);
-	XtSetValues(scrollWidget, argList, XtNumber(argList));
+	XtSetArg(args[0], XtNbackground, &bg);
+	XtSetArg(args[1], XtNforeground, &fg);
+	XtSetArg(args[2], XtNborderColor, &bdr);
+	XtSetArg(args[3], XtNborderPixmap, &bdpix);
+	XtGetValues (scrollWidget, args, nargs);
+	args[0].value = (XtArgVal) fg;
+	args[1].value = (XtArgVal) bg;
+	nargs--;				/* don't set border_pixmap */
+	if (bdpix == XtUnspecifiedPixmap) {	/* if not pixmap then pixel */
+	    args[2].value = args[1].value;	/* set border to new fg */
+	} else {				/* ignore since pixmap */
+	    nargs--;				/* don't set border pixel */
+	}
+	XtSetValues (scrollWidget, args, nargs);
 }
 
 
@@ -204,7 +235,7 @@ ScrollBarDrawThumb(scrollWidget)
 	thumbHeight = screen->max_row + 1;
 	totalHeight = thumbHeight + screen->savedlines;
 
-	XtScrollBarSetThumb(scrollWidget,
+	XawScrollbarSetThumb(scrollWidget,
 	 ((float)thumbTop) / totalHeight,
 	 ((float)thumbHeight) / totalHeight);
 	
@@ -298,7 +329,7 @@ ScrollBarOn (xw, init, doalloc)
 	register TScreen *screen = &xw->screen;
 	register int border = 2 * screen->border;
 	register int i;
-	char *realloc(), *calloc();
+	Char *realloc(), *calloc();
 
 	if(screen->scrollbar)
 		return;
@@ -332,7 +363,7 @@ ScrollBarOn (xw, init, doalloc)
 	       == NULL)
 	      Error (ERROR_SBRALLOC);
 	    screen->buf = &screen->allbuf[2 * screen->savelines];
-	    Bcopy ((char *)screen->allbuf, (char *)screen->buf,
+	    bcopy ((char *)screen->allbuf, (char *)screen->buf,
 		   2 * (screen->max_row + 2) * sizeof (char *));
 	    for(i = 2 * screen->savelines - 1 ; i >= 0 ; i--)
 	      if((screen->allbuf[i] =
@@ -347,21 +378,21 @@ ScrollBarOn (xw, init, doalloc)
 	screen->scrollbar = screen->scrollWidget->core.width;
 
 	ScrollBarDrawThumb(screen->scrollWidget);
-	ResizeScreen (xw, border + screen->scrollWidget->core.width, border);
+	DoResizeScreen (xw);
 	/* map afterwards so BitGravity can be used profitably */
 	XMapWindow(screen->display, XtWindow(screen->scrollWidget));
+	update_scrollbar ();
 }
 
 ScrollBarOff(screen)
 	register TScreen *screen;
 {
-	register int border = 2 * screen->border;
-
 	if(!screen->scrollbar)
 		return;
 	screen->scrollbar = 0;
 	XUnmapWindow(screen->display, XtWindow(screen->scrollWidget));
-	ResizeScreen( term, border, border );
+	DoResizeScreen (term);
+	update_scrollbar ();
 }
 
 /*ARGSUSED*/
@@ -404,3 +435,98 @@ static void ScrollTextUpDownBy(scrollbarWidget, closure, pixels)
 	newTopLine = screen->topline + rowOnScreen;
 	WindowScroll(screen, newTopLine);
 }
+
+
+/*
+ * assume that b is lower case and allow plural
+ */
+static int specialcmplowerwiths (a, b)
+    char *a, *b;
+{
+    register char ca, cb;
+
+    if (!a || !b) return 0;
+
+    while (1) {
+	ca = *a;
+	cb = *b;
+	if (isascii(ca) && isupper(ca)) {		/* lowercasify */
+#ifdef _tolower
+	    ca = _tolower (ca);
+#else
+	    ca = tolower (ca);
+#endif
+	}
+	if (ca != cb || ca == '\0') break;  /* if not eq else both nul */
+	a++, b++;
+    }
+    if (cb == '\0' && (ca == '\0' || (ca == 's' && a[1] == '\0')))
+      return 1;
+
+    return 0;
+}
+
+static int params_to_pixels (screen, params, n)
+    TScreen *screen;
+    String *params;
+    int n;
+{
+    register mult = 1;
+    register char *s;
+
+    switch (n > 2 ? 2 : n) {
+      case 2:
+	s = params[1];
+	if (specialcmplowerwiths (s, "page")) {
+	    mult = (screen->max_row + 1) * FontHeight(screen);
+	} else if (specialcmplowerwiths (s, "halfpage")) {
+	    mult = ((screen->max_row + 1) * FontHeight(screen)) >> 1;
+	} else if (specialcmplowerwiths (s, "pixel")) {
+	    mult = 1;
+	} /* else assume that it is Line */
+	mult *= atoi (params[0]);
+	break;
+      case 1:
+	mult = atoi (params[0]) * FontHeight(screen);	/* lines */
+	break;
+      default:
+	mult = screen->scrolllines * FontHeight(screen);
+	break;
+    }
+
+    return mult;
+}
+
+
+/*ARGSUSED*/
+void HandleScrollForward (gw, event, params, nparams)
+    Widget gw;
+    XEvent *event;
+    String *params;
+    Cardinal *nparams;
+{
+    XtermWidget w = (XtermWidget) gw;
+    register TScreen *screen = &w->screen;
+
+    ScrollTextUpDownBy (gw, (Opaque) NULL,
+			params_to_pixels (screen, params, (int) *nparams));
+    return;
+}
+
+
+/*ARGSUSED*/
+void HandleScrollBack (gw, event, params, nparams)
+    Widget gw;
+    XEvent *event;
+    String *params;
+    Cardinal *nparams;
+{
+    XtermWidget w = (XtermWidget) gw;
+    register TScreen *screen = &w->screen;
+
+    ScrollTextUpDownBy (gw, (Opaque) NULL,
+			-params_to_pixels (screen, params, (int) *nparams));
+    return;
+}
+
+

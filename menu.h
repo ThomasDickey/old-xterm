@@ -1,106 +1,264 @@
-/*		@(#)menu.h	1.2 Stellar 87/10/07	*/
+/* Copyright 1989 Massachusetts Institute of Technology */
+
+typedef struct _MenuEntry {
+    char *name;
+    void (*function)();
+    Widget widget;
+} MenuEntry;
+
+extern MenuEntry mainMenuEntries[], vtMenuEntries[], tekMenuEntries[];
+extern MenuEntry fontMenuEntries[];
+extern Arg menuArgs[];
+
+extern void HandleAllowSends(), HandleVisualBell(),
+  HandleLogging(), HandleRedraw(), HandleSendSignal(), 
+  HandleQuit(), HandleScrollbar(), HandleJumpscroll(), HandleReverseVideo(),
+  HandleAutoWrap(), HandleReverseWrap(), HandleAutoLineFeed(), 
+  HandleAppCursor(), HandleAppKeypad(), HandleScrollKey(), 
+  HandleScrollTtyOutput(), HandleAllow132(), HandleCursesEmul(), 
+  HandleMarginBell(), HandleAltScreen(), HandleSoftReset(), 
+  HandleHardReset(), HandleSetTerminalType(), HandleVisibility(), 
+  HandleSetTekText(), HandleTekPage(), HandleTekReset(), HandleTekCopy();
+
+
+
 /*
- *	$XConsortium: menu.h,v 1.3 88/09/06 17:08:17 jim Exp $
+ * The following definitions MUST match the order of entries given in 
+ * the mainMenuEntries, vtMenuEntries, and tekMenuEntries arrays in menu.c.
+ */
+
+/*
+ * items in primary menu
+ */
+#define mainMenu_securekbd 0
+#define mainMenu_allowsends 1
+#define mainMenu_logging 2
+#define mainMenu_redraw 3
+#define mainMenu_line1 4
+#define mainMenu_suspend 5
+#define mainMenu_continue 6
+#define mainMenu_interrupt 7
+#define mainMenu_hangup 8
+#define mainMenu_terminate 9
+#define mainMenu_kill 10
+#define mainMenu_line2 11
+#define mainMenu_quit 12
+
+
+/*
+ * items in vt100 mode menu
+ */
+#define vtMenu_scrollbar 0
+#define vtMenu_jumpscroll 1
+#define vtMenu_reversevideo 2
+#define vtMenu_autowrap 3
+#define vtMenu_reversewrap 4
+#define vtMenu_autolinefeed 5
+#define vtMenu_appcursor 6
+#define vtMenu_appkeypad 7
+#define vtMenu_scrollkey 8
+#define vtMenu_scrollttyoutput 9
+#define vtMenu_allow132 10
+#define vtMenu_cursesemul 11
+#define vtMenu_visualbell 12
+#define vtMenu_marginbell 13
+#define vtMenu_altscreen 14
+#define vtMenu_line1 15
+#define vtMenu_softreset 16
+#define vtMenu_hardreset 17
+#define vtMenu_line2 18
+#define vtMenu_tekshow 19
+#define vtMenu_tekmode 20
+#define vtMenu_vthide 21
+
+/*
+ * items in vt100 font menu
+ */
+#define fontMenu_fontdefault 0
+#define fontMenu_font1 1
+#define fontMenu_font2 2
+#define fontMenu_font3 3
+#define fontMenu_font4 4
+#define fontMenu_fontescape 5
+#define fontMenu_fontsel 6
+/* number of non-line items should match NMENUFONTS in ptyx.h */
+
+
+/*
+ * items in tek4014 mode menu
+ */
+#define tekMenu_tektextlarge 0
+#define tekMenu_tektext2 1
+#define tekMenu_tektext3 2
+#define tekMenu_tektextsmall 3
+#define tekMenu_line1 4
+#define tekMenu_tekpage 5
+#define tekMenu_tekreset 6
+#define tekMenu_tekcopy 7
+#define tekMenu_line2 8
+#define tekMenu_vtshow 9
+#define tekMenu_vtmode 10
+#define tekMenu_tekhide 11
+
+
+/*
+ * macros for updating menus
+ */
+
+#define update_menu_item(w,mi,val) { if (mi) { \
+    menuArgs[0].value = (XtArgVal) ((val) ? term->screen.menu_item_bitmap \
+				          : None); \
+    XtSetValues (mi, menuArgs, (Cardinal) 1); }}
+
+
+#define set_sensitivity(w,mi,val) { if (mi) { \
+    menuArgs[1].value = (XtArgVal) (val); \
+    XtSetValues (mi, menuArgs+1, (Cardinal) 1);  }}
+
+
+
+/*
+ * there should be one of each of the following for each checkable item
  */
 
 
-#include <X11/copyright.h>
+#define update_securekbd() \
+  update_menu_item (term->screen.mainMenu, \
+		    mainMenuEntries[mainMenu_securekbd].widget, \
+		    term->screen.grabbedKbd)
+
+#define update_allowsends() \
+  update_menu_item (term->screen.mainMenu, \
+		    mainMenuEntries[mainMenu_allowsends].widget, \
+		    term->screen.allowSendEvents)
+
+#define update_logging() \
+  update_menu_item (term->screen.mainMenu, \
+		    mainMenuEntries[mainMenu_logging].widget, \
+		    term->screen.logging)
+
+
+#define update_scrollbar() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_scrollbar].widget, \
+		    term->screen.scrollbar)
+
+#define update_jumpscroll() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_jumpscroll].widget, \
+		    term->screen.jumpscroll)
+
+#define update_reversevideo() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_reversevideo].widget, \
+		    (term->flags & REVERSE_VIDEO))
+
+#define update_autowrap() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_autowrap].widget, \
+		    (term->flags & WRAPAROUND))
+
+#define update_reversewrap() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_reversewrap].widget, \
+		    (term->flags & REVERSEWRAP))
+
+#define update_autolinefeed() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_autolinefeed].widget, \
+		    (term->flags & LINEFEED))
+
+#define update_appcursor() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_appcursor].widget, \
+		    (term->keyboard.flags & CURSOR_APL))
+
+#define update_appkeypad() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_appkeypad].widget, \
+		    (term->keyboard.flags & KYPD_APL))
+
+#define update_scrollkey() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_scrollkey].widget,  \
+		    term->screen.scrollkey)
+
+#define update_scrollttyoutput() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_scrollttyoutput].widget, \
+		    term->screen.scrollttyoutput)
+
+#define update_allow132() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_allow132].widget, \
+		    term->screen.c132)
+  
+#define update_cursesemul() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_cursesemul].widget, \
+		    term->screen.curses)
+
+#define update_visualbell() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_visualbell].widget, \
+		    term->screen.visualbell)
+
+#define update_marginbell() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_marginbell].widget, \
+		    term->screen.marginbell)
+
+#define update_altscreen() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_altscreen].widget, \
+		    term->screen.alternate)
+
+#define update_tekshow() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_tekshow].widget, \
+		    term->screen.Tshow)
+
+#define update_vttekmode() { \
+    update_menu_item (term->screen.vtMenu, \
+		      vtMenuEntries[vtMenu_tekmode].widget, \
+		      term->screen.TekEmu) \
+    update_menu_item (term->screen.tekMenu, \
+		      tekMenuEntries[tekMenu_vtmode].widget, \
+		      !term->screen.TekEmu) }
+
+#define update_vtshow() \
+  update_menu_item (term->screen.tekMenu, \
+		    tekMenuEntries[tekMenu_vtshow].widget, \
+		    term->screen.Vshow)
+
+
+#define set_vthide_sensitivity() \
+  set_sensitivity (term->screen.vtMenu, \
+		   vtMenuEntries[vtMenu_vthide].widget, \
+		   term->screen.Tshow)
+
+#define set_tekhide_sensitivity() \
+  set_sensitivity (term->screen.tekMenu, \
+		   tekMenuEntries[tekMenu_tekhide].widget, \
+		   term->screen.Vshow)
+
+#define set_altscreen_sensitivity(val) \
+  set_sensitivity (term->screen.vtMenu,\
+		   vtMenuEntries[vtMenu_altscreen].widget, (val))
+
 
 /*
- * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
- *
- *                         All Rights Reserved
- *
- * Permission to use, copy, modify, and distribute this software and its
- * documentation for any purpose and without fee is hereby granted,
- * provided that the above copyright notice appear in all copies and that
- * both that copyright notice and this permission notice appear in
- * supporting documentation, and that the name of Digital Equipment
- * Corporation not be used in advertising or publicity pertaining to
- * distribution of the software without specific, written prior permission.
- *
- *
- * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
- * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
- * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
- * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
- * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
- * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
- * SOFTWARE.
+ * macros for mapping font size to tekMenu placement
  */
+#define FS2MI(n) (n)			/* font_size_to_menu_item */
+#define MI2FS(n) (n)			/* menu_item_to_font_size */
 
-/* @(#)menu.h	X10/6.6	11/3/86 */
-/*
- * Menu items are constructed as follows, starting from the left side:
- *
- *	menuItemPad
- *	space for check mark
- *	menuItemPad
- *	text + padding
- *	menuItemPad
- *
- * The padding for the text is that amount that this text is narrower than the
- * widest text.
- */
+#define set_tekfont_menu_item(n,val) \
+  update_menu_item (term->screen.tekMenu, \
+		    tekMenuEntries[FS2MI(n)].widget, \
+		    (val))
 
-typedef struct _menuItem {
-	int itemHeight;			/* total height of this item */
-	int itemFlags;			/* flags of item */
-
-#define	itemDisabled		0x0001	/* item is disabled */
-#define	itemChecked		0x0002	/* item has check mark */
-#define	itemStateMask		0x0003	/* mask for current state */
-#define	itemSetDisabled		0x0004	/* item wants to be disabled */
-#define	itemSetChecked		0x0008	/* item wants check mark */
-#define	itemSetMask		0x000c	/* mask for desired state */
-#define	itemSetMaskShift	2	/* for comparison with actual */
-#define	itemChanged		0x0010	/* item desires change */
-
-	char *itemText;			/* text of item */
-	int itemTextWidth;		/* width of text */
-	int itemTextLength;		/* length of text */
-	struct _menuItem *nextItem;	/* next item in chain */
-} MenuItem;
-
-typedef struct _menu {
-	int menuWidth;			/* full width of menu */
-	int menuHeight;			/* full height of menu */
-	int menuFlags;			/* flags of this menu */
-
-# define	menuChanged	0x0001		/* menu changed, must redraw */
-# define	menuItemChanged	0x0002		/* item changed, must redraw */
-# define	menuMapped	0x0004		/* menu is now mapped */
-
-	int menuMaxTextWidth;		/* width of widest text */
-	int menuInitialItem;		/* < 0 none, >= 0 initial item */
-	int menuBorderWidth;		/* width of border */
-	int menuBgColor;		/* background color */
-	int menuFgColor;		/* foreground color */
-	XFontStruct *menuFontInfo;	/* font info for menu font */
-	int menuItemPad;		/* pad amount */
-	Widget menuWidget;
-	Window menuWindow;		/* window of menu */
-	Cursor menuCursor;		/* cursor used in menu */
-	MenuItem *menuItems;		/* head of menu item chain */
-	char *menuTitle;		/* title of menu */
-	int menuTitleWidth;		/* width of title */
-	int menuTitleLength;		/* length of title */
-	int menuItemTop;		/* position of top of first item */
-} Menu;
-
-#define	checkMarkWidth		9
-#define	checkMarkHeight		8
-#define	defaultCursorWidth	16
-#define	defaultCursorHeight	16
-#define	defaultCursorX		1
-#define	defaultCursorY		1
-#define	grayHeight		16
-#define	grayWidth		16
-#define	lineSeparatorHeight	9
-
-#define	CheckItem(menu,item)	SetItemCheck(menu,item,1)
-#define	DisableItem(menu,item)	SetItemDisable(menu,item,1)
-#define	EnableItem(menu,item)	SetItemDisable(menu,item,0)
-#define	UncheckItem(menu,item)	SetItemCheck(menu,item,0)
-
-extern Menu *NewMenu();
+#define set_menu_font(val) \
+  update_menu_item (term->screen.fontMenu, \
+		    fontMenuEntries[term->screen.menu_font_number].widget, \
+		    (val))

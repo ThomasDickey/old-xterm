@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: util.c,v 1.10 88/10/07 08:20:08 swick Exp $
+ *	$XConsortium: util.c,v 1.19 89/12/10 20:44:15 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -30,19 +30,18 @@
 /* util.c */
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: util.c,v 1.10 88/10/07 08:20:08 swick Exp $";
+static char rcs_id[] = "$XConsortium: util.c,v 1.19 89/12/10 20:44:15 jim Exp $";
 #endif	/* lint */
 
 #include <stdio.h>
-#include <X11/Xlib.h>
 #include <X11/Intrinsic.h>
-#include <signal.h>
 #include <setjmp.h>
 typedef int *jmp_ptr;
 
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
+#include "menu.h"
 
 /*
  * These routines are used for the jump scroll feature
@@ -193,7 +192,7 @@ register int amount;
 	register int i = screen->bot_marg - screen->top_marg + 1;
 	register int shift;
 	register int bot;
-	register int refreshtop;
+	register int refreshtop = 0;
 	register int refreshheight;
 	register int scrolltop;
 	register int scrollheight;
@@ -845,6 +844,7 @@ register TScreen *screen;
 register XExposeEvent *reply;
 {
 	register int toprow, leftcol, nrows, ncols;
+	extern Bool waiting_for_initial_map;
 
 	if((toprow = (reply->y - screen->border) /
 	 FontHeight(screen)) < 0)
@@ -869,11 +869,15 @@ register XExposeEvent *reply;
 
 	if (nrows > 0 && ncols > 0) {
 		ScrnRefresh (screen, toprow, leftcol, nrows, ncols, False);
+		if (waiting_for_initial_map) {
+		    first_map_occurred ();
+		}
 		if (screen->cur_row >= toprow &&
 		    screen->cur_row < toprow + nrows &&
 		    screen->cur_col >= leftcol &&
 		    screen->cur_col < leftcol + ncols)
 			return (1);
+
 	}
 	return (0);
 }
@@ -882,17 +886,19 @@ ReverseVideo (term)
 	XtermWidget term;
 {
 	register TScreen *screen = &term->screen;
-	register GC tmpGC;
-	register int tmp;
-	register Window tek = TWindow(screen);
+	GC tmpGC;
+	Window tek = TWindow(screen);
+	unsigned long tmp;
 
 	tmp = term->core.background_pixel;
 	if(screen->cursorcolor == screen->foreground)
 		screen->cursorcolor = tmp;
-	if(screen->mousecolor == screen->foreground)
-		screen->mousecolor = tmp;
 	term->core.background_pixel = screen->foreground;
 	screen->foreground = tmp;
+
+	tmp = screen->mousecolorback;
+	screen->mousecolorback = screen->mousecolor;
+	screen->mousecolor = tmp;
 
 	tmpGC = screen->normalGC;
 	screen->normalGC = screen->reverseGC;
@@ -902,41 +908,18 @@ ReverseVideo (term)
 	screen->normalboldGC = screen->reverseboldGC;
 	screen->reverseboldGC = tmpGC;
 
-	{
-	    unsigned long fg, bg;
-	    bg = term->core.background_pixel;
-	    if (screen->mousecolor == term->core.background_pixel) {
-		fg = screen->foreground;
-	    } else {
-		fg = screen->mousecolor;
-	    }
-	    
-	    recolor_cursor (screen->pointer_cursor, fg, bg);
-	    recolor_cursor (screen->arrow, fg, bg);
+	recolor_cursor (screen->pointer_cursor, 
+			screen->mousecolor, screen->mousecolorback);
+	recolor_cursor (screen->arrow,
+			screen->mousecolor, screen->mousecolorback);
 
-	}
 	term->misc.re_verse = !term->misc.re_verse;
 
 	XDefineCursor(screen->display, TextWindow(screen), screen->pointer_cursor);
 	if(tek)
 		XDefineCursor(screen->display, tek, screen->arrow);
-#ifdef MODEMENU
-	MenuNewCursor(screen->arrow);
-	ReverseVideoAllMenus ();
-#endif	/* MODEMENU */
 
 	
-	if (term) {
-	    if (term->core.border_pixel == term->core.background_pixel) {
-		term->core.border_pixel = screen->foreground;
-		term->core.parent->core.border_pixel = screen->foreground;
-		if (term->core.parent->core.window)
-		  XSetWindowBorder (screen->display,
-				    term->core.parent->core.window,
-				    term->core.border_pixel);
-	    }
-	}
-
 	if(screen->scrollWidget)
 		ScrollBarReverseVideo(screen->scrollWidget);
 
@@ -951,6 +934,7 @@ ReverseVideo (term)
 	    XClearWindow(screen->display, tek);
 	    TekExpose((XExposeEvent *) NULL);
 	}
+	update_reversevideo();
 }
 
 

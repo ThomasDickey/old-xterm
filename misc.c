@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: misc.c,v 1.29 89/01/04 12:25:17 jim Exp $
+ *	$XConsortium: misc.c,v 1.62 89/12/10 20:44:41 jim Exp $
  */
 
 
@@ -28,24 +28,25 @@
  * SOFTWARE.
  */
 
-#include <X11/Xos.h>
-#include <X11/Xlib.h>
+#include "ptyx.h"		/* X headers included here. */
+
 #include <stdio.h>
+#include <X11/Xos.h>
 #include <setjmp.h>
-#include <signal.h>
 #include <ctype.h>
 #include <pwd.h>
-#include <X11/Xutil.h>
+
 #include <X11/Xatom.h>
-#include "ptyx.h"
+#include <X11/cursorfont.h>
+
+#include <X11/Shell.h>
+#include <X11/Xmu/Error.h>
+#include <X11/Xmu/SysUtil.h>
+#include <X11/Xmu/WinUtil.h>
+
 #include "data.h"
 #include "error.h"
-#include <X11/cursorfont.h>
-#include "gray.ic"
-#include "wait.ic"
-#include "waitmask.ic"
-#include <X11/Shell.h>
-#include <X11/Xmu.h>
+#include "menu.h"
 
 extern char *malloc();
 extern char *mktemp();
@@ -53,8 +54,11 @@ extern void exit();
 extern void perror();
 extern void abort();
 
+static void DoSpecialEnterNotify();
+static void DoSpecialLeaveNotify();
+
 #ifndef lint
-static char rcs_id[] = "$XConsortium: misc.c,v 1.29 89/01/04 12:25:17 jim Exp $";
+static char rcs_id[] = "$XConsortium: misc.c,v 1.62 89/12/10 20:44:41 jim Exp $";
 #endif	/* lint */
 
 xevents()
@@ -69,6 +73,24 @@ xevents()
 		if (waitingForTrackInfo)
 			return;
 		XNextEvent (screen->display, &event);
+		/*
+		 * Hack to get around problems with the toolkit throwing away
+		 * eventing during the exclusive grab of the menu popup.  By
+		 * looking at the event ourselves we make sure that we can
+		 * do the right thing.
+		 */
+		if (event.type == EnterNotify &&
+		    (event.xcrossing.window == XtWindow(XtParent(term))) ||
+		    (tekWidget &&
+		     event.xcrossing.window == XtWindow(XtParent(tekWidget))))
+		  DoSpecialEnterNotify (&event);
+		else 
+		if (event.type == LeaveNotify &&
+		    (event.xcrossing.window == XtWindow(XtParent(term))) ||
+		    (tekWidget &&
+		     event.xcrossing.window == XtWindow(XtParent(tekWidget))))
+		  DoSpecialLeaveNotify (&event);
+
 		if (!event.xany.send_event ||
 		    screen->allowSendEvents ||
 		    ((event.xany.type != KeyPress) &&
@@ -87,7 +109,6 @@ Cursor make_colored_cursor (cursorindex, fg, bg)
 	register TScreen *screen = &term->screen;
 	Cursor c;
 	register Display *dpy = screen->display;
-	XColor foreback[2];
 	
 	c = XCreateFontCursor (dpy, cursorindex);
 	if (c == (Cursor) 0) return (c);
@@ -108,7 +129,21 @@ void HandleKeyPressed(w, event, params, nparams)
 #ifdef ACTIVEWINDOWINPUTONLY
     if (w == (screen->TekEmu ? (Widget)tekWidget : (Widget)term))
 #endif
-	Input (&term->keyboard, screen, event);
+	Input (&term->keyboard, screen, event, False);
+}
+/* ARGSUSED */
+void HandleEightBitKeyPressed(w, event, params, nparams)
+    Widget w;
+    XEvent *event;
+    String *params;
+    Cardinal *nparams;
+{
+    register TScreen *screen = &term->screen;
+
+#ifdef ACTIVEWINDOWINPUTONLY
+    if (w == (screen->TekEmu ? (Widget)tekWidget : (Widget)term))
+#endif
+	Input (&term->keyboard, screen, event, True);
 }
 
 /* ARGSUSED */
@@ -146,22 +181,46 @@ void HandleStringEvent(w, event, params, nparams)
     }
 }
 
+static void DoSpecialEnterNotify (ev)
+    register XEnterWindowEvent *ev;
+{
+    register TScreen *screen = &term->screen;
+
+#ifdef ACTIVEWINDOWINPUTONLY
+    if (ev->window == XtWindow(XtParent(screen->TekEmu ?
+					(Widget)tekWidget : (Widget)term)))
+#endif
+      if (((ev->detail) != NotifyInferior) &&
+	  ev->focus &&
+	  !(screen->select & FOCUS))
+	selectwindow(screen, INWINDOW);
+}
+
 /*ARGSUSED*/
 void HandleEnterWindow(w, eventdata, event)
 Widget w;
 register XEnterWindowEvent *event;
 caddr_t eventdata;
 {
+    /* NOP since we handled it above */
+}
+
+
+static void DoSpecialLeaveNotify (ev)
+    register XEnterWindowEvent *ev;
+{
     register TScreen *screen = &term->screen;
 
 #ifdef ACTIVEWINDOWINPUTONLY
-    if (w == XtParent(screen->TekEmu ? (Widget)tekWidget : (Widget)term)) 
+    if (ev->window == XtWindow(XtParent(screen->TekEmu ?
+					(Widget)tekWidget : (Widget)term)))
 #endif
-      if (((event->detail) != NotifyInferior) &&
-	  event->focus &&
+      if (((ev->detail) != NotifyInferior) &&
+	  ev->focus &&
 	  !(screen->select & FOCUS))
-	selectwindow(screen, INWINDOW);
+	unselectwindow(screen, INWINDOW);
 }
+
 
 /*ARGSUSED*/
 void HandleLeaveWindow(w, eventdata, event)
@@ -169,16 +228,7 @@ Widget w;
 register XEnterWindowEvent *event;
 caddr_t eventdata;
 {
-    register TScreen *screen = &term->screen;
-
-#ifdef ACTIVEWINDOWINPUTONLY
-    if (w == XtParent(screen->TekEmu ? (Widget)tekWidget : (Widget)term)) 
-#endif
-      if (((event->detail) != NotifyInferior) &&
-	  event->focus &&
-	  !(screen->select & FOCUS))
-	unselectwindow(screen, INWINDOW);
-
+    /* NOP since we handled it above */
 }
 
 
@@ -213,25 +263,13 @@ register TScreen *screen;
 register int flag;
 {
 	if(screen->TekEmu) {
-		TekSelect();
 		if(!Ttoggled)
 			TCursorToggle(TOGGLE);
 		screen->select |= flag;
-#ifdef obsolete
-		if(screen->cellsused) {
-			screen->colorcells[2].pixel =
-			 screen->Tcursorcolor;
-			XStoreColor(screen->display, 
-			 DefaultColormap(screen->display,
-				DefaultScreen(screen->display)),
-			 &screen->colorcells[2]);
-		}
-#endif /* obsolete */
 		if(!Ttoggled)
 			TCursorToggle(TOGGLE);
 		return;
 	} else {
-		VTSelect();
 		if(screen->cursor_state &&
 		   (screen->cursor_col != screen->cur_col ||
 		    screen->cursor_row != screen->cur_row))
@@ -247,29 +285,14 @@ unselectwindow(screen, flag)
 register TScreen *screen;
 register int flag;
 {
-    register int i;
-
     if (screen->always_highlight) return;
 
     if(screen->TekEmu) {
 	if(!Ttoggled) TCursorToggle(TOGGLE);
 	screen->select &= ~flag;
-	TekUnselect();
-#ifdef obsolete
-			if(screen->cellsused) {
-				i = (term->flags & REVERSE_VIDEO) == 0;
-				screen->colorcells[i].pixel =
-				 screen->Tcursorcolor;
-				XStoreColor(screen->display, 
-			         DefaultColormap(screen->display,
-					       DefaultScreen(screen->display)),
-				 &screen->colorcells[i]);
-			}
-#endif /* obsolete */
 	if(!Ttoggled) TCursorToggle(TOGGLE);
     } else {
 	screen->select &= ~flag;
-	VTUnselect();
 	if(screen->cursor_state &&
 	   (screen->cursor_col != screen->cur_col ||
 	    screen->cursor_row != screen->cur_row))
@@ -279,197 +302,6 @@ register int flag;
     }
 }
 
-/*ARGSUSED*/
-reselectwindow(screen)
-register TScreen *screen;
-{
-#ifdef obsolete
-	Window root, win;
-	int rootx, rooty, x, y;
-	int doselect = 0;
-	unsigned int mask;
-
-	if(XQueryPointer(
-	    screen->display, 
-	    DefaultRootWindow(screen->display), 
-	    &root, &win,
-	    &rootx, &rooty,
-	    &x, &y,
-	    &mask)) {
-		XtTranslateCoords(term, 0, 0, &x, &y);
-		if ((rootx >= x) && (rootx < x + term->core.width) &&
-		    (rooty >= y) && (rooty < y + term->core.height))
-		    doselect = 1;
-		else if (tekWidget) {
-		    XtTranslateCoords(tekWidget, 0, 0, &x, &y);
-		    if ((rootx >= x) && (rootx < x + tekWidget->core.width) &&
-			(rooty >= y) && (rooty < y + tekWidget->core.height))
-			doselect = 1;
-		}
-		if (doselect)
-			selectwindow(screen, INWINDOW);
-		else	unselectwindow(screen, INWINDOW);
-	}
-#endif /* obsolete */
-}
-
-Pixmap Make_tile(width, height, bits, foreground, background, depth)
-	unsigned int width, height, depth;
-	Pixel foreground, background;
-	char *bits;
-{
-	register GC gc;
-	register Pixmap pix;
-	register TScreen *screen = &term->screen;
-	XGCValues gcVals;
-	XImage tileimage;
-
-        pix = (Pixmap)XCreatePixmap(screen->display, 
-	  DefaultRootWindow(screen->display), width, height, depth);
-	gcVals.foreground = foreground;
-	gcVals.background = background;
-	gc = XCreateGC(screen->display, (Drawable) pix, 
-	  GCForeground+GCBackground, &gcVals);
-	tileimage.height = height;
-	tileimage.width = width;
-	tileimage.xoffset = 0;
-	tileimage.format = XYBitmap;
-	tileimage.data = bits;
-	tileimage.byte_order = LSBFirst;
-	tileimage.bitmap_unit = 8;
-	tileimage.bitmap_bit_order = LSBFirst;
-	tileimage.bitmap_pad = 8;
-	tileimage.bytes_per_line = (width+7)>>3;
-	tileimage.depth = 1;
-        XPutImage(screen->display, pix, gc, &tileimage, 0, 0, 0, 0, width, height);
-        XFreeGC (screen->display, gc);
-	return(pix);
-}
-
-
-Pixmap make_gray(fg, bg, depth)
-Pixel fg, bg;
-{
-	return(Make_tile(gray_width, gray_height, gray_bits, fg, bg, depth));
-}
-
-/* ARGSUSED */
-Cursor make_tcross(fg, bg)
-Pixel fg, bg;
-{
-	return (make_colored_cursor (XC_tcross, fg, bg));
-}
-
-static XColor background = { 0L, 65535, 65535, 65535 };
-static XColor foreground = { 0L,    0,     0,     0 };
-
-Cursor make_wait(fg, bg)
-Pixel fg, bg;
-{
-	register TScreen *screen = &term->screen;
-	register Display *dpy = screen->display;
-	Pixmap source, mask;
-	XColor foreback[2];
-
-	source = Make_tile(wait_width, wait_height, wait_bits, 1L, 0L, 1);
-	mask = Make_tile(waitmask_width, waitmask_height, waitmask_bits, 
-	 1L, 0L, 1);
-
-	foreback[0].pixel = fg;
-	foreback[1].pixel = bg;
-	XQueryColors (dpy, DefaultColormap (dpy, DefaultScreen (dpy)),
-		      foreback, 2);
-
-	return (XCreatePixmapCursor (dpy, source, mask, foreback, foreback+1,
-	 wait_x_hot, wait_y_hot));
-}
-
-/* ARGSUSED */
-Cursor make_arrow(fg, bg)
-unsigned long fg, bg;
-
-{
-	return (make_colored_cursor (XC_left_ptr, fg, bg));
-}
-
-/* ARGSUSED */
-Cursor make_xterm(fg, bg)
-unsigned long fg, bg;
-
-{
-	return (make_colored_cursor (XC_xterm, fg, bg));
-}
-
-char *uniquesuffix(name)
-char *name;
-{
-	register int *np, *fp, i;
-	register Window *cp;
-	register int temp, j, k, exact, *number;
-	char *wname;
-	Window *children, parent, root;
-	unsigned int nchildren;
-	static char *suffix, sufbuf[10];
-	TScreen *screen = &term->screen;
-	char *malloc();
-
-	if(suffix)
-		return(suffix);
-	suffix = sufbuf;
-	if(!XQueryTree(
-	    screen->display, 
-	    DefaultRootWindow(screen->display), 
-	    &root, &parent,
-	    &children, &nchildren) ||
-	 nchildren < 1 || (number = (int *)malloc((unsigned)nchildren * sizeof(int)))
-	 == NULL)
-		return(suffix);
-	exact = FALSE;
-	i = strlen(name);
-	for(np = number, cp = children, j = nchildren ; j > 0 ; cp++, j--) {
-		if(!XFetchName(screen->display, *cp, &wname) || wname == NULL)
-			continue;
-		if(strncmp(name, wname, i) == 0) {
-			if(wname[i] == 0 || XStrCmp(&wname[i], " (Tek)") == 0)
-				exact = TRUE;
-			else if(strncmp(&wname[i], " #", 2) == 0)
-				*np++ = atoi(&wname[i + 2]);
-		}
-		free(wname);
-	}
-	free((char *)children);
-	if(exact) {
-		if(np <= number)
-			strcpy(suffix, " #2");
-		else {
-			exact = np - number;
-			np = number;
-			/* shell sort */
-			for(i = exact / 2 ; i > 0 ; i /= 2)
-				for(k = i ; k < exact ; k++)
-					for(j = k - i ; j >= 0 &&
-					 np[j] > np[j + i] ; j -= i) {
-						temp = np[j];
-						np[j] = np[j + i];
-						np[j + i] = temp;
-					}
-			/* make numbers unique */
-			for(fp = np + 1, i = exact - 1 ; i > 0 ; fp++, i--)
-				if(*fp != *np)
-					*++np = *fp;
-			/* find least unique number */
-			for(i = 2, fp = number ; fp <= np ; fp++) {
-				if(i < *fp)
-					break;
-				if(i == *fp)
-					i++;
-			}
-			sprintf(suffix, " #%d", i);
-		}
-	}
-	free((char *)number);
-	return(suffix);
-}
 
 Bell()
 {
@@ -549,22 +381,6 @@ Redraw()
 	}
 }
 
-#ifdef obsolete
-SyncUnmap(win, mask)
-register Window win;
-register long int mask;
-{
-	XEvent ev;
-	register XEvent *rep = &ev;
-	register TScreen *screen = &term->screen;
-
-	do { /* ignore events through unmap */
-		XWindowEvent(screen->display, win, mask, rep);
-	} while(rep->type != UnmapNotify);
-	return;
-}
-#endif /* obsolete */
-
 StartLog(screen)
 register TScreen *screen;
 {
@@ -572,7 +388,7 @@ register TScreen *screen;
 	register int i;
 	static char *log_default;
 	char *malloc(), *rindex();
-	extern logpipe();
+	void logpipe();
 #ifdef SYSV
 	/* SYSV has another pointer which should be part of the
 	** FILE structure but is actually a separate array.
@@ -658,6 +474,7 @@ register TScreen *screen;
 	}
 	screen->logstart = screen->TekEmu ? Tbptr : bptr;
 	screen->logging = TRUE;
+	update_logging();
 }
 
 CloseLog(screen)
@@ -668,12 +485,13 @@ register TScreen *screen;
 	FlushLog(screen);
 	close(screen->logfd);
 	screen->logging = FALSE;
+	update_logging();
 }
 
 FlushLog(screen)
 register TScreen *screen;
 {
-	register char *cp;
+	register Char *cp;
 	register int i;
 
 	cp = screen->TekEmu ? Tbptr : bptr;
@@ -682,7 +500,7 @@ register TScreen *screen;
 	screen->logstart = screen->TekEmu ? Tbuffer : buffer;
 }
 
-logpipe()
+void logpipe()
 {
 	register TScreen *screen = &term->screen;
 
@@ -693,7 +511,6 @@ logpipe()
 		CloseLog(screen);
 }
 
-
 do_osc(func)
 int (*func)();
 {
@@ -702,15 +519,23 @@ int (*func)();
 	register char *cp;
 	char buf[512];
 	extern char *malloc();
+	Bool okay = True;
 
+	/* 
+	 * lines should be of the form <ESC> ] number ; string <BEL>
+	 *
+	 * where number is one of 0, 1, 2, or 46
+	 */
 	mode = 0;
 	while(isdigit(c = (*func)()))
 		mode = 10 * mode + (c - '0');
+	if (c != ';') okay = False;
 	cp = buf;
-	while(isprint(c = (*func)()))
+	while(isprint((c = (*func)()) & 0x7f))
 		*cp++ = c;
+	if (c != 7) okay = False;
 	*cp = 0;
-	switch(mode) {
+	if (okay) switch(mode) {
 	 case 0:	/* new icon name and title*/
 		Changename(buf);
 		Changetitle(buf);
@@ -724,7 +549,6 @@ int (*func)();
 		Changetitle(buf);
 		break;
 
-
 	 case 46:	/* new log file */
 		if((cp = malloc((unsigned)strlen(buf) + 1)) == NULL)
 			break;
@@ -733,6 +557,15 @@ int (*func)();
 			free(screen->logfile);
 		screen->logfile = cp;
 		break;
+
+	case 50:
+		SetVTFont (fontMenu_fontescape, True, buf, NULL);
+		break;
+
+	/*
+	 * One could write code to send back the display and host names,
+	 * but that could potentially open a fairly nasty security hole.
+	 */
 	}
 }
 
@@ -887,23 +720,15 @@ register XErrorEvent *ev;
 }
 
 /*ARGSUSED*/
-xioerror(d)
-Display *d;
+xioerror(dpy)
+Display *dpy;
 {
-	/* Perror(3) writes to fd 2.  What we want to do is
-	** to write to stderr's fd.  Since the original code used
-	** perror which uses write(2), let's not use fprintf(3).
-	*/
-	int oerrno = errno;
-	char *msg = SysErrorMsg (oerrno);
-	int stderrfd = fileno (stderr);
-	
-	write(stderrfd, xterm_name, strlen(xterm_name));
-	write(stderrfd, ": ", 2);
-	write(stderrfd, msg, strlen (msg));
-	write(stderrfd, "\n", 1);
+    (void) fprintf (stderr, 
+		    "%s:  fatal IO error %d (%s) or KillClient on X server \"%s\"\r\n",
+		    xterm_name, errno, SysErrorMsg (errno),
+		    DisplayString (dpy));
 
-	Exit(ERROR_XIOERROR);
+    Exit(ERROR_XIOERROR);
 }
 
 XStrCmp(s1, s2)
@@ -914,6 +739,17 @@ char *s1, *s2;
   if (s2 && *s2) return(-1);
   return(0);
 }
+
+static void withdraw_window (dpy, w, scr)
+    Display *dpy;
+    Window w;
+    int scr;
+{
+    (void) XmuUpdateMapHints (dpy, w, NULL);
+    XWithdrawWindow (dpy, w, scr);
+    return;
+}
+
 
 void set_vt_visibility (on)
     Boolean on;
@@ -928,10 +764,17 @@ void set_vt_visibility (on)
 	}
     } else {
 	if (screen->Vshow && term) {
-	    XtUnmapWidget (term->core.parent);
+	    withdraw_window (XtDisplay (term), 
+			     XtWindow(XtParent(term)),
+			     XScreenNumberOfScreen(XtScreen(term)));
 	    screen->Vshow = FALSE;
 	}
     }
+    set_vthide_sensitivity();
+    set_tekhide_sensitivity();
+    update_vttekmode();
+    update_tekshow();
+    update_vtshow();
     return;
 }
 
@@ -948,10 +791,17 @@ void set_tek_visibility (on)
 	}
     } else {
 	if (screen->Tshow && tekWidget) {
-	    XtUnmapWidget (tekWidget->core.parent);
+	    withdraw_window (XtDisplay (tekWidget), 
+			     XtWindow(XtParent(tekWidget)),
+			     XScreenNumberOfScreen(XtScreen(tekWidget)));
 	    screen->Tshow = FALSE;
 	}
     }
+    set_tekhide_sensitivity();
+    set_vthide_sensitivity();
+    update_vtshow();
+    update_tekshow();
+    update_vttekmode();
     return;
 }
 

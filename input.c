@@ -1,9 +1,9 @@
 /*
- *	$XConsortium: input.c,v 1.5 88/09/06 17:08:05 jim Exp $
+ *	$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $
  */
 
 #ifndef lint
-static char *rcsid_input_c = "$XConsortium: input.c,v 1.5 88/09/06 17:08:05 jim Exp $";
+static char *rcsid_input_c = "$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $";
 #endif	/* lint */
 
 #include <X11/copyright.h>
@@ -34,7 +34,7 @@ static char *rcsid_input_c = "$XConsortium: input.c,v 1.5 88/09/06 17:08:05 jim 
 /* input.c */
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: input.c,v 1.5 88/09/06 17:08:05 jim Exp $";
+static char rcs_id[] = "$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $";
 #endif	/* lint */
 
 #include <X11/Xlib.h>
@@ -44,8 +44,6 @@ static char rcs_id[] = "$XConsortium: input.c,v 1.5 88/09/06 17:08:05 jim Exp $"
 #include <X11/Xutil.h>
 #include <stdio.h>
 #include "ptyx.h"
-
-int MetaMode = 1;	/* prefix with ESC when Meta Key is down */
 
 static XComposeStatus compose_status = {NULL, 0};
 static char *kypd_num = " XXXXXXXX\tXXX\rXXXxxxxXXXXXXXXXXXXXXXXXXXXX*+,-.\\0123456789XXX=";
@@ -78,10 +76,11 @@ register TScreen *screen;
 	}
 }
 
-Input (keyboard, screen, event)
+Input (keyboard, screen, event, eightbit)
 register TKeyboard	*keyboard;
 register TScreen		*screen;
 register XKeyPressedEvent *event;
+Bool eightbit;
 {
 
 #define STRBUFSIZE 100
@@ -91,11 +90,11 @@ register XKeyPressedEvent *event;
 	register int key = FALSE;
 	int	pty	= screen->respond;
 	int	nbytes;
-	int 	keycode;
+	KeySym  keysym;
 	ANSI	reply;
 
-	nbytes = XLookupString (event, strbuf, STRBUFSIZE, 
-		&keycode, &compose_status);
+	nbytes = XLookupString ((XKeyEvent *)event, strbuf, STRBUFSIZE, 
+		&keysym, &compose_status);
 
 	string = &strbuf[0];
 	reply.a_pintro = 0;
@@ -103,41 +102,41 @@ register XKeyPressedEvent *event;
 	reply.a_nparam = 0;
 	reply.a_inters = 0;
 
-	if (IsPFKey(keycode)) {
+	if (IsPFKey(keysym)) {
 		reply.a_type = SS3;
 		unparseseq(&reply, pty);
-		unparseputc((char)(keycode-XK_KP_F1+'P'), pty);
+		unparseputc((char)(keysym-XK_KP_F1+'P'), pty);
 		key = TRUE;
-	} else if (IsKeypadKey(keycode)) {
+	} else if (IsKeypadKey(keysym)) {
 	  	if (keyboard->flags & KYPD_APL)	{
 			reply.a_type   = SS3;
 			unparseseq(&reply, pty);
-			unparseputc(kypd_apl[keycode-XK_KP_Space], pty);
+			unparseputc(kypd_apl[keysym-XK_KP_Space], pty);
 		} else
-			unparseputc(kypd_num[keycode-XK_KP_Space], pty);
+			unparseputc(kypd_num[keysym-XK_KP_Space], pty);
 		key = TRUE;
-        } else if (IsCursorKey(keycode) &&
-        	keycode != XK_Prior && keycode != XK_Next) {
+        } else if (IsCursorKey(keysym) &&
+        	keysym != XK_Prior && keysym != XK_Next) {
        		if (keyboard->flags & CURSOR_APL) {
 			reply.a_type = SS3;
 			unparseseq(&reply, pty);
-			unparseputc(cur[keycode-XK_Left], pty);
+			unparseputc(cur[keysym-XK_Left], pty);
 		} else {
 			reply.a_type = CSI;
-			reply.a_final = cur[keycode-XK_Left];
+			reply.a_final = cur[keysym-XK_Left];
 			unparseseq(&reply, pty);
 		}
 		key = TRUE;
-	 } else if (IsFunctionKey(keycode) || IsMiscFunctionKey(keycode) ||
-	 	keycode == XK_Prior || keycode == XK_Next ||
-	 	keycode == DXK_Remove) {
+	 } else if (IsFunctionKey(keysym) || IsMiscFunctionKey(keysym) ||
+	 	keysym == XK_Prior || keysym == XK_Next ||
+	 	keysym == DXK_Remove) {
 		reply.a_type = CSI;
 		reply.a_nparam = 1;
 		if (sunFunctionKeys) {
-		    reply.a_param[0] = sunfuncvalue (keycode);
+		    reply.a_param[0] = sunfuncvalue (keysym);
 		    reply.a_final = 'z';
 		} else {
-		    reply.a_param[0] = funcvalue (keycode);
+		    reply.a_param[0] = funcvalue (keysym);
 		    reply.a_final = '~';
 		}
 		if (reply.a_param[0] > 0)
@@ -149,8 +148,12 @@ register XKeyPressedEvent *event;
 			TekGINoff();
 			nbytes--;
 		}
-		if ((nbytes == 1) && MetaMode && (event->state & Mod1Mask))
-			unparseputc(033, pty);
+		if ((nbytes == 1) && eightbit) {
+		    if (screen->eight_bits)
+		      *string |= 0x80;	/* turn on eighth bit */
+		    else
+		      unparseputc (033, pty);  /* escape */
+		}
 		while (nbytes-- > 0)
 			unparseputc(*string++, pty);
 		key = TRUE;
@@ -158,7 +161,7 @@ register XKeyPressedEvent *event;
 	if(key && !screen->TekEmu)
 	        AdjustAfterInput(screen);
 #ifdef ENABLE_PRINT
-	if (keycode == XK_F2) TekPrint();
+	if (keysym == XK_F2) TekPrint();
 #endif
 	return;
 }

@@ -1,9 +1,9 @@
 /*
- *	$XConsortium: resize.c,v 1.5 88/09/06 17:08:27 jim Exp $
+ *	$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $
  */
 
 #ifndef lint
-static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.5 88/09/06 17:08:27 jim Exp $";
+static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $";
 #endif	/* lint */
 
 #include <X11/copyright.h>
@@ -39,8 +39,18 @@ static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.5 88/09/06 17:08:27 ji
 #include <ctype.h>
 #include <sys/ioctl.h>
 
+#ifdef att
+#include <sys/stream.h>
+#include <sys/ptem.h>
+#endif
+
+#ifdef APOLLO_SR9
+#define CANT_OPEN_DEV_TTY
+#endif
+
 #ifdef macII
 #define USE_SYSV_TERMIO
+#undef SYSV				/* pretend to be bsd */
 #endif /* macII */
 
 #ifdef SYSV
@@ -70,7 +80,7 @@ extern struct passwd *fgetpwent();
 #endif	/* USE_SYSV_TERMIO */
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: resize.c,v 1.5 88/09/06 17:08:27 jim Exp $";
+static char rcs_id[] = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $";
 #endif
 
 #define	EMULATIONS	2
@@ -178,6 +188,10 @@ char **argv;
 #endif	/* sun */
 	char *getenv();
 	int onintr();
+	char *name_of_tty;
+#ifdef CANT_OPEN_DEV_TTY
+	extern char *ttyname();
+#endif
 
 	if(ptr = rindex(myname = argv[0], '/'))
 		myname = ptr + 1;
@@ -234,9 +248,16 @@ char **argv;
 			Usage();	/* Never returns */
 	} else if(argc != 0)
 		Usage();	/* Never returns */
-	if((ttyfp = fopen("/dev/tty", "r+")) == NULL) {
-		fprintf(stderr, "%s: Can't open /dev/tty\n", myname);
-		exit(1);
+
+#ifdef CANT_OPEN_DEV_TTY
+	if ((name_of_tty = ttyname(fileno(stderr))) == NULL) 
+#endif
+	  name_of_tty = "/dev/tty";
+
+	if ((ttyfp = fopen (name_of_tty, "r+")) == NULL) {
+	    fprintf (stderr, "%s:  can't open terminal %s\n",
+		     myname, name_of_tty);
+	    exit (1);
 	}
 	tty = fileno(ttyfp);
 #ifdef USE_TERMCAP
@@ -327,9 +348,9 @@ char **argv;
 	       the current height & width of the window in pixels.  We try
 	       our best by computing the font height and width from the "old"
 	       struct winsize values, and multiplying by these ratios...*/
-	    if (ws.ws_xpixel != 0)
+	    if (ws.ws_col != 0)
 	        ws.ws_xpixel = cols * (ws.ws_xpixel / ws.ws_col);
-	    if (ws.ws_ypixel != 0)
+	    if (ws.ws_row != 0)
 	        ws.ws_ypixel = rows * (ws.ws_ypixel / ws.ws_row);
 	    ws.ws_row = rows;
 	    ws.ws_col = cols;
@@ -354,8 +375,10 @@ char **argv;
 		fprintf(stderr, "%s: No `co#'\n", myname);
 		exit (1);
 	}
-	strncpy (newtc, termcap, ptr - termcap + 3);
-	sprintf (newtc + strlen (newtc), "%d", cols);
+
+	i = ptr - termcap + 3;
+	strncpy (newtc, termcap, i);
+	sprintf (newtc + i, "%d", cols);
 	ptr = index (ptr, ':');
 	strcat (newtc, ptr);
 
@@ -364,8 +387,10 @@ char **argv;
 		fprintf(stderr, "%s: No `li#'\n", myname);
 		exit (1);
 	}
-	strncpy (termcap, newtc, ptr - newtc + 3);
-	sprintf (termcap + ((int) ptr - (int) newtc + 3), "%d", rows);
+
+	i = ptr - newtc + 3;
+	strncpy (termcap, newtc, i);
+	sprintf (termcap + i, "%d", rows);
 	ptr = index (ptr, ':');
 	strcat (termcap, ptr);
 #endif /* USE_TERMCAP */
@@ -424,21 +449,31 @@ register char *buf;
 char *str;
 {
 	register int i, last;
-	struct itimerval it;
 	int timeout();
+#ifndef USG
+	struct itimerval it;
+#endif
 
 	signal(SIGALRM, timeout);
+#ifdef USG
+	alarm (TIMEOUT);
+#else
 	bzero((char *)&it, sizeof(struct itimerval));
 	it.it_value.tv_sec = TIMEOUT;
 	setitimer(ITIMER_REAL, &it, (struct itimerval *)NULL);
+#endif
 	if((*buf++ = getc(fp)) != *str) {
 		fprintf(stderr, "%s: unknown character, exiting.\r\n", myname);
 		onintr();
 	}
 	last = str[i = strlen(str) - 1];
 	while((*buf++ = getc(fp)) != last);
+#ifdef USG
+	alarm (0);
+#else
 	bzero((char *)&it, sizeof(struct itimerval));
 	setitimer(ITIMER_REAL, &it, (struct itimerval *)NULL);
+#endif
 	*buf = 0;
 }
 

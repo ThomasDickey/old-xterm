@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: data.c,v 1.4 88/09/06 17:08:01 jim Exp $
+ *	$XConsortium: data.c,v 1.8 89/05/26 18:10:43 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -34,7 +34,7 @@
 #include "data.h"
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: data.c,v 1.4 88/09/06 17:08:01 jim Exp $";
+static char rcs_id[] = "$XConsortium: data.c,v 1.8 89/05/26 18:10:43 jim Exp $";
 #endif	/* lint */
 
 XPoint T_boxlarge[NBOX] = {
@@ -67,15 +67,15 @@ XPoint T_boxsmall[NBOX] = {
 };
 jmp_buf Tekend;
 int Tbcnt = 0;
-char *Tbuffer;
-char *Tbptr;
+Char *Tbuffer;
+Char *Tbptr;
 TekLink *TekRefresh;
-char *Tpushb;
-char *Tpushback;
+Char *Tpushb;
+Char *Tpushback;
 int Ttoggled = 0;
 int bcnt = 0;
-char buffer[BUF_SIZE];
-char *bptr = buffer;
+Char buffer[BUF_SIZE];
+Char *bptr = buffer;
 jmp_buf VTend;
 XPoint VTbox[NBOX] = {
 	{0, 0},
@@ -84,13 +84,6 @@ XPoint VTbox[NBOX] = {
 	{0, 0},
 	{0, 0},
 };
-T_fontsize Tfontsize[TEKNUMFONTS] = {
-	{9, 15},	/* large */
-	{8, 13},	/* #2 */
-	{6, 13},	/* #3 */
-	{6, 10},	/* small */
-};
-
 
 #ifdef DEBUG
 int debug = 0; 		/* true causes error messages to be displayed */
@@ -98,7 +91,6 @@ int debug = 0; 		/* true causes error messages to be displayed */
 XtermWidget term;		/* master data structure for client */
 char *xterm_name;	/* argv[0] */
 int am_slave = 0;	/* set to 1 if running as a slave process */
-int L_flag;
 int max_plus1;
 int pty_mask;
 int Select_mask;
@@ -116,6 +108,5 @@ GC visualBellGC;
 
 int VTgcFontMask = GCFont;
 int TEKgcFontMask = GCFont;
-int MenugcFontMask = GCFont;
 
 TekWidget tekWidget;

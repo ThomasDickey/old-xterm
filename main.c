@@ -1,12 +1,17 @@
 #ifndef lint
-static char rcs_id[] = "$XConsortium: main.c,v 1.96 88/10/18 14:43:19 swick Exp $";
+static char rcs_id[] = "$XConsortium: main.c,v 1.144 89/12/20 21:39:07 jim Exp $";
 #endif	/* lint */
 
 /*
- * The tty setup code was completely rewritten by Dave Serisky at 
- * Hewlett-Packard and should now work properly under both System V and
- * 4BSD.  However, the toolkit stuff is still pretty crufty.  In general,
- * beware, for there be dragons here.
+ * 				 W A R N I N G
+ * 
+ * If you think you know what all of this code is doing, you are probably
+ * very mistaken.  There be serious and nasty dragons here.
+ *
+ * This client is *not* to be taken as an example of how to write X Toolkit
+ * applications.  It is in need of a substantial rewrite, ideally to create
+ * a generic tty widget with several different parsing widgets so that you 
+ * can plug 'em together any way you want.  Don't hold your breath, though....
  */
 
 #include <X11/copyright.h>
@@ -40,56 +45,66 @@ SOFTWARE.
 
 #include <X11/Xos.h>
 #include <X11/Xlib.h>
+#include <X11/cursorfont.h>
 #include <pwd.h>
 #include <ctype.h>
 
-/*
- * The macII claims not to be SYSV, but it uses System V terminal control,
- * process groups, and signals.  If it walks like a duck and talks like duck,
- * ....  But, we still want to keep things separate for when other hybrids
- * become supported.
- */
-#ifdef macII
-#include <sys/ioctl.h>
-#include <sys/termio.h>
-#include <sys/stat.h>
-#include <sys/ttychars.h>
-#define vhangup() ;
-#define setpgrp2 setpgrp
-#define USE_SYSV_TERMIO
-#define USE_SYSV_UTMP
-#define USE_SYSV_PGRP
-#define USE_SYSV_SIGNALS
-#endif /* macII */
+#ifdef att
+#define USE_USG_PTYS
+#endif
 
-#ifdef SYSV				/* note that macII is *not* SYSV */
+#ifndef att
+#define USE_HANDSHAKE
+#endif
+
 #include <sys/ioctl.h>
+
+#ifdef SYSV
 #include <sys/termio.h>
-#ifndef mips
-#include <sys/ptyio.h>
-#endif /* not mips */
+#ifdef USE_USG_PTYS			/* AT&T SYSV has no ptyio.h */
+#include <sys/stream.h>			/* get typedef used in ptem.h */
+#include <sys/ptem.h>			/* get struct winsize */
+#include <sys/stropts.h>		/* for I_PUSH */
+#include <poll.h>			/* for POLLIN */
+#endif
 #include <sys/stat.h>
-#ifdef JOBCONTROL
-#include <sys/bsdtty.h>
-#endif	/* JOBCONTROL */
 #define USE_SYSV_TERMIO
-#define USE_SYSV_UTMP
 #define USE_SYSV_SIGNALS
 #define	USE_SYSV_PGRP
-#else	/* else not SYSV */		/* BSD and macII */
+#define USE_SYSV_ENVVARS		/* COLUMNS/LINES vs. TERMCAP */
+/*
+ * now get system-specific includes
+ */
+#ifdef CRAY
+#define HAS_UTMP_UT_HOST
+#define HAS_BSD_GROUPS
+#endif
 #ifdef macII
+#define HAS_UTMP_UT_HOST
+#define HAS_BSD_GROUPS
+#include <sys/ttychars.h>
+#undef USE_SYSV_ENVVARS
 #undef FIOCLEX
 #undef FIONCLEX
-#endif
+#define setpgrp2 setpgrp
 #include <sgtty.h>
-#include <sys/wait.h>
 #include <sys/resource.h>
-#endif	/* !SYSV */
+#endif
+#ifdef hpux
+#define HAS_BSD_GROUPS
+#include <sys/ptyio.h>
+#endif
+#endif /* SYSV */
 
+#ifndef SYSV				/* BSD systems */
+#include <sgtty.h>
+#include <sys/resource.h>
+#define HAS_UTMP_UT_HOST
+#define HAS_BSD_GROUPS
+#endif	/* !SYSV */
 
 #include <stdio.h>
 #include <errno.h>
-#include <signal.h>
 #include <setjmp.h>
 
 #ifdef hpux
@@ -98,7 +113,6 @@ SOFTWARE.
 
 #ifdef apollo
 #define ttyslot() 1
-#define vhangup() ;
 #endif /* apollo */
 
 #include <utmp.h>
@@ -107,6 +121,11 @@ SOFTWARE.
 #endif
 #include <sys/param.h>	/* for NOFILE */
 
+#ifdef  PUCC_PTYD
+#include <local/openpty.h>
+int	Ptyfd;
+#endif /* PUCC_PTYD */
+
 #ifndef UTMP_FILENAME
 #define UTMP_FILENAME "/etc/utmp"
 #endif
@@ -114,7 +133,7 @@ SOFTWARE.
 #define LASTLOG_FILENAME "/usr/adm/lastlog"  /* only on BSD systems */
 #endif
 #ifndef WTMP_FILENAME
-#if defined(SYSV) || defined(macII)
+#if defined(SYSV)
 #define WTMP_FILENAME "/etc/wtmp"
 #else
 #define WTMP_FILENAME "/usr/adm/wtmp"
@@ -125,23 +144,40 @@ SOFTWARE.
 #include "data.h"
 #include "error.h"
 #include "main.h"
+#include "menu.h"
 #include <X11/StringDefs.h>
 #include <X11/Shell.h>
+#ifdef SIGTSTP
+#include <sys/wait.h>
+#ifdef hpux
+#include <sys/bsdtty.h>
+#endif
+#endif
 
-extern Pixmap make_gray();
+#ifdef SIGNALRETURNSINT
+#define SIGNAL_T int
+#define SIGNAL_RETURN return 0
+#else
+#define SIGNAL_T void
+#define SIGNAL_RETURN return
+#endif
+
+SIGNAL_T Exit();
 extern char *malloc();
 extern char *calloc();
 extern char *realloc();
 extern char *ttyname();
+extern char *getenv();
+extern char *strindex ();
 extern void exit();
 extern void sleep();
-extern void Bcopy();
-extern void vhangup();
+extern void bcopy();
 extern long lseek();
+extern void HandlePopupMenu();
 
 int switchfb[] = {0, 2, 1, 3};
 
-static int reapchild ();
+static SIGNAL_T reapchild ();
 
 static Bool added_utmp_entry = False;
 
@@ -246,10 +282,20 @@ static char etc_wtmp[] = WTMP_FILENAME;
 #endif
 #endif	/* USE_SYSV_UTMP */
 
-static char *get_ty;
+/*
+ * Some people with 4.3bsd /bin/login seem to like to use login -p -f user
+ * to implement xterm -ls.  They can turn on USE_LOGIN_DASH_P and turn off
+ * WTMP and LASTLOG.
+ */
+#ifdef USE_LOGIN_DASH_P
+#ifndef LOGIN_FILENAME
+#define LOGIN_FILENAME "/bin/login"
+#endif
+static char bin_login[] = LOGIN_FILENAME;
+#endif
+
 static int inhibit;
 static char passedPty[2];	/* name if pty if slave */
-static int loginpty;
 
 #ifdef TIOCCONS
 static int Console;
@@ -271,13 +317,8 @@ static struct _resource {
     char *tty_modes;
     Boolean utmpInhibit;
     Boolean sunFunctionKeys;	/* %%% should be widget resource? */
+    Boolean wait_for_map;
 } resource;
-
-#ifndef GETTY_EXE
-#define GETTY_EXE "/etc/getty"
-#endif /* GETTY_EXE */
-
-static char *getty_program = GETTY_EXE;
 
 /* used by VT (charproc.c) */
 
@@ -300,11 +341,25 @@ static XtResource application_resources[] = {
 	offset(utmpInhibit), XtRString, "false"},
     {"sunFunctionKeys", "SunFunctionKeys", XtRBoolean, sizeof (Boolean),
 	offset(sunFunctionKeys), XtRString, "false"},
+    {"waitForMap", "WaitForMap", XtRBoolean, sizeof (Boolean),
+        offset(wait_for_map), XtRString, "false"},
 };
 #undef offset
 
 /* Command line options table.  Only resources are entered here...there is a
    pass over the remaining options after XtParseCommand is let loose. */
+
+static char *fallback_resources[] = {
+    "XTerm*SimpleMenu*menuLabel.vertSpace: 100",
+    "XTerm*SimpleMenu*HorizontalMargins: 16",
+    "XTerm*SimpleMenu*Sme.height: 16",
+    "XTerm*SimpleMenu*Cursor: left_ptr",
+    "XTerm*mainMenu.Label:  Main Options (no app-defaults)",
+    "XTerm*vtMenu.Label:  VT Options (no app-defaults)",
+    "XTerm*fontMenu.Label:  VT Fonts (no app-defaults)",
+    "XTerm*tekMenu.Label:  Tek Options (no app-defaults)",
+    NULL
+};
 
 static XrmOptionDescRec optionDescList[] = {
 {"-geometry",	"*vt100.geometry",XrmoptionSepArg,	(caddr_t) NULL},
@@ -343,8 +398,8 @@ static XrmOptionDescRec optionDescList[] = {
 {"+sb",		"*scrollBar",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-sf",		"*sunFunctionKeys", XrmoptionNoArg,	(caddr_t) "on"},
 {"+sf",		"*sunFunctionKeys", XrmoptionNoArg,	(caddr_t) "off"},
-{"-si",		"*scrollInput",	XrmoptionNoArg,		(caddr_t) "off"},
-{"+si",		"*scrollInput",	XrmoptionNoArg,		(caddr_t) "on"},
+{"-si",		"*scrollTtyOutput",	XrmoptionNoArg,		(caddr_t) "off"},
+{"+si",		"*scrollTtyOutput",	XrmoptionNoArg,		(caddr_t) "on"},
 {"-sk",		"*scrollKey",	XrmoptionNoArg,		(caddr_t) "on"},
 {"+sk",		"*scrollKey",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-sl",		"*saveLines",	XrmoptionSepArg,	(caddr_t) NULL},
@@ -356,6 +411,8 @@ static XrmOptionDescRec optionDescList[] = {
 {"+ut",		"*utmpInhibit",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-vb",		"*visualBell",	XrmoptionNoArg,		(caddr_t) "on"},
 {"+vb",		"*visualBell",	XrmoptionNoArg,		(caddr_t) "off"},
+{"-wf",		"*waitForMap",	XrmoptionNoArg,		(caddr_t) "on"},
+{"+wf",		"*waitForMap",	XrmoptionNoArg,		(caddr_t) "off"},
 /* bogus old compatibility stuff for which there are
    standard XtInitialize options now */
 {"%",		"*tekGeometry",	XrmoptionStickyArg,	(caddr_t) NULL},
@@ -407,7 +464,7 @@ static struct _options {
 { "-/+s",                  "turn on/off multiscroll" },
 { "-/+sb",                 "turn on/off scrollbar" },
 { "-/+sf",                 "turn on/off Sun Function Key escape codes" },
-{ "-/+si",                 "turn on/off scroll-on-input inhibit" },
+{ "-/+si",                 "turn on/off scroll-on-tty-output inhibit" },
 { "-/+sk",                 "turn on/off scroll-on-keypress" },
 { "-sl number",            "number of scrolled lines to save" },
 { "-/+t",                  "turn on/off Tek emulation window" },
@@ -420,8 +477,7 @@ static struct _options {
 { "#geom",                 "icon window geometry" },
 { "-T string",             "title name for window" },
 { "-n string",             "icon name for window" },
-{ "-C",                    "console mode" },
-{ "-L",                    "getty mode started from init" },
+{ "-C",                    "intercept console messages, if supported" },
 { "-Sxxd",                 "slave mode on \"ttyxx\", file descriptor \"d\"" },
 { NULL, NULL }};
 
@@ -439,7 +495,6 @@ static void Syntax (badOption)
 {
     struct _options *opt;
     int col;
-    char **cpp;
 
     fprintf (stderr, "%s:  bad command line option \"%s\"\r\n\n",
 	     ProgramName, badOption);
@@ -483,17 +538,6 @@ static void Help ()
     exit (0);
 }
 
-#ifndef lint
-/* this silliness causes the linker to include the VendorShell
- * module from Xaw, rather than the one from Xt.
- */
-static Junk()
-{
-#include <X11/Vendor.h>
-WidgetClass junk = vendorShellWidgetClass;
-}
-#endif
-
 
 extern WidgetClass xtermWidgetClass;
 
@@ -503,7 +547,9 @@ Arg ourTopLevelShellArgs[] = {
 };
 int number_ourTopLevelShellArgs = 2;
 	
+XtAppContext app_con;
 Widget toplevel;
+Bool waiting_for_initial_map;
 
 main (argc, argv)
 int argc;
@@ -514,9 +560,6 @@ char **argv;
 	int Xsocket, mode;
 	char *basename();
 	int xerror(), xioerror();
-	int fd1 = -1;
-	int fd2 = -1;
-	int fd3 = -1;
 
 	ProgramName = argv[0];
 
@@ -537,7 +580,7 @@ char **argv;
 	** of the various terminal structures (which may change from
 	** implementation to implementation).
 	*/
-#ifdef macII
+#if defined(macII) || defined(att)
 	d_tio.c_iflag = ICRNL|IXON;
 	d_tio.c_oflag = OPOST|ONLCR|TAB3;
     	d_tio.c_cflag = B9600|CS8|CREAD|PARENB|HUPCL;
@@ -554,13 +597,15 @@ char **argv;
 	d_tio.c_cc[VEOL2] = CNUL;
 	d_tio.c_cc[VSWTCH] = CNUL;
 
+#ifdef TIOCSLTC
         d_ltc.t_suspc = CSUSP;		/* t_suspc */
         d_ltc.t_dsuspc = CDSUSP;	/* t_dsuspc */
         d_ltc.t_rprntc = 0;		/* reserved...*/
         d_ltc.t_flushc = 0;
         d_ltc.t_werasc = 0;
         d_ltc.t_lnextc = 0;
-#else  /* macII */
+#endif /* TIOCSLTC */
+#else  /* else !macII */
 	d_tio.c_iflag = ICRNL|IXON;
 	d_tio.c_oflag = OPOST|ONLCR|TAB3;
 #ifdef BAUD_0
@@ -613,25 +658,16 @@ char **argv;
 #endif  /* macII */
 #endif	/* USE_SYSV_TERMIO */
 
-	/* This is ugly.  When running under init, we need to make sure
-	 * Xlib/Xt won't use file descriptors 0/1/2, because we need to
-	 * stomp on them.  This check doesn't guarantee a -L found is
-	 * really an option, but the opens don't hurt anyway.
-	 */
-	for (i = 1; i < argc; i++) {
-	    if ((argv[i][0] == '-') && (argv[i][1] == 'L')) {
-		fd1 = open ("/dev/null", O_RDONLY, 0);
-		fd2 = open ("/dev/null", O_RDONLY, 0);
-		fd3 = open ("/dev/null", O_RDONLY, 0);
-		break;
-	    }
-	}
 	/* Init the Toolkit. */
-	toplevel = XtInitialize("xterm", "XTerm",
-		optionDescList, XtNumber(optionDescList), &argc, argv);
+	toplevel = XtAppInitialize (&app_con, "XTerm", 
+				    optionDescList, XtNumber(optionDescList), 
+				    &argc, argv, fallback_resources, 
+				    NULL, 0);
 
 	XtGetApplicationResources( toplevel, &resource, application_resources,
 				   XtNumber(application_resources), NULL, 0 );
+
+	waiting_for_initial_map = resource.wait_for_map;
 
 	/*
 	 * fill in terminal modes
@@ -652,6 +688,7 @@ char **argv;
 	if (strcmp(xterm_name, "-") == 0) xterm_name = "xterm";
 	if (resource.icon_geometry != NULL) {
 	    int scr, junk;
+	    int ix, iy;
 	    Arg args[2];
 
 	    for(scr = 0;	/* yyuucchh */
@@ -661,21 +698,14 @@ char **argv;
 	    args[0].name = XtNiconX;
 	    args[1].name = XtNiconY;
 	    XGeometry(XtDisplay(toplevel), scr, resource.icon_geometry, "",
-		      0, 0, 0, 0, 0, &args[0].value, &args[1].value,
-		      &junk, &junk);
+		      0, 0, 0, 0, 0, &ix, &iy, &junk, &junk);
+	    args[0].value = (XtArgVal) ix;
+	    args[1].value = (XtArgVal) iy;
 	    XtSetValues( toplevel, args, 2);
 	}
 
 	XtSetValues (toplevel, ourTopLevelShellArgs, 
 		     number_ourTopLevelShellArgs);
-
-	/* Now that we are in control again, close any uglies. */
-	if (fd1 >= 0)
-	    (void)close(fd1);
-	if (fd2 >= 0)
-	    (void)close(fd2);
-	if (fd3 >= 0)
-	    (void)close(fd3);
 
 
 	/* Parse the rest of the command line */
@@ -686,27 +716,11 @@ char **argv;
 	     case 'h':
 		Help ();
 		/* NOTREACHED */
-#ifdef TIOCCONS
 	     case 'C':
+#ifdef TIOCCONS
 		Console = TRUE;
-		continue;
 #endif	/* TIOCCONS */
-	     case 'L':
-		L_flag = 1;
-		get_ty = argv[--argc];
-		ptydev[strlen(ptydev) - 2] = ttydev[strlen(ttydev) - 2] =
-			get_ty[strlen(get_ty) - 2];
-		ptydev[strlen(ptydev) - 1] = ttydev[strlen(ttydev) - 1] =
-			get_ty[strlen(get_ty) - 1];
-		if ((loginpty = open(ptydev, O_RDWR, 0)) < 0) {
-			consolepr("pty open of \"%s\" failed, ttydev \"%s\", get_ty \"%s\"\n",
-				  ptydev, ttydev, get_ty);
-			exit(ERROR_PTYS);
-		}
-		chown(ttydev, 0, 0);
-		chmod(ttydev, 0622);
 		continue;
-
 	     case 'S':
 		sscanf(*argv + 2, "%c%c%d", passedPty, passedPty+1,
 		 &am_slave);
@@ -727,6 +741,11 @@ char **argv;
 	    break;
 	}
 
+	XawSimpleMenuAddGlobalActions (XtWidgetToApplicationContext(toplevel));
+	XtRegisterGrabAction (HandlePopupMenu, True,
+			      (ButtonPressMask|ButtonReleaseMask),
+			      GrabModeAsync, GrabModeAsync);
+
         term = (XtermWidget) XtCreateManagedWidget(
 	    "vt100", xtermWidgetClass, toplevel, NULL, 0);
             /* this causes the initialize method to be called */
@@ -734,18 +753,22 @@ char **argv;
         screen = &term->screen;
 
 	term->flags = WRAPAROUND;
-#ifdef DO_AUTOREPEAT
-	/*
-	 * This whole autorepeat crud is bogus as it is really global state,
-	 * not per window state.  Use "xset r" instead.
-	 */
-	term->flags |= AUTOREPEAT;
-#endif /* DO_AUTOREPEAT */
-	if (!screen->jumpscroll)	term->flags |= SMOOTHSCROLL;
-	if (term->misc.reverseWrap)		term->flags |= REVERSEWRAP;
+	update_autowrap();
+	if (!screen->jumpscroll) {
+	    term->flags |= SMOOTHSCROLL;
+	    update_jumpscroll();
+	}
+	if (term->misc.reverseWrap) {
+	    term->flags |= REVERSEWRAP;
+	    update_reversewrap();
+	}
+	if (term->misc.re_verse) {
+	    term->flags |= REVERSE_VIDEO;
+	    update_reversevideo();
+	}
 
 	inhibit = 0;
-	if (term->misc.logInhibit)			inhibit |= I_LOG;
+	if (term->misc.logInhibit) 	    inhibit |= I_LOG;
 	if (term->misc.signalInhibit)		inhibit |= I_SIGNAL;
 	if (term->misc.tekInhibit)			inhibit |= I_TEK;
 
@@ -755,25 +778,11 @@ char **argv;
  * Set title and icon name if not specified
  */
 
-	if (get_ty || command_to_exec) {
-	    char window_title[1024];
+	if (command_to_exec) {
 	    Arg args[2];
 
 	    if (!resource.title) {
-		if (get_ty) {
-#ifdef hpux
-		    struct utsname name;    /* crock for hpux 8 char names */
-		    uname(&name);
-		    strcpy (window_title, "login(");
-		    strcpy (window_title+6, name.nodename);
-		    strcat (window_title, ")");
-#else 
-		    strcpy (window_title, "login(");
-		    (void) gethostname(window_title+6, sizeof(window_title)-6);
-		    strcat (window_title, ")");
-#endif
-		    resource.title = window_title;
-		} else if (command_to_exec) {
+		if (command_to_exec) {
 		    resource.title = basename (command_to_exec[0]);
 		} /* else not reached */
 	    }
@@ -799,67 +808,7 @@ char **argv;
 	if(debug)
 		i = open ("xterm.debug.log", O_WRONLY | O_CREAT | O_TRUNC,
 		 0666);
-	else
 #endif	/* DEBUG */
-	if(get_ty) {
-#ifdef USE_SYSV_PGRP
-		/* This is kind of vile and discusting.  While it is fine
-		 * to just go and open up /dev/console on a BSD system, we
-		 * can't do that on a SYSV system because if we do we might
-		 * become the controlling terminal for it and break login
-		 * attempts to it.
-		 *
-		 * The solution is to fork off a child, let it open up
-		 * /dev/console and when it has done that we can open it up
-		 * without fear of taking control of it.  After opening up
-		 * the console, we can go and kill the child process.
-		 *
-		 * Told you it was ugly.  But its a BSD world....
-		 */
-		int pid;
-		int status;
-		int pf[2];
-
-		pipe(pf);
-		pid = fork();
-		if (pid == 0) {
-			/* child:
-			 *  - close off the read side of the pipe,
-			 *  - do a setpgrp() so that we can gain control
-			 *    of /dev/console,
-			 *  - close the write side fo the pipe (so that our
-			 *    parent will know what we have done),
-			 *  - wait around till we are killed.
-			 */
-			(void) close(pf[0]);
-			(void) setpgrp();
-			(void) open("/dev/console", O_WRONLY, 0);
-			(void) close(pf[1]);
-			(void) pause();
-		} else if (pid > 0) {
-			/* parent:
-			 *  - read from pipe -- read will terminate when
-			 *    child closes the pipe or exit's,
-			 *  - open /dev/console,
-			 *  - kill off child,
-			 *  - wait on child.
-			 */
-			(void) close(pf[1]);
-			(void) read(pf[0], (char *) &status, sizeof(status));
-			i = open("/dev/console", O_WRONLY, 0);
-			(void) kill(pid, 9);
-			while (pid != wait(&status)) {
-				if (errno == EINTR)
-					continue;
-				else
-					break;
-			}
-			(void) close(pf[0]);
-		}
-#else	/* USE_SYSV_PGRP */
-		i = open("/dev/console", O_WRONLY, 0);
-#endif	/* !USE_SYSV_PGRP */
-	}
 	if(i >= 0) {
 #ifdef USE_SYSV_TERMIO
 		/* SYSV has another pointer which should be part of the
@@ -869,7 +818,7 @@ char **argv;
 
 		old_bufend = (unsigned char *) _bufend(stderr);
 		fileno(stderr) = i;
-		(unsigned char *) _bufend(stderr) = old_bufend;
+		_bufend(stderr) = old_bufend;
 #else	/* USE_SYSV_TERMIO */
 		fileno(stderr) = i;
 #endif	/* USE_SYSV_TERMIO */
@@ -925,11 +874,12 @@ char **argv;
 #endif	/* DEBUG */
 	XSetErrorHandler(xerror);
 	XSetIOErrorHandler(xioerror);
-	for( ; ; )
+	for( ; ; ) {
 		if(screen->TekEmu) {
 			TekRun();
 		} else
 			VTRun();
+	}
 }
 
 char *basename(name)
@@ -953,7 +903,14 @@ int *pty;
 {
 	static int devindex, letter = 0;
 
-#if defined (mips) && defined (SYSTYPE_SYSV)
+#ifdef att
+	if ((*pty = open ("/dev/ptmx", O_RDWR)) < 0) {
+	    return 1;
+	}
+	return 0;
+#else /* !att, need lots of code */
+
+#if defined(umips) && defined (SYSTYPE_SYSV)
 	struct stat fstat_buf;
 
 	*pty = open ("/dev/ptc", O_RDWR);
@@ -968,7 +925,21 @@ int *pty;
 	}
 	/* got one! */
 	return(0);
-#else /* not (mips && SYSTYPE_SYSV) */
+#else /* not (umips && SYSTYPE_SYSV) */
+#ifdef CRAY
+	for (; devindex < 256; devindex++) {
+	    sprintf (ttydev, "/dev/ttyp%03d", devindex);
+	    sprintf (ptydev, "/dev/pty/%03d", devindex);
+
+	    if ((*pty = open (ptydev, O_RDWR)) >= 0) {
+		/* We need to set things up for our next entry
+		 * into this function!
+		 */
+		(void) devindex++;
+		return(0);
+	    }
+	}
+#else /* !CRAY */
 	while (PTYCHAR1[letter]) {
 	    ttydev [strlen(ttydev) - 2]  = ptydev [strlen(ptydev) - 2] =
 		    PTYCHAR1 [letter];
@@ -988,11 +959,13 @@ int *pty;
 	    devindex = 0;
 	    (void) letter++;
 	}
+#endif /* CRAY else not CRAY */
 	/* We were unable to allocate a pty master!  Return an error
 	 * condition and let our caller terminate cleanly.
 	 */
 	return(1);
-#endif /* mips && SYSTYPE_SYSV */
+#endif /* umips && SYSTYPE_SYSV */
+#endif /* att */
 }
 
 get_terminal ()
@@ -1002,20 +975,9 @@ get_terminal ()
 {
 	register TScreen *screen = &term->screen;
 	
-	screen->graybordertile = make_gray(term->core.border_pixel,
-		term->core.background_pixel,
-		DefaultDepth(screen->display, DefaultScreen(screen->display)));
-
-
-	{
-	    unsigned long fg, bg;
-
-	    fg = screen->mousecolor;
-	    bg = (screen->mousecolor == term->core.background_pixel) ?
-		screen->foreground : term->core.background_pixel;
-
-	    screen->arrow = make_arrow (fg, bg);
-	}
+	screen->arrow = make_colored_cursor (XC_left_ptr, 
+					     screen->mousecolor,
+					     screen->mousecolorback);
 }
 
 /*
@@ -1046,11 +1008,15 @@ static char *vtterm[] = {
 	0
 };
 
-hungtty()
+/* ARGSUSED */
+SIGNAL_T hungtty(i)
+	int i;
 {
 	longjmp(env, 1);
+	SIGNAL_RETURN;
 }
 
+#ifdef USE_HANDSHAKE
 typedef enum {		/* c == child, p == parent                        */
 	PTY_BAD,	/* c->p: can't open pty slave for some reason     */
 	PTY_FATALERROR,	/* c->p: we had a fatal error with the pty        */
@@ -1059,6 +1025,7 @@ typedef enum {		/* c == child, p == parent                        */
 	PTY_NOMORE,	/* p->c; no more pty's, terminate                 */
 	UTMP_ADDED,	/* c->p: utmp entry has been added                */
 	UTMP_TTYSLOT,	/* c->p: here is my ttyslot                       */
+	PTY_EXEC	/* p->c: window has been mapped the first time    */
 } status_t;
 
 typedef struct {
@@ -1066,6 +1033,8 @@ typedef struct {
 	int error;
 	int fatal_error;
 	int tty_slot;
+	int rows;
+	int cols;
 	char buffer[1024];
 } handshake_t;
 
@@ -1092,22 +1061,52 @@ int error;
 	exit(error);
 }
 
+static int pc_pipe[2];	/* this pipe is used for parent to child transfer */
+static int cp_pipe[2];	/* this pipe is used for child to parent transfer */
+
+first_map_occurred ()
+{
+    handshake_t handshake;
+    register TScreen *screen = &term->screen;
+
+    if (screen->max_row > 0 && screen->max_col > 0) {
+	handshake.status = PTY_EXEC;
+	handshake.rows = screen->max_row;
+	handshake.cols = screen->max_col;
+	write (pc_pipe[1], (char *) &handshake, sizeof(handshake));
+	close (cp_pipe[0]);
+	close (pc_pipe[1]);
+	waiting_for_initial_map = False;
+    }
+}
+#else
+/*
+ * temporary hack to get xterm working on att ptys
+ */
+first_map_occurred ()
+{
+    return;
+}
+#define HsSysError(a,b)
+#endif /* USE_HANDSHAKE else !USE_HANDSHAKE */
+
+
 spawn ()
 /* 
  *  Inits pty and tty and forks a login process.
  *  Does not close fd Xsocket.
- *  If getty,  execs getty rather than csh and uses std fd's rather
- *  than opening a pty/tty pair.
  *  If slave, the pty named in passedPty is already open for use
  */
 {
 	extern char *SysErrorMsg();
 	register TScreen *screen = &term->screen;
 	int Xsocket = screen->display->fd;
+#ifdef USE_HANDSHAKE
 	handshake_t handshake;
-	int index1, tty = -1;
-	int pc_pipe[2];	/* this pipe is used for parent to child transfer */
-	int cp_pipe[2];	/* this pipe is used for child to parent transfer */
+#else
+	int fds[2];
+#endif
+	int tty = -1;
 	int discipline;
 	int done;
 #ifdef USE_SYSV_TERMIO
@@ -1157,21 +1156,16 @@ spawn ()
 	struct lastlog lastlog;
 #endif	/* LASTLOG */
 #endif	/* UTMP */
-	extern int Exit();
-	char *getenv();
-	char *strindex ();
 
 	screen->uid = getuid();
 	screen->gid = getgid();
 
-#if !defined(SYSV) || defined(JOBCONTROL)  /* a reason why macII isn't SYSV */
+#ifdef SIGTTOU
 	/* so that TIOCSWINSZ || TIOCSIZE doesn't block */
 	signal(SIGTTOU,SIG_IGN);
-#endif	/* !defined(SYSV) || defined(JOBCONTROL) */
+#endif
 
-	if (get_ty) {
-		screen->respond = loginpty;
-	} else if (am_slave) {
+	if (am_slave) {
 		screen->respond = am_slave;
 		ptydev[strlen(ptydev) - 2] = ttydev[strlen(ttydev) - 2] =
 			passedPty[0];
@@ -1181,6 +1175,8 @@ spawn ()
 		setgid (screen->gid);
 		setuid (screen->uid);
 	} else {
+		Bool tty_got_hung = False;
+
  		/*
  		 * Sometimes /dev/tty hangs on open (as in the case of a pty
  		 * that has gone away).  Simply make up some reasonable
@@ -1192,14 +1188,20 @@ spawn ()
  			tty = open ("/dev/tty", O_RDWR, 0);
  			alarm(0);
  		} else {
+			tty_got_hung = True;
  			tty = -1;
  			errno = ENXIO;
  		}
  		signal(SIGALRM, SIG_DFL);
  
+		/*
+		 * Check results and ignore current control terminal if
+		 * necessary.  ENXIO is what is normally returned if there is
+		 * no controlling terminal, but some systems (e.g. SunOS 4.0)
+		 * seem to return EIO.
+		 */
  		if (tty < 0) {
-			if (errno != ENXIO) SysError(ERROR_OPDEVTTY);
-			else {
+			if (tty_got_hung || errno == ENXIO || errno == EIO) {
 				no_dev_tty = TRUE;
 #ifdef USE_SYSV_TERMIO
 				tio = d_tio;
@@ -1216,6 +1218,8 @@ spawn ()
 				ltc = d_ltc;
 				lmode = d_lmode;
 #endif	/* USE_SYSV_TERMIO */
+			} else {
+			    SysError(ERROR_OPDEVTTY);
 			}
 		} else {
 			/* get a copy of the current terminal's state */
@@ -1248,15 +1252,35 @@ spawn ()
 			tty = -1;
 		}
 
+#ifdef 	PUCC_PTYD
+		if(-1 == (screen->respond = openrpty(ttydev, ptydev,
+				(resource.utmpInhibit ?  OPTY_NOP : OPTY_LOGIN),
+				getuid(), XDisplayString(screen->display)))) {
+#else /* not PUCC_PTYD */
 		if (get_pty (&screen->respond)) {
+#endif /* PUCC_PTYD */
 			/*  no ptys! */
 			(void) fprintf(stderr, "%s: no available ptys\n",
 				       xterm_name);
 			exit (ERROR_PTYS);
+#ifdef PUCC_PTYD
 		}
+#else
+		}			/* keep braces balanced for emacs */
+#endif
+#ifdef PUCC_PTYD
+		  else {
+			/*
+			 *  set the fd of the master in a global var so
+			 *  we can undo all this on exit
+			 *
+			 */
+			Ptyfd = screen->respond;
+		  }
+#endif /* PUCC_PTYD */
 	}
 
-	/* avoid double MapWindow requests, for wm's that care... */
+	/* avoid double MapWindow requests */
 	XtSetMappedWhenManaged( screen->TekEmu ? XtParent(tekWidget) :
 			        XtParent(term), False );
         /* Realize the Tek or VT widget, depending on which mode we're in.
@@ -1328,8 +1352,10 @@ spawn ()
 #endif	/* sun */
 
 	if (!am_slave) {
+#ifdef USE_HANDSHAKE
 	    if (pipe(pc_pipe) || pipe(cp_pipe))
 		SysError (ERROR_FORK);
+#endif
 	    if ((screen->pid = fork ()) == -1)
 		SysError (ERROR_FORK);
 		
@@ -1343,6 +1369,43 @@ spawn ()
 		char numbuf[12];
 #endif	/* USE_SYSV_TERMIO */
 
+#ifndef USE_HANDSHAKE
+		int ptyfd;
+
+		setpgrp();
+		grantpt (screen->respond);
+		unlockpt (screen->respond);
+		if ((ptyfd = open (ptsname(screen->respond), O_RDWR)) < 0) {
+		    SysError (1);
+		}
+		if (ioctl (ptyfd, I_PUSH, "ptem") < 0) {
+		    SysError (2);
+		}
+		if (!getenv("CONSEM") && ioctl (ptyfd, I_PUSH, "consem") < 0) {
+		    SysError (3);
+		}
+		if (ioctl (ptyfd, I_PUSH, "ldterm") < 0) {
+		    SysError (4);
+		}
+		tty = ptyfd;
+		close (screen->respond);
+#ifdef TIOCSWINSZ
+                /* tell tty how big window is */
+                if(screen->TekEmu) {
+                        ws.ws_row = 24;
+                        ws.ws_col = 80;
+                        ws.ws_xpixel = TFullWidth(screen);
+                        ws.ws_ypixel = TFullHeight(screen);
+                } else {
+                        ws.ws_row = screen->max_row + 1;
+                        ws.ws_col = screen->max_col + 1;
+                        ws.ws_xpixel = FullWidth(screen);
+                        ws.ws_ypixel = FullHeight(screen);
+                }
+#endif
+
+
+#else /* USE_HANDSHAKE:  warning, goes for a long ways */
 		/* close parent's sides of the pipes */
 		close (cp_pipe[0]);
 		close (pc_pipe[1]);
@@ -1375,24 +1438,12 @@ spawn ()
 		(void) setpgrp();
 #endif	/* USE_SYSV_PGRP */
 		while (1) {
-#ifdef	USE_SYSV_PGRP
-			if (get_ty) {
-				/* It is not our job to open up the
-				 * tty.  We will let getty do it -- that
-				 * is what it expects.  We need to do this
-				 * because of the way that SYSV tty process
-				 * groups work.  Getty closes fd's 0, 1, 2
-				 * and re-opens them to the line passed to
-				 * it.  When the last close is done to the
-				 * line, it seems to break the tty's connection
-				 * to the current process group, and ^C's no
-				 * longer work.  However, our process group
-				 * is still associated with the line to the
-				 * extent that we can use /dev/tty.
-				 */
-				break;
+#ifdef TIOCNOTTY
+			if ((tty = open ("/dev/tty", 2)) >= 0) {
+				ioctl (tty, TIOCNOTTY, (char *) NULL);
+				close (tty);
 			}
-#endif	/* USE_SYSV_PGRP */
+#endif	/* TIOCNOTTY */
 			if ((tty = open(ttydev, O_RDWR, 0)) >= 0) {
 #ifdef	USE_SYSV_PGRP
 				/* We need to make sure that we are acutally
@@ -1410,6 +1461,9 @@ spawn ()
 #endif	/* USE_SYSV_PGRP */
 			}
 
+#ifdef TIOCSCTTY
+			ioctl(tty, TIOCSCTTY, 0);
+#endif
 			/* let our master know that the open failed */
 			handshake.status = PTY_BAD;
 			handshake.error = errno;
@@ -1440,26 +1494,45 @@ spawn ()
 		/* use the same tty name that everyone else will use
 		** (from ttyname)
 		*/
-#ifdef	USE_SYSV_PGRP
-		if (!get_ty && (ptr = ttyname(tty)))
-#else	/* USE_SYSV_PGRP */
 		if (ptr = ttyname(tty))
-#endif	/* USE_SYSV_PGRP */
 		{
 			/* it may be bigger */
 			ttydev = realloc (ttydev, (unsigned) (strlen(ptr) + 1));
 			(void) strcpy(ttydev, ptr);
 		}
 
+#endif /* !USE_HANDSHAKE else USE_HANDSHAKE - from near fork */
+
+#ifdef USE_TTY_GROUP
+	{ 
+#include <grp.h>
+		struct group *ttygrp;
+		if (ttygrp = getgrnam("tty")) {
+			/* change ownership of tty to real uid, "tty" gid */
+			chown (ttydev, screen->uid, ttygrp->gr_gid);
+			chmod (ttydev, 0620);
+		}
+		else {
+			/* change ownership of tty to real group and user id */
+			chown (ttydev, screen->uid, screen->gid);
+			chmod (ttydev, 0622);
+		}
+		endgrent();
+	}
+#else /* else !USE_TTY_GROUP */
 		/* change ownership of tty to real group and user id */
 		chown (ttydev, screen->uid, screen->gid);
 
 		/* change protection of tty */
 		chmod (ttydev, 0622);
+#endif /* USE_TTY_GROUP */
 
-		if (!get_ty) {
+		/*
+		 * set up the tty modes
+		 */
+		{
 #ifdef USE_SYSV_TERMIO
-#ifdef mips
+#ifdef umips
 		    /* If the control tty had its modes screwed around with,
 		       eg. by lineedit in the shell, or emacs, etc. then tio
 		       will have bad values.  Let's just get termio from the
@@ -1467,7 +1540,7 @@ spawn ()
 		    if (ioctl (tty, TCGETA, &tio) == -1)
 		      SysError (ERROR_TIOCGETP);
 		    tio.c_lflag |= ECHOE;
-#endif /* mips */
+#endif /* umips */
 		    /* Now is also the time to change the modes of the
 		     * child pty.
 		     */
@@ -1547,7 +1620,7 @@ spawn ()
 
 #define TMODE(ind,var) if (ttymodelist[ind].set) var = ttymodelist[ind].value;
 		    if (override_tty_modes) {
-			TMODE (XTTYMODE_intr, tc.t_quitc);
+			TMODE (XTTYMODE_intr, tc.t_intrc);
 			TMODE (XTTYMODE_quit, tc.t_quitc);
 			TMODE (XTTYMODE_erase, sg.sg_erase);
 			TMODE (XTTYMODE_kill, sg.sg_kill);
@@ -1586,7 +1659,12 @@ spawn ()
 		}
 
 		signal (SIGCHLD, SIG_DFL);
+#ifdef att
+		/* watch out for extra shells (I don't understand either) */
+		signal (SIGHUP, SIG_DFL);
+#else
 		signal (SIGHUP, SIG_IGN);
+#endif
 		/* restore various signals to their defaults */
 		signal (SIGINT, SIG_DFL);
 		signal (SIGQUIT, SIG_DFL);
@@ -1599,28 +1677,16 @@ spawn ()
 		 * calls which may add a new entry to the environment.
 		 * The `1' is for the NULL terminating entry.
 		 */
-#ifdef SYSV				/* macII doesn't do COLUMNS/LINES */
+#ifdef USE_SYSV_ENVVARS
 		envnew = (char **) calloc ((unsigned) i + (5 + 1), sizeof(char *));
-#else /* not SYSV */
+#else
 		envnew = (char **) calloc ((unsigned) i + (4 + 1), sizeof(char *));
-#endif /* SYSV */
-		Bcopy((char *)environ, (char *)envnew, i * sizeof(char *));
+#endif /* USE_SYSV_ENVVARS */
+		bcopy((char *)environ, (char *)envnew, i * sizeof(char *));
 		environ = envnew;
 		Setenv ("TERM=", TermName);
 		if(!TermName)
 			*newtc = 0;
-#ifdef SYSV				/* macII does not want this */
-		sprintf (numbuf, "%d", screen->max_col + 1);
-		Setenv("COLUMNS=", numbuf);
-		sprintf (numbuf, "%d", screen->max_row + 1);
-		Setenv("LINES=", numbuf);
-#else /* not SYSV (including macII) */
-		if (term->misc.titeInhibit) {
-		    remove_termcap_entry (newtc, ":ti=");
-		    remove_termcap_entry (newtc, ":te=");
-		}
-		Setenv ("TERMCAP=", newtc);
-#endif	/* SYSV */
 
 		sprintf (buf, "%lu", screen->TekEmu ? 
 			 ((unsigned long) XtWindow (XtParent(tekWidget))) :
@@ -1633,10 +1699,6 @@ spawn ()
 
 		/* this is the time to go and set up stdin, out, and err
 		 */
-
-#ifdef	USE_SYSV_PGRP
-		if (!get_ty)
-#endif	/* USE_SYSV_PGRP */
 		{
 		    /* dup the tty */
 		    for (i = 0; i <= 2; i++)
@@ -1645,20 +1707,20 @@ spawn ()
 			    (void) dup(tty);
 			}
 
+#ifndef att
 		    /* and close the tty */
 		    if (tty > 2)
 			(void) close(tty);
+#endif
 		}
 
 #ifndef	USE_SYSV_PGRP
+#ifdef TIOCSCTTY
+		setsid();
+		ioctl(0, TIOCSCTTY, 0);
+#endif
 		ioctl(0, TIOCSPGRP, (char *)&pgrp);
-		if (get_ty) {
-			signal(SIGHUP, SIG_IGN);
-			vhangup();
-		}
 		setpgrp(0,0);
-		if (get_ty)
-			signal(SIGHUP, SIG_DFL);
 		close(open(ttydev, O_WRONLY, 0));
 		setpgrp (0, pgrp);
 #endif /* USE_SYSV_PGRP */
@@ -1685,24 +1747,24 @@ spawn ()
 		(void) getutid(&utmp);
 
 		/* set up the new entry */
-		if (get_ty) {
-		    utmp.ut_type = LOGIN_PROCESS;
-		    utmp.ut_exit.e_exit = 0;
-		    (void) strncpy(utmp.ut_user, "GETTY",
-		    	    sizeof(utmp.ut_user));
-		} else {
-		    pw = getpwuid(screen->uid);
-		    utmp.ut_type = USER_PROCESS;
-		    utmp.ut_exit.e_exit = 2;
-		    (void) strncpy(utmp.ut_user,
-			    (pw && pw->pw_name) ? pw->pw_name : "????",
-			    sizeof(utmp.ut_user));
-		}
+		pw = getpwuid(screen->uid);
+		utmp.ut_type = USER_PROCESS;
+		utmp.ut_exit.e_exit = 2;
+		(void) strncpy(utmp.ut_user,
+			       (pw && pw->pw_name) ? pw->pw_name : "????",
+			       sizeof(utmp.ut_user));
 		    
-		(void) strncmp(utmp.ut_id, ttydev + strlen(ttydev) - 2,
+		(void) strncpy(utmp.ut_id, ttydev + strlen(ttydev) - 2,
 			sizeof(utmp.ut_id));
 		(void) strncpy (utmp.ut_line,
 			ttydev + strlen("/dev/"), sizeof (utmp.ut_line));
+#ifdef HAS_UTMP_UT_HOST
+		(void) strncpy(utmp.ut_host, DisplayString(screen->display),
+			       sizeof(utmp.ut_host));
+#endif
+		(void) strncpy(utmp.ut_name, pw->pw_name, 
+			       sizeof(utmp.ut_name));
+
 		utmp.ut_pid = getpid();
 		utmp.ut_time = time ((long *) 0);
 
@@ -1712,20 +1774,13 @@ spawn ()
 		/* close the file */
 		(void) endutent();
 
-		if (get_ty && !resource.utmpInhibit) {
-		    /* set wtmp entry if wtmp file exists */
-		    if ((fd = open("/etc/wtmp", O_WRONLY | O_APPEND)) >= 0) {
-			(void) write(fd, &utmp, sizeof(utmp));
-			(void) close(fd);
-		    }
-		}
 #else	/* USE_SYSV_UTMP */
 		/* We can now get our ttyslot!  We can also set the initial
 		 * UTMP entry.
 		 */
 		tslot = ttyslot();
 		added_utmp_entry = False;
-		if (!get_ty) {
+		{
 			if (!resource.utmpInhibit &&
 			    (pw = getpwuid(screen->uid)) &&
 			    (i = open(etc_utmp, O_WRONLY)) >= 0) {
@@ -1735,9 +1790,11 @@ spawn ()
 					       sizeof(utmp.ut_line));
 				(void) strncpy(utmp.ut_name, pw->pw_name,
 					       sizeof(utmp.ut_name));
+#ifdef HAS_UTMP_UT_HOST
 				(void) strncpy(utmp.ut_host, 
 					       XDisplayString (screen->display),
 					       sizeof(utmp.ut_host));
+#endif
 				time(&utmp.ut_time);
 				lseek(i, (long)(tslot * sizeof(struct utmp)), 0);
 				write(i, (char *)&utmp, sizeof(struct utmp));
@@ -1777,9 +1834,12 @@ spawn ()
 		/* Let's pass our ttyslot to our parent so that it can
 		 * clean up after us.
 		 */
+#ifdef USE_HANDSHAKE
 		handshake.tty_slot = tslot;
-#endif	/* USE_SYSV_UTMP */
+#endif /* USE_HANDSHAKE */
+#endif /* USE_SYSV_UTMP */
 
+#ifdef USE_HANDSHAKE
 		/* Let our parent know that we set up our utmp entry
 		 * so that it can clean up after us.
 		 */
@@ -1787,37 +1847,20 @@ spawn ()
 		handshake.error = 0;
 		strcpy(handshake.buffer, ttydev);
 		(void) write(cp_pipe[1], &handshake, sizeof(handshake));
-#endif	/* UTMP */
+#endif /* USE_HANDSHAKE */
+#endif/* UTMP */
 
-#ifdef TIOCCONS
-		if (get_ty && Console) {
-		    int on = 1;
-		    if (ioctl (1, TIOCCONS, (char *)&on) == -1)
-			HsSysError(cp_pipe[0], ERROR_TIOCCONS);
-		}
-#endif /* TIOCCONS */
+		(void) setgid (screen->gid);
+#ifdef HAS_BSD_GROUPS
+		if (geteuid() == 0)
+		  initgroups (pw->pw_name, pw->pw_gid);
+#endif
+		(void) setuid (screen->uid);
 
-#ifdef	SYSV
-		/* Getty is runnable only by root, so we can't set our [ug]ids
-		 * before we try to exec it.
-		 */
-		if (!get_ty) {
-		    setgid (screen->gid);
-		    setuid (screen->uid);
-		}
-#else	/* SYSV */
-		setgid (screen->gid);
-		setuid (screen->uid);
-#endif	/* SYSV */
-
+#ifdef USE_HANDSHAKE
 		/* mark the pipes as close on exec */
 		fcntl(cp_pipe[1], F_SETFD, 1);
 		fcntl(pc_pipe[0], F_SETFD, 1);
-#ifdef	NOTDEF
-		/* mark all other fd's close on exec */
-		for (i = 3; i < NOFILE; i++)
-		    (void) fcntl(i, F_SETFD, 1);
-#endif	/* NOTDEF */
 
 		/* We are at the point where we are going to
 		 * exec our shell (or whatever).  Let our parent
@@ -1826,17 +1869,51 @@ spawn ()
 		handshake.status = PTY_GOOD;
 		handshake.error = 0;
 		(void) strcpy(handshake.buffer, ttydev);
-#ifdef	USE_SYSV_PGRP
-		/* If this is going to be a getty, let's leave the pipe
-		 * open so that we can pass through a bad exec of getty.
-		 * If the exec succeedes, the pipe will close and our
-		 * parent will assume success.
-		 */
-		if (!get_ty)
-			(void) write(cp_pipe[1], &handshake, sizeof(handshake));
-#else	/* USE_SYSV_PGRP */
 		(void) write(cp_pipe[1], &handshake, sizeof(handshake));
-#endif	/* !USE_SYSV_PGRP */
+
+		if (waiting_for_initial_map) {
+		    i = read (pc_pipe[0], (char *) &handshake,
+			      sizeof(handshake));
+		    if (i != sizeof(handshake) ||
+			handshake.status != PTY_EXEC) {
+			/* some very bad problem occurred */
+			exit (ERROR_PTY_EXEC);
+		    }
+		    screen->max_row = handshake.rows;
+		    screen->max_col = handshake.cols;
+#ifdef sun
+#ifdef TIOCSSIZE
+		    ts.ts_lines = screen->max_row + 1;
+		    ts.ts_cols = screen->max_col + 1;
+#endif /* TIOCSSIZE */
+#else /* !sun */
+#ifdef TIOCSWINSZ
+		    ws.ws_row = screen->max_row + 1;
+		    ws.ws_col = screen->max_col + 1;
+		    ws.ws_xpixel = FullWidth(screen);
+		    ws.ws_ypixel = FullHeight(screen);
+#endif /* TIOCSWINSZ */
+#endif /* sun else !sun */
+		}
+#endif /* USE_HANDSHAKE */
+
+#ifdef USE_SYSV_ENVVARS
+		sprintf (numbuf, "%d", screen->max_col + 1);
+		Setenv("COLUMNS=", numbuf);
+		sprintf (numbuf, "%d", screen->max_row + 1);
+		Setenv("LINES=", numbuf);
+#else
+		if(!screen->TekEmu) {
+		    strcpy (termcap, newtc);
+		    resize (screen, TermName, termcap, newtc);
+		}
+		if (term->misc.titeInhibit) {
+		    remove_termcap_entry (newtc, ":ti=");
+		    remove_termcap_entry (newtc, ":te=");
+		}
+		Setenv ("TERMCAP=", newtc);
+#endif /* USE_SYSV_ENVVAR */
+
 
 		/* need to reset after all the ioctl bashing we did above */
 #ifdef sun
@@ -1849,42 +1926,18 @@ spawn ()
 #endif	/* TIOCSWINSZ */
 #endif	/* sun */
 
+		signal(SIGHUP, SIG_DFL);
 		if (command_to_exec) {
 			execvp(*command_to_exec, command_to_exec);
 			/* print error message on screen */
 			fprintf(stderr, "%s: Can't execvp %s\n", xterm_name,
 			 *command_to_exec);
-		} else if (get_ty) {
-			signal(SIGHUP, SIG_IGN);
-#ifdef SYSV				/* macII does NOT want this */
-#ifndef mips
-			ioctl (0, TIOCTTY, &zero);
-#endif /* not mips */
-			execlp (getty_program, "getty", get_ty, "Xwindow", 0);
-#ifdef	USE_SYSV_PGRP
-			/* The exec of getty failed.  We can't just go on and
-			 * exec a shell (just pop up a root shell -- never!)
-			 * because we never opened up the tty (pty slave).
-			 * For that reason, we also can't dump something to
-			 * the window.
-			 */
-			handshake.status = PTY_FATALERROR;
-			handshake.error = errno;
-			handshake.fatal_error = ERROR_EXEC;
-			strcpy(handshake.buffer, getty_program);
-			(void) write(cp_pipe[1], &handshake, sizeof(handshake));
-			exit(ERROR_EXEC);
-#else	/* USE_SYSV_PGRP */
-			/* now is the time to set our [ug]id's */
-			setgid (screen->gid);
-			setuid (screen->uid);
-#endif	/* USE_SYSV_PGRP */
-#else	/* !SYSV */
-			ioctl (0, TIOCNOTTY, (char *) NULL);
-			execlp (getty_program, "+", "Xwindow", get_ty, 0);
-#endif	/* !SYSV */
-		}
-		signal(SIGHUP, SIG_DFL);
+		} 
+
+#ifdef att
+		/* fix pts sh hanging around */
+		signal (SIGHUP, SIG_DFL);
+#endif
 
 #ifdef UTMP
 		if(((ptr = getenv("SHELL")) == NULL || *ptr == 0) &&
@@ -1908,14 +1961,21 @@ spawn ()
 		 NTTYDISC : 0;
 		ioctl(0, TIOCSETD, (char *)&ldisc);
 #endif	/* !USE_SYSV_TERMIO */
-		execlp (ptr, term->misc.login_shell ? shname_minus : shname, 0);
+
+#ifdef USE_LOGIN_DASH_P
+		if (term->misc.login_shell && pw && added_utmp_entry)
+		  execl (bin_login, "login", "-p", "-f", pw->pw_name, 0);
+#endif
+		execlp (ptr, (term->misc.login_shell ? shname_minus : shname),
+			0);
 
 		/* Exec failed. */
 		fprintf (stderr, "%s: Could not exec %s!\n", xterm_name, ptr);
 		sleep(5);
 		exit(ERROR_EXEC);
-	    }
+	    }				/* end if in child after fork */
 
+#ifdef USE_HANDSHAKE
 	    /* Parent process.  Let's handle handshaked requests to our
 	     * child process.
 	     */
@@ -1930,8 +1990,6 @@ spawn ()
 			 * due to an error, we will catch the death of child
 			 * and clean up.
 			 */
-			close(cp_pipe[0]);
-			close(pc_pipe[1]);
 			break;
 		}
 
@@ -1940,35 +1998,21 @@ spawn ()
 			/* Success!  Let's free up resources and
 			 * continue.
 			 */
-			close(cp_pipe[0]);
-			close(pc_pipe[1]);
 			done = 1;
 			break;
 
 		case PTY_BAD:
-			if (get_ty) {
-				/* This is a getty.  We were given a specific
-				 * pty to use, so we won't try to get another
-				 * one.
-				 */
-				errno = handshake.error;
-				(void) perror(handshake.buffer);
-				handshake.status = PTY_NOMORE;
-				write(pc_pipe[1], &handshake, sizeof(handshake));
-				exit(1);
-			} else {
-				/* The open of the pty failed!  Let's get
-				 * another one.
-				 */
-				(void) close(screen->respond);
-				if (get_pty(&screen->respond)) {
-				    /* no more ptys! */
-				    (void) fprintf(stderr,
-					"%s: no available ptys\n", xterm_name);
-				    handshake.status = PTY_NOMORE;
-				    write(pc_pipe[1], &handshake, sizeof(handshake));
-				    exit (ERROR_PTYS);
-				}
+			/* The open of the pty failed!  Let's get
+			 * another one.
+			 */
+			(void) close(screen->respond);
+			if (get_pty(&screen->respond)) {
+			    /* no more ptys! */
+			    (void) fprintf(stderr,
+				   "%s: no available ptys\n", xterm_name);
+			    handshake.status = PTY_NOMORE;
+			    write(pc_pipe[1], &handshake, sizeof(handshake));
+			    exit (ERROR_PTYS);
 			}
 			handshake.status = PTY_NEW;
 			(void) strcpy(handshake.buffer, ttydev);
@@ -1977,6 +2021,8 @@ spawn ()
 
 		case PTY_FATALERROR:
 			errno = handshake.error;
+			close(cp_pipe[0]);
+			close(pc_pipe[1]);
 			SysError(handshake.fatal_error);
 
 		case UTMP_ADDED:
@@ -1994,15 +2040,23 @@ spawn ()
 		}
 	    }
 	    /* close our sides of the pipes */
-	    close (cp_pipe[0]);
-	    close (pc_pipe[1]);
-	}
+	    if (!waiting_for_initial_map) {
+		close (cp_pipe[0]);
+		close (pc_pipe[1]);
+	    }
+#endif /* USE_HANDSHAKE */
+	}				/* end if no slave */
 
 	/*
 	 * still in parent (xterm process)
 	 */
 
-	signal(SIGHUP,SIG_IGN);
+#ifdef att
+	/* hung sh problem? */
+	signal (SIGHUP, SIG_DFL);
+#else
+	signal (SIGHUP,SIG_IGN);
+#endif
 
 /*
  * Unfortunately, System V seems to have trouble divorcing the child process
@@ -2011,9 +2065,13 @@ spawn ()
  * don't ignore the signals.  This is annoying.
  */
 
-#if defined(USE_SYSV_SIGNALS) && !defined(JOBCONTROL)
+#if defined(USE_SYSV_SIGNALS) && !defined(SIGTSTP)
 	signal (SIGINT, SIG_IGN);
+
+#ifndef att
+	/* hung shell problem */
 	signal (SIGQUIT, SIG_IGN);
+#endif
 	signal (SIGTERM, SIG_IGN);
 #else /* else is bsd or has job control */
 #ifdef SYSV
@@ -2037,13 +2095,13 @@ spawn ()
 	signal (SIGQUIT, Exit);
 	signal (SIGTERM, Exit);
 #endif	/* SYSV */
-#endif /* USE_SYSV_SIGNALS and not JOBCONTROL */
+#endif /* USE_SYSV_SIGNALS and not SIGTSTP */
 
 	return;
 }							/* end spawn */
 
-Exit(n)
-int n;
+SIGNAL_T Exit(n)
+	int n;
 {
 	register TScreen *screen = &term->screen;
         int pty = term->screen.respond;  /* file descriptor of pty */
@@ -2051,11 +2109,18 @@ int n;
 #ifdef USE_SYSV_UTMP
 	struct utmp utmp;
 	struct utmp *utptr;
-
+#ifdef WTMP
+	int fd;			/* for /etc/wtmp */
+#endif
 	/* cleanup the utmp entry we forged earlier */
 	if (!resource.utmpInhibit && added_utmp_entry) {
+#ifdef CRAY
+#define PTYCHARLEN 4
+#else
+#define PTYCHARLEN 2
+#endif
 	    utmp.ut_type = USER_PROCESS;
-	    (void) strncpy(utmp.ut_id, ttydev + strlen(ttydev) - 2,
+	    (void) strncpy(utmp.ut_id, ttydev + strlen(ttydev) - PTYCHARLEN,
 		    sizeof(utmp.ut_id));
 	    (void) setutent();
 	    utptr = getutid(&utmp);
@@ -2064,6 +2129,14 @@ int n;
 		    utptr->ut_type = DEAD_PROCESS;
 		    utptr->ut_time = time((long *) 0);
 		    (void) pututline(utptr);
+#ifdef WTMP
+		    /* set wtmp entry if wtmp file exists */
+		    if ((fd = open(etc_wtmp, O_WRONLY | O_APPEND)) >= 0) {
+		      (void) write(fd, utptr, sizeof(utmp));
+		      (void) close(fd);
+		    }
+#endif
+
 	    }
 	    (void) endutent();
 	}
@@ -2094,28 +2167,32 @@ int n;
 	if(screen->logging)
 		CloseLog(screen);
 
-	if(!get_ty && !am_slave) {
-		/* restore ownership of tty */
+	if (!am_slave) {
+		/* restore ownership of tty and pty */
 		chown (ttydev, 0, 0);
+		chown (ptydev, 0, 0);
 
-		/* restore modes of tty */
+		/* restore modes of tty and pty */
 		chmod (ttydev, 0666);
+		chmod (ptydev, 0666);
 	}
 	exit(n);
+	SIGNAL_RETURN;
 }
 
+/* ARGSUSED */
 resize(screen, TermName, oldtc, newtc)
 TScreen *screen;
 char *TermName;
 register char *oldtc, *newtc;
 {
+#ifndef USE_SYSV_ENVVARS
 	register char *ptr1, *ptr2;
 	register int i;
 	register int li_first = 0;
 	register char *temp;
-	char *index(), *strindex();
+	char *index();
 
-#ifndef SYSV				/* macII *does* want this */
 	if ((ptr1 = strindex (oldtc, "co#")) == NULL){
 		strcat (oldtc, "co#80:");
 		ptr1 = strindex (oldtc, "co#");
@@ -2144,20 +2221,20 @@ register char *oldtc, *newtc;
 	 screen->max_row + 1);
 	ptr2 = index (ptr2, ':');
 	strcat (newtc, ptr2);
-#endif	/* !SYSV */
+#endif /* USE_SYSV_ENVVARS */
 }
 
-static reapchild ()
+static SIGNAL_T reapchild ()
 {
-#if defined(USE_SYSV_SIGNALS) && !defined(JOBCONTROL)
+#if defined(USE_SYSV_SIGNALS) && !defined(SIGTSTP)
 	int status, pid;
 
 	pid = wait(&status);
 	if (pid == -1) {
 		(void) signal(SIGCHLD, reapchild);
-		return;
+		SIGNAL_RETURN;
 	}
-#else	/* defined(USE_SYSV_SIGNALS) && !defined(JOBCONTROL) */
+#else	/* defined(USE_SYSV_SIGNALS) && !defined(SIGTSTP) */
 	union wait status;
 	register int pid;
 	
@@ -2169,16 +2246,19 @@ static reapchild ()
 #ifdef USE_SYSV_SIGNALS
 		(void) signal(SIGCHLD, reapchild);
 #endif /* USE_SYSV_SIGNALS */
-		return;
+		SIGNAL_RETURN;
 	}
-#endif	/* defined(USE_SYSV_SIGNALS) && !defined(JOBCONTROL) */
+#endif	/* defined(USE_SYSV_SIGNALS) && !defined(SIGTSTP) */
 
+#ifdef PUCC_PTYD
+		closepty(ttydev, ptydev, (resource.utmpInhibit ?  OPTY_NOP : OPTY_LOGIN), Ptyfd);
+#endif /* PUCC_PTYD */
 
 	if (pid != term->screen.pid) {
 #ifdef USE_SYSV_SIGNALS
 		(void) signal(SIGCHLD, reapchild);
 #endif	/* USE_SYSV_SIGNALS */
-		return;
+		SIGNAL_RETURN;
 	}
 	
 	/*
@@ -2193,6 +2273,7 @@ static reapchild ()
 	    killpg (pid, SIGHUP);
 	}
 	Exit (0);
+	SIGNAL_RETURN;
 }
 
 /* VARARGS1 */
@@ -2222,64 +2303,6 @@ char *fmt;
 #endif	/* TIOCNOTTY */
 }
 
-checklogin() 
-{
-	register int ts, i;
-	register struct passwd *pw;
-#ifdef USE_SYSV_UTMP
-	char *name;
-	struct utmp utmp;
-	struct utmp *utptr;
-#else /* not USE_SYSV_UTMP */
-	struct utmp utmp;
-#endif /* USE_SYSV_UTMP */
-
-#ifdef USE_SYSV_UTMP
-	(void) setutent ();
-	/* set up entry to search for */
-	(void) strncpy(utmp.ut_id,ttydev + strlen(ttydev) - 2,
-	 sizeof (utmp.ut_id));
-	utmp.ut_type = DEAD_PROCESS;
-
-	/* position to entry in utmp file */
-	utptr = getutid(&utmp);
-
-	/* entry must:
-	 *  - exist,
-	 *  - have a name in ut_user,
-	 *  - that is not GETTY (seems to null it out in this case, but
-	 *    better to be safe),
-	 *  - have an entry in /etc/utmp for that user.
-	 *
-	 * BTW, endutent() seems to zero out utptr.
-	 */
-	if (!utptr || !*utptr->ut_user || !XStrCmp(utptr->ut_user, "GETTY") ||
-	 (pw = getpwnam(utptr->ut_name)) == NULL) {
-		endutent();
-		return(FALSE);
-	}
-	endutent();
-#else	/* not USE_SYSV_UTMP */
-	ts = tslot > 0 ? tslot : -tslot;
-	if((i = open(etc_utmp, O_RDONLY)) < 0)
-		return(FALSE);
-	lseek(i, (long)(ts * sizeof(struct utmp)), 0);
-	ts = read(i, (char *)&utmp, sizeof(utmp));
-	close(i);
-	if(ts != sizeof(utmp) || XStrCmp(get_ty, utmp.ut_line) != 0 ||
-	 !*utmp.ut_name || (pw = getpwnam(utmp.ut_name)) == NULL)
-		return(FALSE);
-#endif	/* USE_SYSV_UTMP */
-	chdir(pw->pw_dir);
-	/* This is kind of ugly since we won't be able to clean up /etc/utmp
-	 * ourselves, but it shouldn't be too bad, since we will be kicked
-	 * off right away again by init and  will clean things up at that time.
-	 */
-	setgid(pw->pw_gid);
-	setuid(pw->pw_uid);
-	L_flag = 0;
-	return(TRUE);
-}
 
 remove_termcap_entry (buf, str)
     char *buf;
@@ -2291,8 +2314,6 @@ remove_termcap_entry (buf, str)
     if (strinbuf) {
         register char *colonPtr = index (strinbuf+1, ':');
         if (colonPtr) {
-            register char *cp;
-
             while (*colonPtr) {
                 *strinbuf++ = *colonPtr++;      /* copy down */
             }
@@ -2346,3 +2367,21 @@ static int parse_tty_modes (s, modelist, nmodes)
 	s++;
     }
 }
+
+
+int GetBytesAvailable (fd)
+    int fd;
+{
+#ifdef FIONREAD
+    static long arg;
+    ioctl (fd, FIONREAD, (char *) &arg);
+    return (int) arg;
+#else
+    struct pollfd pollfds[1];
+
+    pollfds[0].fd = fd;
+    pollfds[0].events = POLLIN;
+    return poll (pollfds, 1, 0);
+#endif
+}
+

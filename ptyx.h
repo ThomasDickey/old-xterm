@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: ptyx.h,v 1.20 88/11/16 18:13:26 rws Exp $
+ *	$XConsortium: ptyx.h,v 1.40 89/12/14 18:49:38 jim Exp $
  */
 
 #include <X11/copyright.h>
@@ -30,9 +30,9 @@
 /* ptyx.h */
 /* @(#)ptyx.h	X10/6.6	11/10/86 */
 
-#include <X11/Xos.h>
-#include <X11/Xlib.h>
 #include <X11/IntrinsicP.h>
+#include <X11/Xmu/Misc.h>	/* For Max() and Min(). */
+#include <signal.h>		/* for SIGTSTP */
 
 /* Extra Xlib definitions */
 #define AllButtonsUp(detail, ignore)  (\
@@ -45,10 +45,6 @@
 		  		(((detail)&(Button1Mask|Button2Mask)) == 0)) \
 		)
 
-
-#define Max(i, j)       ((i) > (j) ? (i) : (j))
-#define Min(i, j)       ((i) < (j) ? (i) : (j))
-
 #define MAX_COLS	200
 #define MAX_ROWS	128
 
@@ -58,16 +54,12 @@
 
 #ifdef SYSV
 
-#ifdef JOBCONTROL
-#define	getpgrp		getpgrp2
-#else	/* !JOBCONTROL */
-#define	getpgrp(x)	(x)
-#endif	/* !JOBCONTROL */
-
 #define	killpg(x,sig)	kill(-x,sig)
 
+#ifndef CRAY
 #define	dup2(fd1,fd2)	((fd1 == fd2) ? fd1 : \
 				(close(fd2), fcntl(fd1, F_DUPFD, fd2)))
+#endif
 
 #endif	/* !SYSV */
 
@@ -116,7 +108,8 @@ typedef enum {NORMAL, LEFTEXTENSION, RIGHTEXTENSION} EventMode;
  * on a screen is screen->max_row + 1, and similarly for columns.
  */
 
-typedef char **ScrnBuf;
+typedef unsigned char Char;		/* to support 8 bit chars */
+typedef Char **ScrnBuf;
 
 /*
  * ANSI emulation.
@@ -141,6 +134,8 @@ typedef char **ScrnBuf;
 #define	PM	0x9E
 #define	APC	0x9F
 #define	RDEL	0xFF
+
+#define NMENUFONTS 7			/* entries in fontMenu */
 
 #define	NBOX	5			/* Number of Points in box	*/
 #define	NPARAM	10			/* Max. parameters		*/
@@ -167,7 +162,12 @@ typedef struct {
 	char		gsets[4];
 } SavedCursor;
 
-#define	TEKNUMFONTS	4
+#define TEK_FONT_LARGE 0
+#define TEK_FONT_2 1
+#define TEK_FONT_3 2
+#define TEK_FONT_SMALL 3
+#define	TEKNUMFONTS 4
+
 /* Actually there are 5 types of lines, but four are non-solid lines */
 #define	TEKNUMLINES	4
 
@@ -192,6 +192,7 @@ typedef struct {
 } BitmapBits;
 
 #define	SAVELINES		64      /* default # lines to save      */
+#define SCROLLLINES 1			/* default # lines to scroll    */
 
 typedef struct {
 /* These parameters apply to both windows */
@@ -211,9 +212,8 @@ typedef struct {
 	Pixel		foreground;	/* foreground color		*/
 	Pixel		cursorcolor;	/* Cursor color			*/
 	Pixel		mousecolor;	/* Mouse color			*/
+	Pixel		mousecolorback;	/* Mouse color background	*/
 	int		border;		/* inner border			*/
-	Pixmap		graybordertile;	/* tile pixmap for border when
-						window is unselected	*/
 	Cursor		arrow;		/* arrow cursor			*/
 	unsigned short	send_mouse_pos;	/* user wants mouse transition  */
 					/* and position information	*/
@@ -224,7 +224,7 @@ typedef struct {
 	Boolean		grabbedKbd;	/* keyboard is grabbed		*/
 	int		logfd;		/* file descriptor of log	*/
 	char		*logfile;	/* log file name		*/
-	char		*logstart;	/* current start of log buffer	*/
+	unsigned char	*logstart;	/* current start of log buffer	*/
 	int		inhibit;	/* flags for inhibiting changes	*/
 
 /* VT window parameters */
@@ -261,13 +261,16 @@ typedef struct {
 	int		topline;	/* line number of top, <= 0	*/
 	int		savedlines;     /* number of lines that've been saved */
 	int		savelines;	/* number of lines off top to save */
-	Boolean		scrollinput;	/* scroll to bottom on input	*/
+	int		scrolllines;	/* number of lines to button scroll */
+	Boolean		scrollttyoutput; /* scroll to bottom on tty output */
 	Boolean		scrollkey;	/* scroll to bottom on key	*/
 	
 	ScrnBuf		buf;		/* screen buffer (main)		*/
 	ScrnBuf		allbuf;		/* screen buffer (may include
 					   lines scrolled off top	*/
+	char		*sbuf_address;	/* main screen memory address   */
 	ScrnBuf		altbuf;		/* alternate screen buffer	*/
+	char		*abuf_address;	/* alternate screen memory address */
 	Boolean		alternate;	/* true if using alternate buf	*/
 	unsigned short	do_wrap;	/* true if cursor in last column
 					   and character just output    */
@@ -300,11 +303,7 @@ typedef struct {
 	Pixel		Tforeground;	/* foreground color		*/
 	Pixel		Tbackground;	/* Background color		*/
 	Pixel		Tcursorcolor;	/* Cursor color			*/
-	Pixmap		Tbgndtile;	/* background tile pixmap	*/
 	int		Tcolor;		/* colors used			*/
-	Boolean		planeused;	/* is xorplane being used	*/
-	Boolean		cellsused;	/* are color cells being used	*/
-	XColor		colorcells[3];	/* color cells for Tek		*/
 	Boolean		Vshow;		/* VT window showing		*/
 	Boolean		Tshow;		/* Tek window showing		*/
 	Boolean		waitrefresh;	/* postpone refresh		*/
@@ -319,9 +318,6 @@ typedef struct {
 	XPoint		**Tbox;		/* draw unselected cursor	*/
 	int		xorplane;	/* z plane for inverts		*/
 	GC		linepat[TEKNUMLINES]; /* line patterns		*/
-	XFontStruct 	*Tfont[TEKNUMFONTS]; /* Tek fonts		*/
-	int		tobaseline[TEKNUMFONTS]; /* top to baseline for
-							each font	*/
 	Boolean		TekEmu;		/* true if Tektronix emulation	*/
 	int		cur_X;		/* current x			*/
 	int		cur_Y;		/* current y			*/
@@ -344,7 +340,20 @@ typedef struct {
 	Atom*		selection_atoms; /* which selections we own */
 	Cardinal	sel_atoms_size;	/*  how many atoms allocated */
 	Cardinal	selection_count; /* how many atoms in use */
+	Boolean		eight_bits;	/* use 8th bit instead of ESC prefix */
+	Pixmap		menu_item_bitmap;	/* mask for checking items */
+	Widget		mainMenu, vtMenu, tekMenu, fontMenu;
+	char*		menu_font_names[NMENUFONTS];
+	int		menu_font_number;
 } TScreen;
+
+typedef struct _TekPart {
+    XFontStruct *Tfont[TEKNUMFONTS];
+    int		tobaseline[TEKNUMFONTS]; /* top to baseline for each font */
+    char	*initial_font;		/* large, 2, 3, small */
+} TekPart;
+
+
 
 /* meaning of bits in screen.select flag */
 #define	INWINDOW	01	/* the mouse is in one of the windows */
@@ -371,6 +380,7 @@ typedef struct _Misc {
     Boolean tekInhibit;
     Boolean scrollbar;
     Boolean titeInhibit;
+    Boolean tekSmall;	/* start tek window in small size */
 } Misc;
 
 typedef struct {int foo;} XtermClassPart, TekClassPart;
@@ -409,6 +419,7 @@ typedef struct _XtermWidgetRec {
 
 typedef struct _TekWidgetRec {
     CorePart core;
+    TekPart tek;
 } TekWidgetRec, *TekWidget;
 
 #define BUF_SIZE 4096
@@ -423,9 +434,6 @@ typedef struct _TekWidgetRec {
 #define ORIGIN		0x20	/* true if in origin mode */
 #define INSERT		0x40	/* true if in insert mode */
 #define SMOOTHSCROLL	0x80	/* true if in smooth scroll mode */
-#ifdef DO_AUTOREPEAT
-#define AUTOREPEAT	0x100	/* true if in autorepeat mode */
-#endif /* DO_AUTOREPEAT */
 #define IN132COLUMNS	0x200	/* true if in 132 column mode */
 #define LINEFEED	0x400
 #define	REVERSEWRAP	0x800	/* true if reverse wraparound mode */
@@ -484,7 +492,4 @@ typedef struct Tek_Link
 #define	I_SIGNAL	0x02
 #define	I_TEK		0x04
 
-extern Cursor make_tcross();
-extern Cursor make_xterm();
-extern Cursor make_wait();
-extern Cursor make_arrow();
+extern Cursor make_colored_cursor();
