@@ -1,5 +1,5 @@
 /*
- *	@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @
+ *	$XConsortium: VTPrsTbl.c,v 1.3 89/01/04 13:37:41 jim Exp $
  */
 
 
@@ -29,13 +29,14 @@
  */
 
 #ifndef lint
-static char *rcsid_VTparsetable_c = "@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @";
+static char *rcsid_VTparsetable_c = "$XConsortium: VTPrsTbl.c,v 1.3 89/01/04 13:37:41 jim Exp $";
 #endif	/* lint */
 
 #include "VTparse.h"
 #ifndef lint
-static char rcs_id[] = "@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @";
+static char rcs_id[] = "$XConsortium: VTPrsTbl.c,v 1.3 89/01/04 13:37:41 jim Exp $";
 #endif	/* lint */
+
 /*
  * Stupid Apollo C preprocessor can't handle long lines.  So... To keep
  * it happy, we put each onto a seperate line....  Sigh...
@@ -807,7 +808,7 @@ CASE_GROUND_STATE,
 /*	X		Y		Z		[	*/
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
-CASE_GROUND_STATE,
+CASE_DECID,
 CASE_CSI_STATE,
 /*	\		]		^		_	*/
 CASE_GROUND_STATE,

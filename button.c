@@ -1,5 +1,5 @@
 /*
- *	@Header: button.c,v 1.1 88/02/10 13:08:02 jim Exp @
+ *	$XConsortium: button.c,v 1.32 89/01/05 12:47:45 swick Exp $
  */
 
 
@@ -35,10 +35,12 @@ button.c	Handles button events in the terminal emulator.
 				J. Gettys.
 */
 #ifndef lint
-static char rcs_id[] = "@Header: button.c,v 1.1 88/02/10 13:08:02 jim Exp @";
+static char rcs_id[] = "$XConsortium: button.c,v 1.22 88/10/17 20:10:47 swick Exp $";
 #endif	/* lint */
 #include <X11/Xos.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <X11/Xmu.h>
 #include <stdio.h>
 #include <signal.h>
 #include <setjmp.h>
@@ -68,128 +70,14 @@ extern char *malloc();
 #define	Coordinate(r,c)		((r) * (term->screen.max_col+1) + (c))
 
 char *SaveText();
-extern UnSaltText();
-extern StartCut();
-extern StartExtend();
 extern EditorButton();
-extern TrackDown();
 
 extern ModeMenu();
 extern char *xterm_name;
-extern Bogus(), Silence();
+extern Bogus();
 extern GINbutton();
 
-/* due to LK201 limitations, not all of the below are actually possible */
-static int (*textfunc[TEXTMODES][SHIFTS][DIRS][NBUTS])() = {
-/*	left		middle		right	*/
-	StartCut,	Silence,	StartExtend,	/* down |	  */
-	Silence,	UnSaltText,	Silence,	/* up	|no shift */
-
-	StartCut,	Silence,	StartExtend,	/* down |	  */
-	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|control  */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl meta */
-
-	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence,	/* up	|meta shift*/
-
-/* MIT mouse bogus sequence 			*/
-/* 	button, shift keys, and direction 	*/
-/*	left		middle		right	*/
-	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|no shift */
-
-	StartCut,	Silence,	StartExtend,	/* down |	  */
-	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|control  */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl meta */
-
-	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence,	/* up	|meta shift*/
-
-/* DEC mouse bogus sequence 			*/
-/* 	button, shift keys, and direction 	*/
-/*	left		middle		right	*/
-	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
-	EditorButton,	EditorButton,	EditorButton,	/* up	|no shift */
-
-	StartCut,	Silence,	StartExtend,	/* down |	  */
-	Silence,	UnSaltText,	Silence,	/* up	|shift	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta	  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	EditorButton,	EditorButton,	EditorButton,	/* down	|	  */
-	EditorButton,	EditorButton,	EditorButton,	/* up	|control  */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl shift */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	  */
-	Silence,	Silence,	Silence,	/* up	|ctl meta */
-
-	Bogus,		Bogus,		Bogus,		/* down	| control  */
-	Silence,	Silence,	Silence,	/* up	|meta shift*/
-
-/* Hilite tracking DEC mouse bogus sequence 	*/
-/* 	button, shift keys, and direction 	*/
-/*	left		middle		right	*/
-	TrackDown,	EditorButton,	EditorButton,	/* down	|	    */
-	EditorButton,	EditorButton,	EditorButton,	/* up	|no shift   */
-
-	StartCut,	Silence,	StartExtend,	/* down |	    */
-	Silence,	UnSaltText,	Silence,	/* up	|shift	    */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	    */
-	Silence,	Silence,	Silence,	/* up	|meta	    */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	    */
-	Silence,	Silence,	Silence,	/* up	|meta shift */
-
-	EditorButton,	EditorButton,	EditorButton,	/* down	|	    */
-	EditorButton,	EditorButton,	EditorButton,	/* up	|control    */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|	    */
-	Silence,	Silence,	Silence,	/* up	|ctl shift  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|	    */
-	Silence,	Silence,	Silence,	/* up	|ctl meta   */
-
-	Bogus,		Bogus,		Bogus,		/* down	| control   */
-	Silence,	Silence,	Silence		/* up	|meta shift */
-
-};
-
-	/* button and shift keys for Tek mode */
+/* button and shift keys for Tek mode */
 static int (*Tbfunc[SHIFTS][NBUTS])() = {
 /*	left		middle		right	*/
 	GINbutton,	GINbutton,	GINbutton,	/* down	|no shift   */
@@ -217,9 +105,6 @@ extern XtermWidget term;
 /* Raw char position where the selection started */
 static int rawRow, rawCol;
 
-/* Hilited area */
-static int startHRow, startHCol, endHRow, endHCol, startHCoord, endHCoord = 0;
-
 /* Selected area before CHAR, WORD, LINE selectUnit processing */
 static int startRRow, startRCol, endRRow, endRCol = 0;
 
@@ -245,67 +130,104 @@ static SelectUnit selectUnit;
 static int replyToEmacs;
 
 
-/*ARGSUSED*/
-void VTButtonPressed(w, eventdata, event)
+Boolean SendMousePosition(w, event)
 Widget w;
-caddr_t eventdata;
-register XButtonEvent *event;
+XEvent* event;
 {
-	register TScreen *screen = &term->screen;
-	/* so table above will be nice, we index from 0 */
-	int button = event->button - 1; 
-	int shift = KeyState(event->state);
+    register TScreen *screen = &((XtermWidget)w)->screen;
+    
+    if (screen->send_mouse_pos == 0) return False;
 
-	if (eventMode != NORMAL)
-		return;
-	if (screen->incopy)
-		CopyWait (screen);
-	textfunc[screen->send_mouse_pos][shift][0][button](event);
+    if (event->type != ButtonPress && event->type != ButtonRelease)
+	return False;
+
+#define KeyModifiers \
+    (event->xbutton.state & (ShiftMask | LockMask | ControlMask | Mod1Mask | \
+			     Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask ))
+
+#define ButtonModifiers \
+    (event->xbutton.state & (ShiftMask | LockMask | ControlMask | Mod1Mask | \
+			     Mod2Mask | Mod3Mask | Mod4Mask | Mod5Mask ))
+
+    switch (screen->send_mouse_pos) {
+      case 1: /* X10 compatibility sequences */
+
+	if (KeyModifiers == 0) {
+	    if (event->type == ButtonPress)
+		EditorButton(event);
+	    return True;
+	}
+	return False;
+
+      case 2: /* DEC vt200 compatible */
+
+	if (KeyModifiers == 0 || KeyModifiers == ControlMask) {
+	    EditorButton(event);
+	    return True;
+	}
+	return False;
+
+      case 3: /* DEC vt200 hilite tracking */
+	if (  event->type == ButtonPress &&
+	      KeyModifiers == 0 &&
+	      event->xbutton.button == Button1 ) {
+	    TrackDown(event);
+	    return True;
+	}
+	if (KeyModifiers == 0 || KeyModifiers == ControlMask) {
+	    EditorButton(event);
+	    return True;
+	}
+	/* fall through */
+
+      default:
+	return False;
+    }
+#undef KeyModifiers
 }
 
+
 /*ARGSUSED*/
-void VTMouseMoved(w, eventdata, event)
+void HandleSelectExtend(w, event, params, num_params)
 Widget w;
-caddr_t eventdata;
-register XMotionEvent *event;
+XEvent *event;			/* must be XMotionEvent */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
 {
+	((XtermWidget)w)->screen.selection_time = event->xmotion.time;
 	switch (eventMode) {
 		case LEFTEXTENSION :
 		case RIGHTEXTENSION :
-			ExtendExtend(event->x, event->y);
+			ExtendExtend(event->xmotion.x, event->xmotion.y);
 			break;
-		default :
-			/* Should get here rarely when everything
-			   fixed with windows and the event mgr */
-/*			fprintf(stderr, "Race mouse motion\n");
-*/			break;
+		case NORMAL :
+			/* will get here if send_mouse_pos != 0 */
+		        break;
 	}
 }
 
 
 /*ARGSUSED*/
-void VTButtonReleased(w, eventdata, event)
+void HandleSelectEnd(w, event, params, num_params)
 Widget w;
-caddr_t eventdata;
-register XButtonEvent *event;
+XEvent *event;			/* must be XButtonEvent */
+String *params;			/* selections */
+Cardinal *num_params;
 {
-	register TScreen *screen = &term->screen;
-	/* so table above will be nice, we index from 0 */
-	int button = event->button - 1; 
-	int shift = KeyState(event->state);
+	register TScreen *screen = &((XtermWidget)w)->screen;
 
+	((XtermWidget)w)->screen.selection_time = event->xbutton.time;
 	switch (eventMode) {
 		case NORMAL :
-			textfunc[screen->send_mouse_pos][shift][1][button]
-			 (event);
+		        (void) SendMousePosition(w, event);
 			break;
 		case LEFTEXTENSION :
 		case RIGHTEXTENSION :
-			if AllButtonsUp(event->state, event->button)
-				EndExtend(event);
+			EndExtend(event, params, *num_params);
 			break;
 	}
 }
+
 
 /*ARGSUSED*/
 void TekButtonPressed(w, eventdata, event)
@@ -320,38 +242,114 @@ register XButtonEvent *event;
 
 	if (screen->incopy)
 		CopyWait (screen);
-	Tbfunc[shift][button](event);
+	(*(Tbfunc[shift][button]))(event);
 }
 
+struct _SelectionList {
+    String *params;
+    Cardinal count;
+    Time time;
+};
 
-/*ARGSUSED*/
-UnSaltText(event)
-XEvent *event;
+
+static void _GetSelection(w, time, params, num_params)
+Widget w;
+Time time;
+String *params;			/* selections in precedence order */
+Cardinal num_params;
 {
-	int pty = term->screen.respond;	/* file descriptor of pty */
-	char *line;
-	int nbytes;
-	register char *lag, *cp, *end;
-	register TScreen *screen = &term->screen;
+    void SelectionReceived();
+    Atom selection;
+    int buffer;
 
-	line = XFetchBytes(screen->display,&nbytes);
-	if (!nbytes) return;
-	end = &line[nbytes];
-	lag = line;
-	for (cp = line; cp != end; cp++)
-	{
-		if (*cp != '\n') continue;
-		*cp = '\r';
-		v_write(pty, lag, cp - lag + 1);
-		lag = cp + 1;
-	}
-	if (lag != end)
-		v_write(pty, lag, end - lag);
-	free (line);	/* free text from fetch */
+    XmuInternStrings(XtDisplay(w), params, (Cardinal)1, &selection);
+    switch (selection) {
+      case XA_CUT_BUFFER0: buffer = 0; break;
+      case XA_CUT_BUFFER1: buffer = 1; break;
+      case XA_CUT_BUFFER2: buffer = 2; break;
+      case XA_CUT_BUFFER3: buffer = 3; break;
+      case XA_CUT_BUFFER4: buffer = 4; break;
+      case XA_CUT_BUFFER5: buffer = 5; break;
+      case XA_CUT_BUFFER6: buffer = 6; break;
+      case XA_CUT_BUFFER7: buffer = 7; break;
+      default:	       buffer = -1;
+    }
+    if (buffer >= 0) {
+	register TScreen *screen = &((XtermWidget)w)->screen;
+	unsigned long nbytes;
+	int fmt8 = 8;
+	Atom type = XA_STRING;
+	char *line = XFetchBuffer(screen->display, &nbytes, buffer);
+	if (nbytes > 0)
+	    SelectionReceived(w, NULL, &selection, &type, (caddr_t)line,
+			      &nbytes, &fmt8);
+	else if (num_params > 1)
+	    _GetSelection(w, time, params+1, num_params-1);
+    } else {
+	struct _SelectionList* list;
+	if (--num_params) {
+	    list = XtNew(struct _SelectionList);
+	    list->params = params + 1;
+	    list->count = num_params;
+	    list->time = time;
+	} else list = NULL;
+	XtGetSelectionValue(w, selection, XA_STRING, SelectionReceived,
+			    (caddr_t)list, time);
+    }
 }
 
-	
-#define MULTICLICKTIME 250
+
+/* ARGSUSED */
+static void SelectionReceived(w, client_data, selection, type,
+			      value, length, format)
+Widget w;
+caddr_t client_data;
+Atom *selection, *type;
+caddr_t value;
+unsigned long *length;
+int *format;
+{
+    int pty = ((XtermWidget)w)->screen.respond;	/* file descriptor of pty */
+    register char *lag, *cp, *end;
+    char *line = (char*)value;
+				  
+    if (*type == 0 /*XT_CONVERT_FAIL*/ || *length == 0) {
+	struct _SelectionList* list = (struct _SelectionList*)client_data;
+	if (list != NULL) {
+	    _GetSelection(w, list->time, list->params, list->count);
+	    XtFree(client_data);
+	}
+	return;
+    }
+
+    end = &line[*length];
+    lag = line;
+    for (cp = line; cp != end; cp++)
+	{
+	    if (*cp != '\n') continue;
+	    *cp = '\r';
+	    v_write(pty, lag, cp - lag + 1);
+	    lag = cp + 1;
+	}
+    if (lag != end)
+	v_write(pty, lag, end - lag);
+
+    XtFree(client_data);
+    XtFree(value);
+}
+
+
+/* ARGSUSED */
+HandleInsertSelection(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* assumed to be XButtonEvent* */
+String *params;			/* selections in precedence order */
+Cardinal *num_params;
+{
+    if (SendMousePosition(w, event)) return;
+    _GetSelection(w, event->xbutton.time, params, *num_params);
+}
+
 
 SetSelectUnit(buttonDownTime, defaultUnit)
 unsigned long buttonDownTime;
@@ -359,7 +357,7 @@ SelectUnit defaultUnit;
 {
 /* Do arithmetic as integers, but compare as unsigned solves clock wraparound */
 	if ((long unsigned)((long int)buttonDownTime - lastButtonUpTime)
-	 > MULTICLICKTIME) {
+	 > term->screen.multiClickTime) {
 		numberOfClicks = 1;
 		selectUnit = defaultUnit;
 	} else {
@@ -369,22 +367,27 @@ SelectUnit defaultUnit;
 	}
 }
 
-StartCut(event)
-register XButtonEvent *event;
+/* ARGSUSED */
+HandleSelectStart(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
 {
-	register TScreen *screen = &term->screen;
+	register TScreen *screen = &((XtermWidget)w)->screen;
 	int startrow, startcol;
 
+	if (SendMousePosition(w, event)) return;
 	firstValidRow = 0;
 	lastValidRow  = screen->max_row;
-	SetSelectUnit(event->time, SELECTCHAR);
-	PointToRowCol(event->y, event->x, &startrow, &startcol);
+	SetSelectUnit(event->xbutton.time, SELECTCHAR);
+	PointToRowCol(event->xbutton.y, event->xbutton.x, &startrow, &startcol);
 	replyToEmacs = FALSE;
 	StartSelect(startrow, startcol);
 }
 
 
-TrackDown(event)
+static TrackDown(event)
 register XButtonEvent *event;
 {
 	int startrow, startcol;
@@ -447,17 +450,19 @@ int startrow, startcol;
 
 }
 
-EndExtend(event)
-XButtonEvent *event;
+EndExtend(event, params, num_params)
+XEvent *event;			/* must be XButtonEvent */
+String *params;			/* selections */
+Cardinal num_params;
 {
 	int	row, col;
 	TScreen *screen = &term->screen;
 	char line[9];
 
-	ExtendExtend(event->x, event->y);
+	ExtendExtend(event->xbutton.x, event->xbutton.y);
 
-	lastButtonUpTime = event->time;
-	PointToRowCol(event->y, event->x, &row, &col);
+	lastButtonUpTime = event->xbutton.time;
+	PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
 	/* Only do select stuff if non-null select */
 	if (startSRow != endSRow || startSCol != endSCol) {
 		if (replyToEmacs) {
@@ -479,24 +484,32 @@ XButtonEvent *event;
 				line[8] = ' ' + row + 1;
 				v_write(screen->respond, line, 9);
 			}
+			TrackText(0, 0, 0, 0);
 		}
-		SaltTextAway(startSRow, startSCol, endSRow, endSCol);
-	}
-	TrackText(0, 0, 0, 0);
+		SaltTextAway(startSRow, startSCol, endSRow, endSCol,
+			     params, num_params);
+	} else DisownSelection(term);
+
+	/* TrackText(0, 0, 0, 0); */
 	eventMode = NORMAL;
 }
 
 #define Abs(x)		((x) < 0 ? -(x) : (x))
 
-StartExtend(event)
-XButtonEvent *event;
+/* ARGSUSED */
+HandleStartExtend(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
 {
-	TScreen *screen = &term->screen;
+	TScreen *screen = &((XtermWidget)w)->screen;
 	int row, col, coord;
 
+	if (SendMousePosition(w, event)) return;
 	firstValidRow = 0;
 	lastValidRow  = screen->max_row;
-	SetSelectUnit(event->time, selectUnit);
+	SetSelectUnit(event->xbutton.time, selectUnit);
 	replyToEmacs = FALSE;
 
 	if (numberOfClicks == 1) {
@@ -514,7 +527,7 @@ XButtonEvent *event;
 		endECol   = endRCol   = saveEndRCol;
 
 	}
-	PointToRowCol(event->y, event->x, &row, &col);
+	PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
 	coord = Coordinate(row, col);
 
 	if (Abs(coord - Coordinate(startSRow, startSCol))
@@ -565,17 +578,79 @@ int x, y;
 }
 
 
-ScrollSelection(amount)
-int amount;
+ScrollSelection(screen, amount)
+register TScreen* screen;
+register int amount;
 {
-	/* Sent by scrollbar stuff, so amount never takes selection out of
-	   saved text */
-startRRow += amount; endRRow += amount; startSRow += amount; endSRow += amount;
-rawRow += amount;
+    register int minrow = -screen->savedlines;
+
+    /* Sent by scrollbar stuff, so amount never takes selection out of
+       saved text */
+
+    /* XXX - the preceeding is false; cat /etc/termcap (or anything
+       larger than the number of saved lines plus the screen height) and then
+       hit extend select */
+
+    startRRow += amount; endRRow += amount;
+    startSRow += amount; endSRow += amount;
+    rawRow += amount;
+    screen->startHRow += amount;
+    screen->endHRow += amount;
+
+    if (startRRow < minrow) {
+	startRRow = minrow;
+	startRCol = 0;
+    }
+    if (endRRow < minrow) {
+	endRRow = minrow;
+        endRCol = 0;
+    }
+    if (startSRow < minrow) {
+	startSRow = minrow;
+	startSCol = 0;
+    }
+    if (endSRow < minrow) {
+	endSRow = minrow;
+	endSCol = 0;
+    }
+    if (rawRow < minrow) {
+	rawRow = minrow;
+	rawCol = 0;
+    }
+    if (screen->startHRow < minrow) {
+	screen->startHRow = minrow;
+	screen->startHCol = 0;
+    }
+    if (screen->endHRow < minrow) {
+	screen->endHRow = minrow;
+	screen->endHCol = 0;
+    }
+    screen->startHCoord = Coordinate (screen->startHRow, screen->startHCol);
+    screen->endHCoord = Coordinate (screen->endHRow, screen->endHCol);
 }
 
 
-PointToRowCol(y, x, r, c)
+ResizeSelection (screen, rows, cols)
+    TScreen *screen;
+    int rows, cols;
+{
+    rows--;				/* decr to get 0-max */
+    cols--;
+
+    if (startRRow > rows) startRRow = rows;
+    if (startSRow > rows) startSRow = rows;
+    if (endRRow > rows) endRRow = rows;
+    if (endSRow > rows) endSRow = rows;
+    if (rawRow > rows) rawRow = rows;
+
+    if (startRCol > cols) startRCol = cols;
+    if (startSCol > cols) startSCol = cols;
+    if (endRCol > cols) endRCol = cols;
+    if (endSCol > cols) endSCol = cols;
+    if (rawCol > cols) rawCol = cols;
+}
+
+static PointToRowCol(y, x, r, c)
 register int y, x;
 int *r, *c;
 /* Convert pixel coordinates to character coordinates.
@@ -610,7 +685,7 @@ register int row;
 
 	for(i = screen->max_col,
 	 ch = screen->buf[2 * (row + screen->topline)] + i ;
-	 i > 0 && *ch == 0 ; ch--, i--);
+	 i > 0 && (*ch == ' ' || *ch == 0); ch--, i--);
 	return(i);
 }	
 
@@ -647,6 +722,19 @@ static int charClass[128] = {
     48,  48,  48,  48,  48,  48,  48,  48,
 /*   x    y    z    {    |    }    ~  DEL */
     48,  48,  48, 123, 124, 125, 126,   1};
+
+
+int SetCharacterClassRange (low, high, value)
+    register int low, high;		/* in range of [0..127] */
+    register int value;			/* arbitrary */
+{
+
+    if (low < 0 || high > 127 || high < low) return (-1);
+
+    for (; low <= high; low++) charClass[low] = value;
+
+    return (0);
+}
 
 
 ComputeSelect(startRow, startCol, endRow, endCol)
@@ -719,9 +807,13 @@ int startRow, startCol, endRow, endCol;
 			}
 			break;
 		case SELECTLINE :
-			startSCol = 0;
-			endSCol = 0;
-			++endSRow;
+			if (term->screen.cutToBeginningOfLine) startSCol = 0;
+			if (term->screen.cutNewline) {
+			    endSCol = 0;
+			    ++endSRow;
+			} else {
+			    endSCol = LastTextCol(endSRow) + 1;
+			}
 			break;
 	}
 	TrackText(startSRow, startSCol, endSRow, endSCol);
@@ -735,6 +827,7 @@ register int frow, fcol, trow, tcol;
 {
 	register int from, to;
 	register TScreen *screen = &term->screen;
+	int old_startrow, old_startcol, old_endrow, old_endcol;
 
 	/* (frow, fcol) may have been scrolled off top of display */
 	if (frow < 0)
@@ -744,127 +837,83 @@ register int frow, fcol, trow, tcol;
 		trow = screen->max_row+1;
 		tcol = 0;
 	}
+	old_startrow = screen->startHRow;
+	old_startcol = screen->startHCol;
+	old_endrow = screen->endHRow;
+	old_endcol = screen->endHCol;
+	if (frow == old_startrow && fcol == old_startcol &&
+	    trow == old_endrow   && tcol == old_endcol) return;
+	screen->startHRow = frow;
+	screen->startHCol = fcol;
+	screen->endHRow   = trow;
+	screen->endHCol   = tcol;
 	from = Coordinate(frow, fcol);
 	to = Coordinate(trow, tcol);
-	if (to <= startHCoord || from > endHCoord) {
-		/* No overlap whatsoever between old and new hilite */
-		HiliteText(startHRow, startHCol, endHRow, endHCol, FALSE);
-		HiliteText(frow, fcol, trow, tcol, TRUE);
+	if (to <= screen->startHCoord || from > screen->endHCoord) {
+	    /* No overlap whatsoever between old and new hilite */
+	    ReHiliteText(old_startrow, old_startcol, old_endrow, old_endcol);
+	    ReHiliteText(frow, fcol, trow, tcol);
 	} else {
-		if (from < startHCoord) {
-			/* Extend left end */
-			HiliteText(frow, fcol, startHRow, startHCol, TRUE); 
-		} else if (from > startHCoord) {
-			/* Shorten left end */
-			HiliteText(startHRow, startHCol, frow, fcol, FALSE);
-		}
-		if (to > endHCoord) {
-			/* Extend right end */
-			HiliteText(endHRow, endHCol, trow, tcol, TRUE); 
-		} else if (to < endHCoord) {
-			/* Shorten right end */
-			HiliteText(trow, tcol, endHRow, endHCol, FALSE);
-		}
+	    if (from < screen->startHCoord) {
+		    /* Extend left end */
+		    ReHiliteText(frow, fcol, old_startrow, old_startcol);
+	    } else if (from > screen->startHCoord) {
+		    /* Shorten left end */
+		    ReHiliteText(old_startrow, old_startcol, frow, fcol);
+	    }
+	    if (to > screen->endHCoord) {
+		    /* Extend right end */
+		    ReHiliteText(old_endrow, old_endcol, trow, tcol);
+	    } else if (to < screen->endHCoord) {
+		    /* Shorten right end */
+		    ReHiliteText(trow, tcol, old_endrow, old_endcol);
+	    }
 	}
-	startHRow = frow;
-	startHCol = fcol;
-	endHRow   = trow;
-	endHCol   = tcol;
-	startHCoord = from;
-	endHCoord = to;
+	screen->startHCoord = from;
+	screen->endHCoord = to;
 }
 
-HiliteText(frow, fcol, trow, tcol, hilite)
+ReHiliteText(frow, fcol, trow, tcol)
 register int frow, fcol, trow, tcol;
-int hilite;
 /* Guaranteed that (frow, fcol) <= (trow, tcol) */
 {
 	register TScreen *screen = &term->screen;
 	register int i, j;
 	GC tempgc;
 
+	if (frow < 0)
+	    frow = fcol = 0;
+	else if (frow > screen->max_row)
+	    return;		/* nothing to do, since trow >= frow */
+
+	if (trow < 0)
+	    return;		/* nothing to do, since frow <= trow */
+	else if (trow > screen->max_row) {
+	    trow = screen->max_row;
+	    tcol = screen->max_col+1;
+	}
 	if (frow == trow && fcol == tcol)
 		return;
-	if(hilite) {
-		tempgc = screen->normalGC;
-		screen->normalGC = screen->reverseGC;
-		screen->reverseGC = tempgc;
-		tempgc = screen->normalboldGC;
-		screen->normalboldGC = screen->reverseboldGC;
-		screen->reverseboldGC = tempgc;
 
-
-		i = screen->foreground;
-		screen->foreground = term->core.background_pixel;
-		term->core.background_pixel = i;
-		XSetWindowBackground(screen->display,VWindow(screen),term->core.background_pixel);
-
-	}
 	if(frow != trow) {	/* do multiple rows */
-		if((i = screen->max_col - fcol + 1) > 0) {	/* first row */
-			XClearArea(
-			    screen->display,
-			    VWindow(screen),
-			    (int) CursorX(screen, fcol),
-			    (int) frow * FontHeight(screen) + screen->border,
-			    (unsigned) i*FontWidth(screen),
-			    (unsigned) FontHeight(screen),
-			    FALSE);
-			ScrnRefresh(screen, frow, fcol, 1, i);
+		if((i = screen->max_col - fcol + 1) > 0) {     /* first row */
+		    ScrnRefresh(screen, frow, fcol, 1, i, True);
 		}
-		if((i = trow - frow - 1) > 0) {			/* middle rows*/
-			j = screen->max_col + 1;
-			XClearArea(
-			    screen->display,
-			    VWindow(screen),
-			    (int) screen->border + screen->scrollbar,
-			    (int) (frow+1)*FontHeight(screen) + screen->border,
-			    (unsigned) j * FontWidth(screen),
-			    (unsigned) i * FontHeight(screen),
-			    FALSE);
-			ScrnRefresh(screen, frow + 1, 0, i, j);
+		if((i = trow - frow - 1) > 0) {		       /* middle rows*/
+		    ScrnRefresh(screen, frow+1, 0,i, screen->max_col+1, True);
 		}
-		if(tcol > 0 && trow <= screen->max_row) {	/* last row */
-			XClearArea(
-			    screen->display,
-			    VWindow(screen),
-			    (int) screen->border + screen->scrollbar,
-			    (int) trow * FontHeight(screen) + screen->border,
-			    (unsigned) tcol * FontWidth(screen),
-			    (unsigned) FontHeight(screen),
-			    FALSE);
-			ScrnRefresh(screen, trow, 0, 1, tcol);
+		if(tcol > 0 && trow <= screen->max_row) {      /* last row */
+		    ScrnRefresh(screen, trow, 0, 1, tcol, True);
 		}
 	} else {		/* do single row */
-		i = tcol - fcol;
-		XClearArea(
-		    screen->display,
-		    VWindow(screen), 
-		    (int) CursorX(screen, fcol),
-		    (int) frow * FontHeight(screen) + screen->border,
-		    (unsigned) i * FontWidth(screen),
-		    (unsigned) FontHeight(screen),
-		    FALSE);
-		ScrnRefresh(screen, frow, fcol, 1, tcol - fcol);
-	}
-	if(hilite) {
-		tempgc = screen->normalGC;
-		screen->normalGC = screen->reverseGC;
-		screen->reverseGC = tempgc;
-		tempgc = screen->normalboldGC;
-		screen->normalboldGC = screen->reverseboldGC;
-		screen->reverseboldGC = tempgc;
-
-		i = screen->foreground;
-		screen->foreground = term->core.background_pixel;
-		term->core.background_pixel = i;
-		XSetWindowBackground(screen->display,VWindow(screen),term->core.background_pixel);
-
+		ScrnRefresh(screen, frow, fcol, 1, tcol - fcol, True);
 	}
 }
 
-SaltTextAway(crow, ccol, row, col)
+SaltTextAway(crow, ccol, row, col, params, num_params)
 register crow, ccol, row, col;
+String *params;			/* selections */
+Cardinal num_params;
 /* Guaranteed that (crow, ccol) <= (row, col), and that both points are valid
    (may have row = screen->max_row+1, col = 0) */
 {
@@ -886,8 +935,13 @@ register crow, ccol, row, col;
 	
 	/* now get some memory to save it in */
 
-	if((line = malloc((unsigned) j + 1)) == (char *)NULL)
+	if (screen->selection_size <= j) {
+	    if((line = malloc((unsigned) j + 1)) == (char *)NULL)
 		SysError(ERROR_BMALLOC2);
+	    XtFree(screen->selection);
+	    screen->selection = line;
+	    screen->selection_size = j + 1;
+	} else line = screen->selection;
 	line[j] = '\0';		/* make sure it is null terminated */
 	lp = line;		/* lp points to where to save the text */
 	if ( row == crow ) lp = SaveText(screen, row, ccol, col, lp);
@@ -903,9 +957,213 @@ register crow, ccol, row, col;
 	}
 	*lp = '\0';		/* make sure we have end marked */
 	
-	XStoreBytes(screen->display,line, j);
-	free(line);
+	screen->selection_length = j;
+	_OwnSelection(term, params, num_params);
 }
+
+static Boolean ConvertSelection(w, selection, target,
+				type, value, length, format)
+Widget w;
+Atom *selection, *target, *type;
+caddr_t *value;
+unsigned long *length;
+int *format;
+{
+    Display* d = XtDisplay(w);
+    XtermWidget xterm = (XtermWidget)w;
+
+    if (xterm->screen.selection == NULL) return False; /* can this happen? */
+
+    if (*target == XA_TARGETS(d)) {
+	Atom* targetP;
+	Atom* std_targets;
+	unsigned long std_length;
+	XmuConvertStandardSelection(
+		    w, xterm->screen.selection_time, selection,
+		    target, type, (caddr_t*)&std_targets, &std_length, format
+		   );
+	*length = std_length + 4;
+	*value = (caddr_t)XtMalloc(sizeof(Atom)*(*length));
+	targetP = *(Atom**)value;
+	*targetP++ = XA_STRING;
+	*targetP++ = XA_TEXT(d);
+	*targetP++ = XA_LENGTH(d);
+	*targetP++ = XA_LIST_LENGTH(d);
+	bcopy((char*)std_targets, (char*)targetP, sizeof(Atom)*std_length);
+	XtFree((char*)std_targets);
+	*type = XA_ATOM;
+	*format = 32;
+	return True;
+    }
+
+    if (*target == XA_STRING || *target == XA_TEXT(d)) {
+	*type = XA_STRING;
+	*value = xterm->screen.selection;
+	*length = xterm->screen.selection_length;
+	*format = 8;
+	return True;
+    }
+    if (*target == XA_LIST_LENGTH(d)) {
+	*value = XtMalloc(4);
+	if (sizeof(long) == 4)
+	    *(long*)*value = 1;
+	else {
+	    long temp = 1;
+	    bcopy( ((char*)&temp)+sizeof(long)-4, (char*)*value, 4);
+	}
+	*type = XA_INTEGER;
+	*length = 1;
+	*format = 32;
+	return True;
+    }
+    if (*target == XA_LENGTH(d)) {
+	*value = XtMalloc(4);
+	if (sizeof(long) == 4)
+	    *(long*)*value = xterm->screen.selection_length;
+	else {
+	    long temp = xterm->screen.selection_length;
+	    bcopy( ((char*)&temp)+sizeof(long)-4, (char*)*value, 4);
+	}
+	*type = XA_INTEGER;
+	*length = 1;
+	*format = 32;
+	return True;
+    }
+    if (XmuConvertStandardSelection(w, xterm->screen.selection_time, selection,
+				    target, type, value, length, format))
+	return True;
+
+    /* else */
+    return False;
+
+}
+
+
+/* ARGSUSED */
+static void LoseSelection(w, selection)
+  Widget w;
+  Atom *selection;
+{
+    register TScreen* screen = &((XtermWidget)w)->screen;
+    register Atom* atomP;
+    int i, empty;
+    for (i = 0, atomP = screen->selection_atoms;
+	 i < screen->selection_count; i++, atomP++)
+    {
+	if (*selection == *atomP) *atomP = (Atom)0;
+	switch (*atomP) {
+	  case XA_CUT_BUFFER0:
+	  case XA_CUT_BUFFER1:
+	  case XA_CUT_BUFFER2:
+	  case XA_CUT_BUFFER3:
+	  case XA_CUT_BUFFER4:
+	  case XA_CUT_BUFFER5:
+	  case XA_CUT_BUFFER6:
+	  case XA_CUT_BUFFER7:	*atomP = (Atom)0;
+	}
+    }
+
+    for (i = screen->selection_count; i; i--) {
+	if (screen->selection_atoms[i-1] != 0) break;
+    }
+    screen->selection_count = i;
+
+    for (i = 0, atomP = screen->selection_atoms;
+	 i < screen->selection_count; i++, atomP++)
+    {
+	if (*atomP == (Atom)0) {
+	    *atomP = screen->selection_atoms[--screen->selection_count];
+	}
+    }
+
+    if (screen->selection_count == 0)
+	TrackText(0, 0, 0, 0);
+}
+
+
+/* ARGSUSED */
+static void SelectionDone(w, selection, target)
+Widget w;
+Atom *selection, *target;
+{
+    /* empty proc so Intrinsics know we want to keep storage */
+}
+
+
+static /* void */ _OwnSelection(term, selections, count)
+register XtermWidget term;
+String *selections;
+Cardinal count;
+{
+    Atom* atoms = term->screen.selection_atoms;
+    int i;
+    Boolean have_selection = False;
+
+    if (count > term->screen.sel_atoms_size) {
+	XtFree((char*)atoms);
+	atoms = (Atom*)XtMalloc(count*sizeof(Atom));
+	term->screen.selection_atoms = atoms;
+	term->screen.sel_atoms_size = count;
+    }
+    XmuInternStrings( XtDisplay((Widget)term), selections, count, atoms );
+    for (i = 0; i < count; i++) {
+	int buffer;
+	switch (atoms[i]) {
+	  case XA_CUT_BUFFER0: buffer = 0; break;
+	  case XA_CUT_BUFFER1: buffer = 1; break;
+	  case XA_CUT_BUFFER2: buffer = 2; break;
+	  case XA_CUT_BUFFER3: buffer = 3; break;
+	  case XA_CUT_BUFFER4: buffer = 4; break;
+	  case XA_CUT_BUFFER5: buffer = 5; break;
+	  case XA_CUT_BUFFER6: buffer = 6; break;
+	  case XA_CUT_BUFFER7: buffer = 7; break;
+	  default:	       buffer = -1;
+	}
+	if (buffer >= 0)
+	    XStoreBytes( XtDisplay((Widget)term), term->screen.selection,
+			 term->screen.selection_length, buffer );
+	else if (!replyToEmacs) {
+	    have_selection |=
+		XtOwnSelection( (Widget)term, atoms[i],
+			    term->screen.selection_time,
+			    ConvertSelection, LoseSelection, SelectionDone );
+	}
+    }
+    if (!replyToEmacs)
+	term->screen.selection_count = count;
+    if (!have_selection)
+	TrackText(0, 0, 0, 0);
+}
+
+/* void */ DisownSelection(term)
+register XtermWidget term;
+{
+    Atom* atoms = term->screen.selection_atoms;
+    Cardinal count = term->screen.selection_count;
+    int i;
+
+    for (i = 0; i < count; i++) {
+	int buffer;
+	switch (atoms[i]) {
+	  case XA_CUT_BUFFER0: buffer = 0; break;
+	  case XA_CUT_BUFFER1: buffer = 1; break;
+	  case XA_CUT_BUFFER2: buffer = 2; break;
+	  case XA_CUT_BUFFER3: buffer = 3; break;
+	  case XA_CUT_BUFFER4: buffer = 4; break;
+	  case XA_CUT_BUFFER5: buffer = 5; break;
+	  case XA_CUT_BUFFER6: buffer = 6; break;
+	  case XA_CUT_BUFFER7: buffer = 7; break;
+	  default:	       buffer = -1;
+	}
+	if (buffer < 0)
+	    XtDisownSelection( (Widget)term, atoms[i],
+			       term->screen.selection_time );
+    }
+    term->screen.selection_count = 0;
+    term->screen.startHRow = term->screen.startHCol = 0;
+    term->screen.endHRow = term->screen.endHCol = 0;
+}
+
 
 /* returns number of chars in line from scol to ecol out */
 int Length(screen, row, scol, ecol)
@@ -915,7 +1173,7 @@ register TScreen *screen;
 	register char *ch;
 
 	ch = screen->buf[2 * (row + screen->topline)];
-	while (ecol >= scol && ch[ecol] == 0)
+	while (ecol >= scol && (ch[ecol] == ' ' || ch[ecol] == 0))
 	    ecol--;
 	return (ecol - scol + 1);
 }
@@ -976,6 +1234,7 @@ register XButtonEvent *event;
 }
 
 #ifdef MODEMENU
+#define FIRSTMENU	0
 #define	XTERMMENU	0
 #define	VTMENU		1
 #define	TEKMENU		2
@@ -984,6 +1243,16 @@ register XButtonEvent *event;
 static Menu *menus[NMENUS];
 static int type;
 extern TekLink *TekRefresh;
+
+/* ARGSUSED */
+void HandleModeMenu(w, event, params, num_params)
+Widget w;
+XEvent *event;
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
+{
+    ModeMenu(event);		/* %%% hack 'till TekWidget uses TM */
+}
 
 ModeMenu(event)
 register XButtonEvent *event;
@@ -1045,8 +1314,9 @@ register XButtonEvent *event;
 	TrackMenu(menu, event); /* MenuButtonReleased calls FinishModeMenu */
 }
 
-FinishModeMenu(item)
+FinishModeMenu(item, time)
 register int item;
+Time time;
 {
 	TScreen *screen = &term->screen;
 
@@ -1061,7 +1331,7 @@ register int item;
 	}
 	switch(type) {
 	 case XTERMMENU:
-		xdomenufunc(item);
+		xdomenufunc(item, time);
 		break;
 	 case VTMENU:
 		domenufunc(item);
@@ -1080,33 +1350,40 @@ menusync()
 		xevents();
 }
 
-#define	XMENU_VISUALBELL 0
+#define XMENU_GRABKBD	0
+#define	XMENU_VISUALBELL (XMENU_GRABKBD+1)
 #define	XMENU_LOG	(XMENU_VISUALBELL+1)
-#define	XMENU_LINE	(XMENU_LOG+1)
-#define	XMENU_REDRAW	(XMENU_LINE+1)
-#define	XMENU_RESUME	(XMENU_REDRAW+1)
-#define	XMENU_SUSPEND	(XMENU_RESUME+1)
-#define	XMENU_INTR	(XMENU_SUSPEND+1)
+#define	XMENU_REDRAW	(XMENU_LOG+1)
+#define	XMENU_LINE	(XMENU_REDRAW+1)
+#define	XMENU_SUSPEND	(XMENU_LINE+1)
+#define	XMENU_RESUME	(XMENU_SUSPEND+1)
+#define	XMENU_INTR	(XMENU_RESUME+1)
 #define	XMENU_HANGUP	(XMENU_INTR+1)
 #define	XMENU_TERM	(XMENU_HANGUP+1)
 #define	XMENU_KILL	(XMENU_TERM+1)
+#define XMENU_LINE2	(XMENU_KILL+1)
+#define XMENU_EXIT	(XMENU_LINE2+1)
 
 static char *xtext[] = {
+	"Secure Keyboard",
 	"Visual Bell",
 	"Logging",
-	"-",
 	"Redraw",
-	"Continue",
-	"Suspend",
-	"Interrupt",
-	"Hangup",
-	"Terminate",
-	"Kill",
+	"-",
+	"Suspend program",
+	"Continue program",
+	"Interrupt program",
+	"Hangup program",
+	"Terminate program",
+	"Kill program",
+	"-",
+	"Quit",
 	0,
 };
 
 static int xbell;
 static int xlog;
+static int xkgrab;
 
 Menu *xsetupmenu(menu)
 register Menu **menu;
@@ -1116,10 +1393,12 @@ register Menu **menu;
 	register int i;
 
 	if (*menu == NULL) {
-		if ((*menu = NewMenu("xterm X11", term->misc.re_verse)) == NULL)
+		if ((*menu = NewMenu("xterm X11")) == NULL)
 			return(NULL);
 		for(cp = xtext ; *cp ; cp++)
 			AddMenuItem(*menu, *cp);
+		if(xkgrab = screen->grabbedKbd)
+			CheckItem(*menu, XMENU_GRABKBD);
 		if(xbell = screen->visualbell)
 			CheckItem(*menu, XMENU_VISUALBELL);
 		if(xlog = screen->logging)
@@ -1132,11 +1411,18 @@ register Menu **menu;
 		if(screen->inhibit & I_SIGNAL)
 			for(i = XMENU_SUSPEND ; i <= XMENU_KILL ; i++)
 				DisableItem(*menu, i);
+#if defined(SYSV) && !defined(JOBCONTROL)
+		DisableItem(*menu, XMENU_RESUME);
+		DisableItem(*menu, XMENU_SUSPEND);
+#endif	/* defined(SYSV) && !defined(JOBCONTROL) */
 		return(*menu);
 	}
 	/* if login window, check for completed login */
 	if (!(L_flag && !checklogin()) && !(screen->inhibit & I_LOG))
 		EnableItem(*menu, XMENU_LOG);
+	if (xkgrab != screen->grabbedKbd)
+		SetItemCheck(*menu, XMENU_GRABKBD, (xkgrab =
+		 screen->grabbedKbd));
 	if (xbell != screen->visualbell)
 		SetItemCheck(*menu, XMENU_VISUALBELL, (xbell =
 		 screen->visualbell));
@@ -1145,12 +1431,31 @@ register Menu **menu;
 	return(*menu);
 }
 
-xdomenufunc(item)
+xdomenufunc(item, time)
 int item;
+Time time;
 {
 	register TScreen *screen = &term->screen;
 
 	switch (item) {
+	case XMENU_GRABKBD:
+		if (screen->grabbedKbd) {
+		    XUngrabKeyboard(screen->display, time);
+		    ReverseVideo(term);
+		    screen->grabbedKbd = FALSE;
+		} else {
+		    if (XGrabKeyboard(screen->display,
+				      term->core.parent->core.window,
+				      True, GrabModeAsync, GrabModeAsync, time)
+			  != GrabSuccess) {
+		        XBell(screen->display, 100);
+		    } else {
+			ReverseVideo(term);
+			screen->grabbedKbd = TRUE;
+		    }
+		}
+		break;
+
 	case XMENU_VISUALBELL:
 		screen->visualbell = !screen->visualbell;
 		break;
@@ -1166,39 +1471,48 @@ int item;
 		Redraw();
 		break;
 
+/*
+ * The following cases use the pid instead of the process group so that we
+ * don't get hosed by programs that change their process group
+ */
+
 	case XMENU_RESUME:
 #if !defined(SYSV) || defined(JOBCONTROL)
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGCONT);
+			killpg (screen->pid, SIGCONT);
 #endif	/* !defined(SYSV) || defined(JOBCONTROL) */
 		break;
 
 	case XMENU_SUSPEND:
 #if !defined(SYSV) || defined(JOBCONTROL)
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGTSTP);
+			killpg (screen->pid, SIGTSTP);
 #endif	/* !defined(SYSV) || defined(JOBCONTROL) */
 		break;
 
 	case XMENU_INTR:
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGINT);
+			killpg (screen->pid, SIGINT);
 		break;
 
 	case XMENU_HANGUP:
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGHUP);
+			killpg (screen->pid, SIGHUP);
 		break;
 
 	case XMENU_TERM:
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGTERM);
+			killpg (screen->pid, SIGTERM);
 		break;
 
 	case XMENU_KILL:
 		if(screen->pid > 1)
-			killpg(getpgrp(screen->pid), SIGKILL);
+			killpg (screen->pid, SIGKILL);
 		break;
+
+	case XMENU_EXIT:
+		Cleanup (0);
+		/* NOTREACHED */
 	}
 }
 
@@ -1221,6 +1535,29 @@ register Cursor cur;
 			 cur);
 	}
 }
+
+ReverseVideoAllMenus ()
+{
+    int i;
+    XtermWidget xw = term;
+    Display *dpy = XtDisplay (xw);
+    Pixel fg, bg;
+
+    MenuResetGCs (&bg, &fg);
+
+    for (i = FIRSTMENU; i < NMENUS; i++) {
+	Menu *menu = menus[i];
+
+	if (menu) {
+	    menu->menuBgColor = bg;
+	    menu->menuFgColor = fg;
+	    XSetWindowBackground (dpy, menu->menuWindow, menu->menuBgColor);
+	    menu->menuFlags |= menuChanged;
+	}
+    }
+    return;
+}
+
 #else	/* MODEMENU */
 
 /*ARGSUSED*/
@@ -1250,8 +1587,20 @@ XButtonEvent *event;
 	Bell();
 }
 
-/*ARGSUSED*/
-Silence(event)
-XButtonEvent *event;
+/* ARGSUSED */
+void HandleSecure(w, event, params, param_count)
+    Widget w;
+    XEvent *event;		/* unused */
+    String *params;		/* [0] = volume */
+    Cardinal *param_count;	/* 0 or 1 */
 {
+    Time time = CurrentTime;
+
+    if ((event->xany.type == KeyPress) ||
+	(event->xany.type == KeyRelease))
+	time = event->xkey.time;
+    else if ((event->xany.type == ButtonPress) ||
+	     (event->xany.type == ButtonRelease))
+      time = event->xbutton.time;
+    xdomenufunc(XMENU_GRABKBD, time);
 }

@@ -1,5 +1,5 @@
 /*
- * @Header: charproc.c,v 1.23 88/02/27 15:27:38 rws Exp @
+ * $XConsortium: charproc.c,v 1.64 89/01/04 13:37:50 jim Exp $
  */
 
 
@@ -33,10 +33,20 @@
 /* charproc.c */
 
 #include <stdio.h>
-#include <sgtty.h>
+#ifdef mips			/* !defined(mips) || !defined(SYSTYPE_SYSV) */
+# ifndef SYSTYPE_SYSV
+# include <sgtty.h>
+# endif /* not SYSTYPE_SYSV */
+#else
+# include <sgtty.h>
+#endif /* mips */
 #include <ctype.h>
 #include <errno.h>
 #include <setjmp.h>
+#ifdef macII
+#undef FIOCLEX					/* redefined from sgtty.h */
+#undef FIONCLEX					/* redefined from sgtty.h */
+#endif
 #include <sys/ioctl.h>
 #include "ptyx.h"
 #include "VTparse.h"
@@ -49,7 +59,7 @@
 #include "menu.h"
 #endif	/* MODEMENU */
 
-extern void exit(), bcopy();
+extern void exit(), Bcopy();
 static void VTallocbuf();
 
 #define	DEFAULT		-1
@@ -57,10 +67,14 @@ static void VTallocbuf();
 #define TRACKTIMESEC	4L
 #define TRACKTIMEUSEC	0L
 
+#define XtNalwaysHighlight	"alwaysHighlight"
 #define	XtNboldFont		"boldFont"
 #define	XtNc132			"c132"
+#define XtNcharClass		"charClass"
 #define	XtNcurses		"curses"
 #define	XtNcursorColor		"cursorColor"
+#define XtNcutNewline		"cutNewline"
+#define XtNcutToBeginningOfLine	"cutToBeginningOfLine"
 #define XtNgeometry		"geometry"
 #define XtNtekGeometry		"tekGeometry"
 #define	XtNinternalBorder	"internalBorder"
@@ -72,6 +86,7 @@ static void VTallocbuf();
 #define	XtNmarginBell		"marginBell"
 #define	XtNpointerColor		"pointerColor"
 #define	XtNpointerShape		"pointerShape"
+#define XtNmultiClickTime	"multiClickTime"
 #define	XtNmultiScroll		"multiScroll"
 #define	XtNnMarginBell		"nMarginBell"
 #define	XtNreverseWrap		"reverseWrap"
@@ -83,10 +98,16 @@ static void VTallocbuf();
 #define	XtNsignalInhibit	"signalInhibit"
 #define	XtNtekInhibit		"tekInhibit"
 #define	XtNtekStartup		"tekStartup"
+#define XtNtiteInhibit		"titeInhibit"
 #define	XtNvisualBell		"visualBell"
+#define XtNallowSendEvents	"allowSendEvents"
 
+#define XtCAlwaysHighlight	"AlwaysHighlight"
 #define	XtCC132			"C132"
+#define XtCCharClass		"CharClass"
 #define	XtCCurses		"Curses"
+#define XtCCutNewline		"CutNewline"
+#define XtCCutToBeginningOfLine	"CutToBeginningOfLine"
 #define XtCGeometry		"Geometry"
 #define	XtCJumpScroll		"JumpScroll"
 #define	XtCLogfile		"Logfile"
@@ -94,6 +115,7 @@ static void VTallocbuf();
 #define	XtCLogInhibit		"LogInhibit"
 #define	XtCLoginShell		"LoginShell"
 #define	XtCMarginBell		"MarginBell"
+#define XtCMultiClickTime	"MultiClickTime"
 #define	XtCMultiScroll		"MultiScroll"
 #define	XtCColumn		"Column"
 #define	XtCReverseVideo		"ReverseVideo"
@@ -105,12 +127,14 @@ static void VTallocbuf();
 #define	XtCSignalInhibit	"SignalInhibit"
 #define	XtCTekInhibit		"TekInhibit"
 #define	XtCTekStartup		"TekStartup"
+#define XtCTiteInhibit		"TiteInhibit"
 #define	XtCVisualBell		"VisualBell"
+#define XtCAllowSendEvents	"AllowSendEvents"
 
 #define	doinput()		(bcnt-- > 0 ? *bptr++ : in_put())
 
 #ifndef lint
-static char rcs_id[] = "@Header: charproc.c,v 1.23 88/02/27 15:27:38 rws Exp @";
+static char rcs_id[] = "$XConsortium: charproc.c,v 1.64 89/01/04 13:37:50 jim Exp $";
 #endif	/* lint */
 
 static long arg;
@@ -135,13 +159,20 @@ extern int scstable[];
 
 /* event handlers */
 extern void HandleKeyPressed();
+extern void HandleStringEvent();
 extern void HandleEnterWindow();
 extern void HandleLeaveWindow();
 extern void HandleFocusChange();
-extern void VTButtonPressed();
-extern void VTMouseMoved();
-extern void VTButtonReleased();
-
+       void HandleKeymapChange();
+extern void HandleModeMenu();
+extern void HandleInsertSelection();
+extern void HandleSelectStart();
+extern void HandleSelectExtend();
+extern void HandleSelectEnd();
+extern void HandleStartExtend();
+       void HandleBell();
+       void HandleIgnore();
+extern void HandleSecure();
 
 /*
  * NOTE: VTInitialize zeros out the entire ".screen" component of the 
@@ -156,6 +187,37 @@ static  int	defaultBorderWidth = DEFBORDERWIDTH;
 static  int	defaultIntBorder   = DEFBORDER;
 static  int	defaultSaveLines   = SAVELINES;
 static  int	defaultNMarginBell = N_MARGINBELL;
+static  int	defaultMultiClickTime = MULTICLICKTIME;
+
+static char defaultTranslations[] =
+"\
+	    <KeyPress>:		insert()	\n\
+ Ctrl ~Meta <Btn1Down>:		mode-menu()	\n\
+      ~Meta <Btn1Down>:		select-start()	\n\
+      ~Meta <Btn1Motion>:	select-extend() \n\
+ Ctrl ~Meta <Btn2Down>:		mode-menu()	\n\
+~Ctrl ~Meta <Btn2Down>:		ignore()	\n\
+      ~Meta <Btn2Up>:		insert-selection(PRIMARY, CUT_BUFFER0) \n\
+~Ctrl ~Meta <Btn3Down>:		start-extend()	\n\
+      ~Meta <Btn3Motion>:	select-extend()	\n\
+      ~Meta <BtnUp>:		select-end(PRIMARY, CUT_BUFFER0) \n\
+	    <BtnDown>:		bell(0)		\
+";
+
+static XtActionsRec actionsList[] = { 
+    { "bell",		  HandleBell },
+    { "ignore",		  HandleIgnore },
+    { "insert",		  HandleKeyPressed },
+    { "insert-selection", HandleInsertSelection },
+    { "keymap", 	  HandleKeymapChange },
+    { "mode-menu",	  HandleModeMenu },
+    { "secure",		  HandleSecure },
+    { "select-start",	  HandleSelectStart },
+    { "select-extend",	  HandleSelectExtend },
+    { "select-end",	  HandleSelectEnd },
+    { "start-extend",	  HandleStartExtend },
+    { "string",		  HandleStringEvent },
+};
 
 static XtResource resources[] = {
 {XtNfont, XtCFont, XtRString, sizeof(char *),
@@ -167,9 +229,18 @@ static XtResource resources[] = {
 {XtNc132, XtCC132, XtRBoolean, sizeof(Boolean),
 	XtOffset(XtermWidget, screen.c132),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNcharClass, XtCCharClass, XtRString, sizeof(char *),
+	XtOffset(XtermWidget, screen.charClass),
+	XtRString, (caddr_t) NULL},
 {XtNcurses, XtCCurses, XtRBoolean, sizeof(Boolean),
 	XtOffset(XtermWidget, screen.curses),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNcutNewline, XtCCutNewline, XtRBoolean, sizeof(Boolean),
+	XtOffset(XtermWidget, screen.cutNewline),
+	XtRBoolean, (caddr_t) &defaultTRUE},
+{XtNcutToBeginningOfLine, XtCCutToBeginningOfLine, XtRBoolean, sizeof(Boolean),
+	XtOffset(XtermWidget, screen.cutToBeginningOfLine),
+	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNbackground, XtCBackground, XtRPixel, sizeof(Pixel),
 	XtOffset(XtermWidget, core.background_pixel),
 	XtRString, "White"},
@@ -182,6 +253,9 @@ static XtResource resources[] = {
 {XtNgeometry,XtCGeometry, XtRString, sizeof(char *),
 	XtOffset(XtermWidget, misc.geo_metry),
 	XtRString, (caddr_t) NULL},
+{XtNalwaysHighlight,XtCAlwaysHighlight,XtRBoolean,
+        sizeof(Boolean),XtOffset(XtermWidget, screen.always_highlight),
+        XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNtekGeometry,XtCGeometry, XtRString, sizeof(char *),
 	XtOffset(XtermWidget, misc.T_geometry),
 	XtRString, (caddr_t) NULL},
@@ -209,9 +283,12 @@ static XtResource resources[] = {
 {XtNpointerColor, XtCForeground, XtRPixel, sizeof(Pixel),
 	XtOffset(XtermWidget, screen.mousecolor),
 	XtRString, "Black"},
-{XtNpointerShape,XtCCursor, XtRString, sizeof(Cursor),
-	XtOffset(XtermWidget, misc.curs_shape),
+{XtNpointerShape,XtCCursor, XtRCursor, sizeof(Cursor),
+	XtOffset(XtermWidget, screen.pointer_cursor),
 	XtRString, (caddr_t) "xterm"},
+{XtNmultiClickTime,XtCMultiClickTime, XtRInt, sizeof(int),
+	XtOffset(XtermWidget, screen.multiClickTime),
+	XtRInt, (caddr_t) &defaultMultiClickTime},
 {XtNmultiScroll,XtCMultiScroll, XtRBoolean, sizeof(Boolean),
 	XtOffset(XtermWidget, screen.multiscroll),
 	XtRBoolean, (caddr_t) &defaultFALSE},
@@ -245,13 +322,20 @@ static XtResource resources[] = {
 {XtNtekStartup, XtCTekStartup, XtRBoolean, sizeof(Boolean),
 	XtOffset(XtermWidget, screen.TekEmu),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNtiteInhibit, XtCTiteInhibit, XtRBoolean, sizeof(Boolean),
+	XtOffset(XtermWidget, misc.titeInhibit),
+	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNvisualBell, XtCVisualBell, XtRBoolean, sizeof(Boolean),
 	XtOffset(XtermWidget, screen.visualbell),
+	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNallowSendEvents, XtCAllowSendEvents, XtRBoolean, sizeof(Boolean),
+	XtOffset(XtermWidget, screen.allowSendEvents),
 	XtRBoolean, (caddr_t) &defaultFALSE}
 };
 
 
 static void VTInitialize(), VTRealize(), VTExpose(), VTConfigure();
+static void VTDestroy();
 
 WidgetClassRec xtermClassRec = {
   {
@@ -265,8 +349,8 @@ WidgetClassRec xtermClassRec = {
     /* initialize	  */	VTInitialize,
     /* initialize_hook    */    NULL,				
     /* realize		  */	VTRealize,
-    /* actions		  */	NULL,
-    /* num_actions	  */	0,
+    /* actions		  */	actionsList,
+    /* num_actions	  */	XtNumber(actionsList),
     /* resources	  */	resources,
     /* num_resources	  */	XtNumber(resources),
     /* xrm_class	  */	NULLQUARK,
@@ -274,7 +358,7 @@ WidgetClassRec xtermClassRec = {
     /* compress_exposure  */	FALSE,
     /* compress_enterleave */   TRUE,
     /* visible_interest	  */	FALSE,
-    /* destroy		  */	NULL,
+    /* destroy		  */	VTDestroy,
     /* resize		  */	VTConfigure,
     /* expose		  */	VTExpose,
     /* set_values	  */	NULL,
@@ -284,7 +368,10 @@ WidgetClassRec xtermClassRec = {
     /* accept_focus	  */	NULL,
     /* version            */    XtVersion,
     /* callback_offsets   */    NULL,
-    /* tm_table           */    NULL,				
+    /* tm_table           */    defaultTranslations,
+    /* query_geometry     */    XtInheritQueryGeometry,
+    /* display_accelerator*/    XtInheritDisplayAccelerator,
+    /* extension          */    NULL
   }
 };
 
@@ -303,6 +390,28 @@ VTparse()
 		parsestate = groundtable;
 	for( ; ; )
 		switch(parsestate[c = doinput()]) {
+		 case CASE_PRINT:
+			/* printable characters */
+			top = bcnt > TEXT_BUF_SIZE ? TEXT_BUF_SIZE : bcnt;
+			cp = bptr;
+			*--bptr = c;
+			while(top > 0 && isprint(*cp)) {
+				top--;
+				bcnt--;
+				cp++;
+			}
+			if(screen->curss) {
+				dotext(screen, term->flags,
+				 screen->gsets[screen->curss], bptr, bptr + 1);
+				screen->curss = 0;
+				bptr++;
+			}
+			if(bptr < cp)
+				dotext(screen, term->flags,
+				 screen->gsets[screen->curgl], bptr, cp);
+			bptr = cp;
+			break;
+
 		 case CASE_GROUND_STATE:
 			/* exit ignore mode */
 			parsestate = groundtable;
@@ -537,6 +646,9 @@ VTparse()
 			 param[3]-1, param[4]-2);
 			break;
 
+		 case CASE_DECID:
+			param[0] = -1;		/* Default ID parameter */
+			/* Fall through into ... */
 		 case CASE_DA1:
 			/* DA1 */
 			if (param[0] <= 0) {	/* less than means DEFAULT */
@@ -683,7 +795,7 @@ VTparse()
 					*cp++ = 'E';
 			}
 			ScrnRefresh(screen, 0, 0, screen->max_row + 1,
-			 screen->max_col + 1);
+			 screen->max_col + 1, False);
 			parsestate = groundtable;
 			break;
 
@@ -817,28 +929,6 @@ VTparse()
 			restoremodes(term);
 			parsestate = groundtable;
 			break;
-
-		 case CASE_PRINT:
-			/* printable characters */
-			top = bcnt > TEXT_BUF_SIZE ? TEXT_BUF_SIZE : bcnt;
-			cp = bptr;
-			*--bptr = c;
-			while(top > 0 && isprint(*cp)) {
-				top--;
-				bcnt--;
-				cp++;
-			}
-			if(screen->curss) {
-				dotext(screen, term->flags,
-				 screen->gsets[screen->curss], bptr, bptr + 1);
-				screen->curss = 0;
-				bptr++;
-			}
-			if(bptr < cp)
-				dotext(screen, term->flags,
-				 screen->gsets[screen->curgl], bptr, cp);
-			bptr = cp;
-			break;
 		}
 }
 
@@ -877,22 +967,22 @@ int l;
 	if (v_bufptr > v_bufstr) {
 		if (l) {
 			if (v_bufend > v_bufptr + l) {
-				bcopy(d, v_bufptr, l);
+				Bcopy(d, v_bufptr, l);
 				v_bufptr += l;
 			} else {
 				if (v_bufstr != v_buffer) {
-					bcopy(v_bufstr, v_buffer,
+					Bcopy(v_bufstr, v_buffer,
 					      v_bufptr - v_bufstr);
 					v_bufptr -= v_bufstr - v_buffer;
 					v_bufstr = v_buffer;
 				}
 				if (v_bufend > v_bufptr + l) {
-					bcopy(d, v_bufptr, l);
+					Bcopy(d, v_bufptr, l);
 					v_bufptr += l;
 				} else if (v_bufptr < v_bufend) {
 					fprintf(stderr, "Out of buffer space\n");
 					c = v_bufend - v_bufptr;
-					bcopy(d, v_bufptr, c);
+					Bcopy(d, v_bufptr, c);
 					v_bufptr = v_bufend;
 				} else {
 					fprintf(stderr, "Out of buffer space\n");
@@ -921,7 +1011,7 @@ int l;
 						v_bufend - v_buffer);
 				l = (v_bufend - v_buffer) + r;
 			}
-			bcopy(d + r, v_buffer, l - r);
+			Bcopy(d + r, v_buffer, l - r);
 			v_bufstr = v_buffer;
 			v_bufptr = v_buffer + (l - r);
 		}
@@ -943,8 +1033,8 @@ in_put()
 				FlushLog(screen);
 			if((bcnt = read(screen->respond, bptr = buffer,
 			 BUF_SIZE)) < 0) {
-				if(errno == EIO && am_slave)
-					exit(0);
+				if(errno == EIO)
+					Cleanup (0);
 				else if(errno != EWOULDBLOCK)
 					Panic(
 				 "input: read returned unexpected error (%d)\n",
@@ -1128,7 +1218,7 @@ unsigned	flags;
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 	cx = CursorX(screen, screen->cur_col);
-	cy = CursorY(screen, screen->cur_row)+screen->fnt_norm->max_bounds.ascent;
+	cy = CursorY(screen, screen->cur_row)+screen->fnt_norm->ascent;
  	XDrawImageString(screen->display, TextWindow(screen), currentGC,
 			cx, cy, str, len);
 
@@ -1192,6 +1282,16 @@ int		(*func)();
 		case 1:			/* DECCKM			*/
 			(*func)(&term->keyboard.flags, CURSOR_APL);
 			break;
+		case 2:			/* ANSI/VT52 mode		*/
+			if (func == bitset) {
+				screen->gsets[0] =
+					screen->gsets[1] =
+					screen->gsets[2] =
+					screen->gsets[3] = 'B';
+				screen->curgl = 0;
+				screen->curgr = 2;
+			}
+			break;
 		case 3:			/* DECCOLM			*/
 			if(screen->c132) {
 				ClearScreen(screen);
@@ -1199,19 +1299,26 @@ int		(*func)();
 				if((j = func == bitset ? 132 : 80) !=
 				 ((term->flags & IN132COLUMNS) ? 132 : 80) ||
 				 j != screen->max_col + 1) {
-				        Dimension junk;
-					(void) XtMakeResizeRequest (
+				        Dimension replyWidth, replyHeight;
+					XtGeometryResult status;
+
+					status = XtMakeResizeRequest (
 					    (Widget) term, 
-					    (unsigned) FontWidth(screen) * j
+					    (Dimension) FontWidth(screen) * j
 					        + 2*screen->border
 						+ screen->scrollbar,
-					    (unsigned) FontHeight(screen)
+					    (Dimension) FontHeight(screen)
 						* (screen->max_row + 1)
 						+ 2 * screen->border,
-					    &junk, &junk);
-					XSync(screen->display, FALSE);
-					if(QLength(screen->display) > 0)
-						xevents();
+					    &replyWidth, &replyHeight);
+
+					if (status == XtGeometryYes ||
+					    status == XtGeometryDone) {
+					    ScreenResize (&term->screen,
+							  replyWidth,
+							  replyHeight,
+							  &term->flags);
+					}
 				}
 				(*func)(&term->flags, IN132COLUMNS);
 			}
@@ -1241,6 +1348,7 @@ int		(*func)();
 			(*func)(&term->flags, WRAPAROUND);
 			break;
 		case 8:			/* DECARM			*/
+#ifdef DO_AUTOREPEAT
 			j = term->flags;
 			(*func)(&term->flags, AUTOREPEAT);
 			if ((term->flags ^ j) & AUTOREPEAT)
@@ -1248,6 +1356,7 @@ int		(*func)();
 					XAutoRepeatOn(screen->display);
 				else
 					XAutoRepeatOff(screen->display);
+#endif /* DO_AUTOREPEAT */
 			break;
 		case 9:			/* MIT bogus sequence		*/
 			if(func == bitset)
@@ -1340,7 +1449,9 @@ XtermWidget term;
 			screen->save_modes[5] = term->flags & WRAPAROUND;
 			break;
 		case 8:			/* DECARM			*/
+#ifdef DO_AUTOREPEAT
 			screen->save_modes[6] = term->flags & AUTOREPEAT;
+#endif /* DO_AUTOREPEAT */
 			break;
 		case 9:			/* mouse bogus sequence */
 			screen->save_modes[7] = screen->send_mouse_pos;
@@ -1394,19 +1505,25 @@ XtermWidget term;
 				if((j = (screen->save_modes[1] & IN132COLUMNS)
 				 ? 132 : 80) != ((term->flags & IN132COLUMNS)
 				 ? 132 : 80) || j != screen->max_col + 1) {
-				        Dimension junk;
-					(void) XtMakeResizeRequest (
+				        Dimension replyWidth, replyHeight;
+					XtGeometryResult status;
+					status = XtMakeResizeRequest (
 					    (Widget) term,
-					    (unsigned) FontWidth(screen) * j 
+					    (Dimension) FontWidth(screen) * j 
 						+ 2*screen->border
 						+ screen->scrollbar,
-					    (unsigned) FontHeight(screen)
+					    (Dimension) FontHeight(screen)
 						* (screen->max_row + 1)
 						+ 2*screen->border,
-					    &junk, &junk);
-					XSync(screen->display, FALSE);	/* synchronize */
-					if(QLength(screen->display) > 0)
-						xevents();
+					    &replyWidth, &replyHeight);
+
+					if (status == XtGeometryYes ||
+					    status == XtGeometryDone) {
+					    ScreenResize (&term->screen,
+							  replyWidth,
+							  replyHeight,
+							  &term->flags);
+					}
 				}
 				term->flags &= ~IN132COLUMNS;
 				term->flags |= screen->save_modes[1] &
@@ -1443,6 +1560,7 @@ XtermWidget term;
 			term->flags |= screen->save_modes[5] & WRAPAROUND;
 			break;
 		case 8:			/* DECARM			*/
+#ifdef DO_AUTOREPEAT
 			if((screen->save_modes[6] ^ term->flags) & AUTOREPEAT) {
 				term->flags &= ~REVERSE_VIDEO;
 				term->flags |= screen->save_modes[6] &
@@ -1452,6 +1570,7 @@ XtermWidget term;
 				else
 					XAutoRepeatOff(screen->display);
 			}
+#endif /* DO_AUTOREPEAT */
 			break;
 		case 9:			/* MIT bogus sequence		*/
 			screen->send_mouse_pos = screen->save_modes[7];
@@ -1600,10 +1719,10 @@ register TScreen *screen;
 	if(screen->cursor_state)
 		HideCursor();
 	rows = screen->max_row + 1;
-	bcopy((char *)screen->buf, (char *)save, 2 * sizeof(char *) * rows);
-	bcopy((char *)screen->altbuf, (char *)screen->buf, 2 * sizeof(char *) *
+	Bcopy((char *)screen->buf, (char *)save, 2 * sizeof(char *) * rows);
+	Bcopy((char *)screen->altbuf, (char *)screen->buf, 2 * sizeof(char *) *
 	 rows);
-	bcopy((char *)save, (char *)screen->altbuf, 2 * sizeof(char *) * rows);
+	Bcopy((char *)save, (char *)screen->altbuf, 2 * sizeof(char *) * rows);
 
 	if((top = -screen->topline) <= screen->max_row) {
 		if(screen->scroll_amt)
@@ -1621,7 +1740,7 @@ register TScreen *screen;
 				* FontHeight(screen),
 			    FALSE);
 	}
-	ScrnRefresh(screen, 0, 0, rows, screen->max_col + 1);
+	ScrnRefresh(screen, 0, 0, rows, screen->max_col + 1, False);
 }
 
 VTRun()
@@ -1638,7 +1757,7 @@ VTRun()
 
 	screen->cursor_state = OFF;
 	screen->cursor_set = ON;
-	if(screen->select)
+	if(screen->select || screen->always_highlight)
 		VTSelect();
 	if (L_flag > 0) {
 		XWarpPointer (screen->display, None, VWindow(screen),
@@ -1660,7 +1779,8 @@ VTRun()
 		VTparse();
 	HideCursor();
 	screen->cursor_set = OFF;
-	VTUnselect();
+	if (!screen->always_highlight)
+	    VTUnselect ();
 	reselectwindow (screen);
 }
 
@@ -1759,7 +1879,7 @@ static void VTallocbuf ()
 
 static void VTInitialize (request, new)
    XtermWidget request, new;
-   {
+{
    /* Zero out the entire "screen" component of "new" widget,
       then do field-by-field assigment of "screen" fields
       that are named in the resource list. */
@@ -1782,6 +1902,13 @@ static void VTInitialize (request, new)
    new->screen.visualbell = request->screen.visualbell;
    new->screen.TekEmu = request->screen.TekEmu;
    new->misc.re_verse = request->misc.re_verse;
+   new->screen.multiClickTime = request->screen.multiClickTime;
+   new->screen.charClass = request->screen.charClass;
+   new->screen.cutNewline = request->screen.cutNewline;
+   new->screen.cutToBeginningOfLine = request->screen.cutToBeginningOfLine;
+   new->screen.always_highlight = request->screen.always_highlight;
+   new->screen.pointer_cursor = request->screen.pointer_cursor;
+   new->misc.titeInhibit = request->misc.titeInhibit;
 
     /*
      * set the colors if reverse video; this is somewhat tricky since
@@ -1823,18 +1950,23 @@ static void VTInitialize (request, new)
 		HandleLeaveWindow, (Opaque)NULL);
    XtAddEventHandler(XtParent(new), FocusChangeMask, FALSE,
 		HandleFocusChange, (Opaque)NULL);
-   XtAddEventHandler(new, ButtonPressMask, FALSE,
-		VTButtonPressed, (Opaque)NULL);
-   XtAddEventHandler(new, ButtonReleaseMask, FALSE,
-		VTButtonReleased, (Opaque)NULL);
-   XtAddEventHandler(new, ButtonMotionMask, FALSE,
-		VTMouseMoved, (Opaque)NULL);
-   XtAddEventHandler(new, KeyPressMask, FALSE,
-		HandleKeyPressed, (Opaque)NULL);
    XtAddEventHandler(new, 0L, TRUE,
 		VTNonMaskableEvent, (Opaque)NULL);
+
+   set_character_class (new->screen.charClass);
+
+   /* create it, but don't realize it */
+   ScrollBarOn (new, TRUE, FALSE);
+
+   return;
 }
 
+
+static void VTDestroy (w)
+Widget w;
+{
+    XtFree(((XtermWidget)w)->screen.selection);
+}
 
 /*ARGSUSED*/
 static void VTRealize (w, valuemask, values)
@@ -1854,6 +1986,7 @@ XSetWindowAttributes *values;
 	XSizeHints		sizehints;
 	XWMHints		wmhints;
 	extern int		VTgcFontMask;
+	int scrollbar_width;
 
 	if(failed)
 		return;
@@ -1885,8 +2018,8 @@ XSetWindowAttributes *values;
 	/* find the max width and higth of the font */
 
 	screen->fullVwin.f_width = screen->fnt_norm->max_bounds.width;
-	screen->fullVwin.f_height = screen->fnt_norm->max_bounds.ascent +
-				    screen->fnt_norm->max_bounds.descent;
+	screen->fullVwin.f_height = screen->fnt_norm->ascent +
+				    screen->fnt_norm->descent;
 
 	/* making cursor */
 	{
@@ -1899,14 +2032,15 @@ XSetWindowAttributes *values;
 		fg = screen->mousecolor;
 	    }
 
-	    if (XStrCmp(term->misc.curs_shape, "arrow") == 0) {
-		screen->curs = make_arrow (fg, bg);
-	    } else {
-		screen->curs = make_xterm (fg, bg);
-	    }
+	    if (!screen->pointer_cursor) 
+	    	screen->pointer_cursor = make_xterm (fg, bg);
+	    else 
+	        recolor_cursor (screen->pointer_cursor, fg, bg);
 	}
 
-	i = 2 * screen->border + screen->scrollbar;
+	scrollbar_width = (term->misc.scrollbar ? 
+			   screen->scrollWidget->core.width : 0);
+	i = 2 * screen->border + scrollbar_width;
 	j = 2 * screen->border;
 
 
@@ -1928,7 +2062,7 @@ XSetWindowAttributes *values;
 			- height - (term->core.parent->core.border_width * 2);
 
 	/* set up size hints for window manager */
-	sizehints.min_width = 2 * screen->border + screen->scrollbar;
+	sizehints.min_width = 2 * screen->border + scrollbar_width;
 	sizehints.min_height = 2 * screen->border;
 	sizehints.width_inc = FontWidth(screen);
 	sizehints.height_inc = FontHeight(screen);
@@ -1944,8 +2078,9 @@ XSetWindowAttributes *values;
 	  sizehints.flags |= USSize;
 	else sizehints.flags |= PSize;
 
-	(void) XtMakeResizeRequest((Widget) term, width, height, &term->core.width,
-			&term->core.height);
+	(void) XtMakeResizeRequest((Widget) term,
+				   (Dimension)width, (Dimension)height,
+				   &term->core.width, &term->core.height);
 
 	/* XXX This is bogus.  We are parsing geometries too late.  This
 	 * is information that the shell widget ought to have before we get
@@ -2046,12 +2181,21 @@ XSetWindowAttributes *values;
 		xgcv.background = cc;
 		screen->cursorGC = XtGetGC ((Widget) term, mask, &xgcv);
 
-		xgcv.foreground = bg;
-		xgcv.background = cc;
-		screen->reversecursorGC = XtGetGC ((Widget) term, mask, &xgcv);
+		if (screen->always_highlight) {
+		    screen->reversecursorGC = (GC) 0;
+		    screen->cursoroutlineGC = (GC) 0;
+		} else {
+		    xgcv.foreground = bg;
+		    xgcv.background = cc;
+		    screen->reversecursorGC = XtGetGC ((Widget) term, mask, &xgcv);
+		    xgcv.foreground = cc;
+		    xgcv.background = bg;
+		    screen->cursoroutlineGC = XtGetGC ((Widget) term, mask, &xgcv);
+		}
 	    } else {
 		screen->cursorGC = (GC) 0;
 		screen->reversecursorGC = (GC) 0;
+		screen->cursoroutlineGC = (GC) 0;
 	    }
 	}
 
@@ -2065,7 +2209,7 @@ XSetWindowAttributes *values;
 	screen->curgr = 2;			/* G2 => GR.		*/
 	screen->curss = 0;			/* No single shift.	*/
 
-	XDefineCursor(screen->display, VShellWindow, screen->curs );
+	XDefineCursor(screen->display, VShellWindow, screen->pointer_cursor);
 
         screen->cur_col = screen->cur_row = 0;
 	screen->max_col = Width(screen)  / screen->fullVwin.f_width - 1;
@@ -2094,9 +2238,9 @@ XSetWindowAttributes *values;
 
 	screen->savedlines = 0;
 
-	if(screen->scrollbar) {
+	if (term->misc.scrollbar) {
 		screen->scrollbar = 0;
-		ScrollBarOn(screen, TRUE);
+		ScrollBarOn (term, FALSE, TRUE);
 	}
 	CursorSave (term, &screen->sc);
 	VTUnselect();
@@ -2112,6 +2256,7 @@ ShowCursor()
 	register int x, y, flags;
 	char c;
 	GC	currentGC;
+	Boolean	in_selection;
 
 	if (eventMode != NORMAL) return;
 
@@ -2123,8 +2268,20 @@ ShowCursor()
 	if (c == 0)
 		c = ' ';
 
-	if(screen->select) {
-		if(flags & INVERSE) { /* is reverse video */
+	if (screen->cur_row > screen->endHRow ||
+	    (screen->cur_row == screen->endHRow &&
+	     screen->cur_col >= screen->endHCol) ||
+	    screen->cur_row < screen->startHRow ||
+	    (screen->cur_row == screen->startHRow &&
+	     screen->cur_col < screen->startHCol))
+	    in_selection = False;
+	else
+	    in_selection = True;
+
+	if(screen->select || screen->always_highlight) {
+		if (( (flags & INVERSE) && !in_selection) ||
+		    (!(flags & INVERSE) &&  in_selection)){
+		    /* text is reverse video */
 		    if (screen->cursorGC) {
 			currentGC = screen->cursorGC;
 		    } else {
@@ -2146,7 +2303,9 @@ ShowCursor()
 		    }
 		}
 	} else { /* not selected */
-		if(flags & INVERSE) { /* is reverse video */
+		if (( (flags & INVERSE) && !in_selection) ||
+		    (!(flags & INVERSE) &&  in_selection)) {
+		    /* text is reverse video */
 			currentGC = screen->reverseGC;
 		} else { /* normal video */
 			currentGC = screen->normalGC;
@@ -2154,10 +2313,9 @@ ShowCursor()
 	    
 	}
 
-
 	x = CursorX (screen, screen->cur_col);
 	y = CursorY(screen, screen->cur_row) + 
-	  screen->fnt_norm->max_bounds.ascent;
+	  screen->fnt_norm->ascent;
 	XDrawImageString(screen->display, TextWindow(screen), currentGC,
 		x, y, &c, 1);
 
@@ -2167,11 +2325,13 @@ ShowCursor()
 	if(flags & UNDERLINE) 
 		XDrawLine(screen->display, TextWindow(screen), currentGC,
 			x, y+1, x + FontWidth(screen), y+1);
-	if (!screen->select) {
-		screen->box->x = x + screen->fnt_norm->max_bounds.lbearing;
-		screen->box->y = y - screen->fnt_norm->max_bounds.ascent;
-		XDrawLines(screen->display, TextWindow(screen), currentGC,
-			screen->box, NBOX, CoordModePrevious);
+	if (!screen->select && !screen->always_highlight) {
+		screen->box->x = x;
+		screen->box->y = y - screen->fnt_norm->ascent;
+		XDrawLines (screen->display, TextWindow(screen), 
+			    screen->cursoroutlineGC ? screen->cursoroutlineGC 
+			    			    : currentGC,
+			    screen->box, NBOX, CoordModePrevious);
 	}
 	screen->cursor_state = ON;
 }
@@ -2185,13 +2345,25 @@ HideCursor()
 	GC	currentGC;
 	register int x, y, flags;
 	char c;
+	Boolean	in_selection;
 
 	if(screen->cursor_row - screen->topline > screen->max_row)
 		return;
 	c = screen->buf[y = 2 * screen->cursor_row][x = screen->cursor_col];
 	flags = screen->buf[y + 1][x];
 
-	if(flags & INVERSE) {
+	if (screen->cursor_row > screen->endHRow ||
+	    (screen->cursor_row == screen->endHRow &&
+	     screen->cursor_col >= screen->endHCol) ||
+	    screen->cursor_row < screen->startHRow ||
+	    (screen->cursor_row == screen->startHRow &&
+	     screen->cursor_col < screen->startHCol))
+	    in_selection = False;
+	else
+	    in_selection = True;
+
+	if (( (flags & INVERSE) && !in_selection) ||
+	    (!(flags & INVERSE) &&  in_selection)) {
 		if(flags & BOLD) {
 			currentGC = screen->reverseboldGC;
 		} else {
@@ -2210,7 +2382,7 @@ HideCursor()
 	x = CursorX (screen, screen->cursor_col);
 	y = (((screen->cursor_row - screen->topline) * FontHeight(screen))) +
 	 screen->border;
-	y = y+screen->fnt_norm->max_bounds.ascent;
+	y = y+screen->fnt_norm->ascent;
 	XDrawImageString(screen->display, TextWindow(screen), currentGC,
 		x, y, &c, 1);
 	if((flags & BOLD) && screen->enbolden)
@@ -2261,8 +2433,6 @@ int full;
 		screen->curss = 0;
 		ClearScreen(screen);
 		screen->cursor_state = OFF;
-		if(!(term->flags & AUTOREPEAT))
-			XAutoRepeatOn(screen->display);
 		if (term->flags & REVERSE_VIDEO)
 			ReverseVideo(term);
 
@@ -2271,9 +2441,9 @@ int full;
 		        Dimension junk;
 			XtMakeResizeRequest(
 			    (Widget) term,
-			    (unsigned) 80*FontWidth(screen)
+			    (Dimension) 80*FontWidth(screen)
 				+ 2 * screen->border + screen->scrollbar,
-			    (unsigned) FontHeight(screen)
+			    (Dimension) FontHeight(screen)
 			        * (screen->max_row + 1) + 2 * screen->border,
 			    &junk, &junk);
 			XSync(screen->display, FALSE);	/* synchronize */
@@ -2287,16 +2457,20 @@ int full;
 
 
 #ifdef MODEMENU
-#define	MMENU_SCROLL		0
+#define	MMENU_SCROLLBAR		0
+#define	MMENU_SCROLL		(MMENU_SCROLLBAR+1)
 #define	MMENU_VIDEO		(MMENU_SCROLL+1)
 #define	MMENU_WRAP		(MMENU_VIDEO+1)
 #define	MMENU_REVERSEWRAP	(MMENU_WRAP+1)
 #define	MMENU_NLM		(MMENU_REVERSEWRAP+1)
 #define	MMENU_CURSOR		(MMENU_NLM+1)
 #define	MMENU_PAD		(MMENU_CURSOR+1)
+#ifdef DO_AUTOREPEAT
 #define	MMENU_REPEAT		(MMENU_PAD+1)
-#define	MMENU_SCROLLBAR		(MMENU_REPEAT+1)
-#define	MMENU_SCROLLKEY		(MMENU_SCROLLBAR+1)
+#define	MMENU_SCROLLKEY		(MMENU_REPEAT+1)
+#else /* else not DO_AUTOREPEAT */
+#define MMENU_SCROLLKEY		(MMENU_PAD+1)
+#endif /* DO_AUTOREPEAT */
 #define	MMENU_SCROLLINPUT	(MMENU_SCROLLKEY+1)
 #define	MMENU_C132		(MMENU_SCROLLINPUT+1)
 #define	MMENU_CURSES		(MMENU_C132+1)
@@ -2310,18 +2484,20 @@ int full;
 #define	MMENU_HIDEVT		(MMENU_TEKMODE+1)
 
 static char *vtext[] = {
+	"Scrollbar",
 	"Jump Scroll",
 	"Reverse Video",
 	"Auto Wraparound",
 	"Reverse Wraparound",
 	"Auto Linefeed",
-	"Application Cursors",
-	"Application Pad",
+	"Application Cursor Mode",
+	"Application Keypad Mode",
+#ifdef DO_AUTOREPEAT
 	"Auto Repeat",
-	"Scrollbar",
-	"Scroll to bottom on key",
-	"Scroll to bottom on input",
-	"80 <-> 132 Columns",
+#endif /* DO_AUTOREPEAT */
+	"Scroll to bottom on key press",
+	"Scroll to bottom on tty output",
+	"Allow 80/132 switching",
 	"Curses Emulation",
 	"Margin Bell",
 	"Tek Window Showing",
@@ -2355,7 +2531,7 @@ register Menu **menu;
 	register int kflags = term->keyboard.flags;
 
 	if (*menu == NULL) {
-		if ((*menu = NewMenu("Modes", term->misc.re_verse)) == NULL)
+		if ((*menu = NewMenu("Modes")) == NULL)
 			return(NULL);
 		for(cp = vtext ; *cp ; cp++)
 			AddMenuItem(*menu, *cp);
@@ -2373,8 +2549,10 @@ register Menu **menu;
 			CheckItem(*menu, MMENU_CURSOR);
 		if(kflags & KYPD_APL)
 			CheckItem(*menu, MMENU_PAD);
+#ifdef DO_AUTOREPEAT
 		if(flags & AUTOREPEAT)
 			CheckItem(*menu, MMENU_REPEAT);
+#endif /* DO_AUTOREPEAT */
 		if(tscrollbar = (screen->scrollbar > 0)) {
 			CheckItem(*menu, MMENU_SCROLLBAR);
 			if(tscrollkey = screen->scrollkey)
@@ -2426,8 +2604,10 @@ register Menu **menu;
 		SetItemCheck(*menu, MMENU_CURSOR, kflags & CURSOR_APL);
 	if (menukbdflags & KYPD_APL)
 		SetItemCheck(*menu, MMENU_PAD, kflags & KYPD_APL);
+#ifdef DO_AUTOREPEAT
         if (menutermflags & AUTOREPEAT)
                 SetItemCheck(*menu, MMENU_REPEAT, flags & AUTOREPEAT);
+#endif /* DO_AUTOREPEAT */
 	if(tscrollbar != (screen->scrollbar > 0)) {
 		SetItemCheck(*menu, MMENU_SCROLLBAR, (tscrollbar =
 		 (screen->scrollbar > 0)));
@@ -2482,7 +2662,6 @@ int item;
 		break;
 
 	case MMENU_VIDEO:
-		term->flags ^= REVERSE_VIDEO;
 		ReverseVideo(term);
 		break;
 
@@ -2506,6 +2685,7 @@ int item;
 		term->keyboard.flags ^= KYPD_APL;
 		break;
 
+#ifdef DO_AUTOREPEAT
 	case MMENU_REPEAT:
 		term->flags ^= AUTOREPEAT;
 		if (term->flags & AUTOREPEAT)
@@ -2513,12 +2693,13 @@ int item;
 		else
 			XAutoRepeatOff(screen->display);
 		break;
+#endif /* DO_AUTOREPEAT */
 
 	case MMENU_SCROLLBAR:
 		if(screen->scrollbar)
 			ScrollBarOff(screen);
 		else
-			ScrollBarOn(screen, FALSE);
+			ScrollBarOn (term, FALSE, FALSE);
 		break;
 
 	case MMENU_SCROLLKEY:
@@ -2573,3 +2754,163 @@ int item;
 }
 #endif	/* MODEMENU */
 
+/*
+ * set_character_class - takes a string of the form
+ * 
+ *                 low[-high]:val[,low[-high]:val[...]]
+ * 
+ * and sets the indicated ranges to the indicated values.
+ */
+
+int set_character_class (s)
+    register char *s;
+{
+    register int i;			/* iterator, index into s */
+    int len;				/* length of s */
+    int acc;				/* accumulator */
+    int low, high;			/* bounds of range [0..127] */
+    int base;				/* 8, 10, 16 (octal, decimal, hex) */
+    int numbers;			/* count of numbers per range */
+    int digits;				/* count of digits in a number */
+    static char *errfmt = "%s:  %s in range string \"%s\" (position %d)\n";
+    extern char *ProgramName;
+
+    if (!s || !s[0]) return;
+
+    base = 10;				/* in case we ever add octal, hex */
+    low = high = -1;			/* out of range */
+
+    for (i = 0, len = strlen (s), acc = 0, numbers = digits = 0;
+	 i < len; i++) {
+	char c = s[i];
+
+	if (isspace(c)) {
+	    continue;
+	} else if (isdigit(c)) {
+	    acc = acc * base + (c - '0');
+	    digits++;
+	    continue;
+	} else if (c == '-') {
+	    low = acc;
+	    acc = 0;
+	    if (digits == 0) {
+		fprintf (stderr, errfmt, ProgramName, "missing number", s, i);
+		return (-1);
+	    }
+	    digits = 0;
+	    numbers++;
+	    continue;
+	} else if (c == ':') {
+	    if (numbers == 0)
+	      low = acc;
+	    else if (numbers == 1)
+	      high = acc;
+	    else {
+		fprintf (stderr, errfmt, ProgramName, "too many numbers",
+			 s, i);
+		return (-1);
+	    }
+	    digits = 0;
+	    numbers++;
+	    acc = 0;
+	    continue;
+	} else if (c == ',') {
+	    /*
+	     * now, process it
+	     */
+
+	    if (high < 0) {
+		high = low;
+		numbers++;
+	    }
+	    if (numbers != 2) {
+		fprintf (stderr, errfmt, ProgramName, "bad value number", 
+			 s, i);
+	    } else if (SetCharacterClassRange (low, high, acc) != 0) {
+		fprintf (stderr, errfmt, ProgramName, "bad range", s, i);
+	    }
+
+	    low = high = -1;
+	    acc = 0;
+	    digits = 0;
+	    numbers = 0;
+	    continue;
+	} else {
+	    fprintf (stderr, errfmt, ProgramName, "bad character", s, i);
+	    return (-1);
+	}				/* end if else if ... else */
+
+    }
+
+    if (low < 0 && high < 0) return (0);
+
+    /*
+     * now, process it
+     */
+
+    if (high < 0) high = low;
+    if (numbers < 1 || numbers > 2) {
+	fprintf (stderr, errfmt, ProgramName, "bad value number", s, i);
+    } else if (SetCharacterClassRange (low, high, acc) != 0) {
+	fprintf (stderr, errfmt, ProgramName, "bad range", s, i);
+    }
+
+    return (0);
+}
+
+/* ARGSUSED */
+static void HandleKeymapChange(w, event, params, param_count)
+    Widget w;
+    XEvent *event;
+    String *params;
+    Cardinal *param_count;
+{
+    static XtTranslations keymap, original;
+    static XtResource resources[] = {
+	{ XtNtranslations, XtCTranslations, XtRTranslationTable,
+	      sizeof(XtTranslations), 0, XtRTranslationTable, (caddr_t)NULL}
+    };
+    char mapName[1000];
+    char mapClass[1000];
+
+    if (*param_count != 1) return;
+
+    if (original == NULL) original = w->core.tm.translations;
+
+    if (strcmp(params[0], "None") == 0) {
+	XtOverrideTranslations(w, original);
+	return;
+    }
+    (void) sprintf( mapName, "%sKeymap", params[0] );
+    (void) strcpy( mapClass, mapName );
+    if (islower(mapClass[0])) mapClass[0] = toupper(mapClass[0]);
+    XtGetSubresources( w, &keymap, mapName, mapClass,
+		       resources, (Cardinal)1, NULL, (Cardinal)0 );
+    if (keymap != NULL)
+	XtOverrideTranslations(w, keymap);
+}
+
+
+/* ARGSUSED */
+static void HandleBell(w, event, params, param_count)
+    Widget w;
+    XEvent *event;		/* unused */
+    String *params;		/* [0] = volume */
+    Cardinal *param_count;	/* 0 or 1 */
+{
+    int percent = (*param_count) ? atoi(params[0]) : 0;
+
+    XBell( XtDisplay(w), percent );
+}
+
+
+/* ARGSUSED */
+static void HandleIgnore(w, event, params, param_count)
+    Widget w;
+    XEvent *event;		/* unused */
+    String *params;		/* unused */
+    Cardinal *param_count;	/* unused */
+{
+    /* do nothing, but check for funny escape sequences */
+    (void) SendMousePosition(w, event);
+}

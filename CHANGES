@@ -1,0 +1,59 @@
+The following changes have been made to this directory since R2:
+
+     o  main.c has been substantially rewritten; it is now much easier to
+	maintain and does the right thing for process groups under both BSD and
+	System V.
+     o  the stuff to save menus was removed because it wasn't being used.
+     o  autorepeat stuff was removed since it is really a global attribute
+	rather than a per-xterm attribute.
+     o  pointerShape resources now work properly.
+     o  reverse video now works properly.
+     o  Tek GIN mode now works more accurately.
+     o  a new resource, titeInhibit, has been added for editting out the ti and
+	te termcap entries.
+     o  two new resources, cutNewLine and cutToBeginningOfLine, now give more
+	control over how triple click line cutting works.
+     o  the translation manager is now used for key events and actions have
+	been added to allow arbitrary rebinding of events in VT100 mode.
+     o  added actions to allow key bindings to be changed dynamically
+	in VT100 mode.
+     o  Selections as well as cut buffers are supported for
+	cut and paste in VT100 mode.
+     o  Atoms.h has been replaced by StringDefs.h.
+     o  a new resource, charClass, has been added to support user-defined
+	character classes for multi-click cutting.
+     o  a new resource, multiClickTime, now controls how quickly the user must
+	press button to have them count as multi-clicks.
+     o  bugs in 132 column mode have been fixed.
+     o  xterm now uses Bcopy for people who want to redefine it to something
+	that is guarranteed to handle overlapping copies.
+     o  text cursor color bugs have been fixed.
+     o  scrollbar color bugs have been fixed.
+     o  scrollbar thumb width problems have been fixed.
+     o  bugs in origin mode resetting have been fixed.
+     o  a new resource, sunFunctionKeys, controls whether or not function
+	keys generate Sun keyboard codes or VT codes.
+     o  =geom is no longer supported.
+     o  problems with -T, -n, and -e have been fixed.
+     o  some bugs in console mode have been fixed.
+     o  utmp overwriting bugs have been fixed.
+     o  overenthusiastic closing of file descriptors has been removed.
+     o  logging now works.
+     o  WINDOWID environment variable is now set properly.
+     o  slave mode terminals now send window id in hex instead of binary.
+     o  stippled text bugs have been fixed.
+     o  menus use now save-unders.
+     o  ascent and descent bugs have been fixed.
+     o  bit gravity is now supported.
+     o  several SIGWINCH problems have been fixed.
+     o  made getty program a compile parameter.
+     o  a new resource, utmpInhibit, now controls whether or not utmp entries
+	are made.
+     o  deeply-nested macros are replaced with checked in definition files and
+	scripts to generate them.
+     o  added termName resource and -tn for setting TERM environment variable.
+     o  added ttyModes resource and -tm for setting initial stty modes.
+     o  encouraged people to use xdm instead of xterm -L.
+     o  elements in menus reordered for convenience.
+     o  use correct font metrics for line height.
+     o  lots of random bugs fixed.

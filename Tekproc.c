@@ -1,5 +1,5 @@
 /*
- * @Header: Tekproc.c,v 1.28 88/02/27 15:27:50 rws Exp @
+ * $XConsortium: Tekproc.c,v 1.47 89/01/04 12:01:34 jim Exp $
  *
  * Warning, there be crufty dragons here.
  */
@@ -38,31 +38,37 @@
 #include <X11/Intrinsic.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
-#include <X11/Atoms.h>
+#include <X11/StringDefs.h>
 #include <X11/Shell.h>
 #include "ptyx.h"
 #include "Tekparse.h"
 #include <stdio.h>
-#include <sgtty.h>
+#ifdef mips			/* !defined(mips) || !defined(SYSTYPE_SYSV) */
+# ifndef SYSTYPE_SYSV
+# include <sgtty.h>
+# endif /* not SYSTYPE_SYSV */
+#else
+# include <sgtty.h>
+#endif /* mips */
 #include <ctype.h>
 #include <errno.h>
 #include <setjmp.h>
 #include <pwd.h>
 #include "data.h"
 #include "error.h"
+
+#ifdef macII
+#undef FIOCLEX					/* redefined from sgtty.h */
+#undef FIONCLEX					/* redefined from sgtty.h */
+#include <sys/ioctl.h>				/* to get FIONREAD */
+#endif /* macII */
+
 #ifdef MODEMENU
 #include "menu.h"
 #endif	/* MODEMENU */
 
 extern void exit();
 extern long time();
-
-#ifdef obsolete
-/* ||| Temp stuff till I make this work again */
-char *fore_color;
-char *back_color;
-char *curs_color;
-#endif /* obsolete */
 
 #define TekColormap DefaultColormap( screen->display, \
 				    DefaultScreen(screen->display) )
@@ -115,7 +121,7 @@ char *curs_color;
 #define	unput(c)	*Tpushback++ = c
 
 #ifndef lint
-static char rcs_id[] = "@Header: Tekproc.c,v 1.28 88/02/27 15:27:50 rws Exp @";
+static char rcs_id[] = "$XConsortium: Tekproc.c,v 1.47 89/01/04 12:01:34 jim Exp $";
 #endif	/* lint */
 
 static XPoint *T_box[TEKNUMFONTS] = {
@@ -158,18 +164,29 @@ static int *Tparsestate = Talptable;
 
 /* event handlers */
 extern void HandleKeyPressed();
+extern void HandleStringEvent();
 extern void HandleEnterWindow();
 extern void HandleLeaveWindow();
 extern void HandleFocusChange();
+extern void HandleSecure();
 extern void TekButtonPressed();
 
-static int defOne = 1;
+static char defaultTranslations[] = 
+    "<KeyPress>: insert()";
+
+static XtActionsRec actionsList[] = { 
+    { "string",	HandleStringEvent },
+    { "insert",	HandleKeyPressed },
+    { "secure", HandleSecure }
+};
+
+static Dimension defOne = 1;
 
 static XtResource resources[] = {
-    {XtNwidth, XtCWidth, XtRInt, sizeof(int),
-	 XtOffset(Widget, core.width), XtRInt, (caddr_t)&defOne},
-    {XtNheight, XtCHeight, XtRInt, sizeof(int),
-	 XtOffset(Widget, core.height), XtRInt, (caddr_t)&defOne},
+    {XtNwidth, XtCWidth, XtRDimension, sizeof(Dimension),
+	 XtOffset(Widget, core.width), XtRDimension, (caddr_t)&defOne},
+    {XtNheight, XtCHeight, XtRDimension, sizeof(Dimension),
+	 XtOffset(Widget, core.height), XtRDimension, (caddr_t)&defOne},
 };
 
 static void TekInitialize(), TekRealize(), TekConfigure();
@@ -187,8 +204,8 @@ WidgetClassRec tekClassRec = {
     /* initialize	  */	TekInitialize,
     /* initialize_hook    */    NULL,				
     /* realize		  */	TekRealize,
-    /* actions		  */	NULL,
-    /* num_actions	  */	0,
+    /* actions		  */	actionsList,
+    /* num_actions	  */	XtNumber(actionsList),
     /* resources	  */	resources,
     /* num_resources	  */	XtNumber(resources),
     /* xrm_class	  */	NULLQUARK,
@@ -206,7 +223,10 @@ WidgetClassRec tekClassRec = {
     /* accept_focus	  */	NULL,
     /* version            */    XtVersion,
     /* callback_offsets   */    NULL,
-    /* tm_table           */    NULL,				
+    /* tm_table           */    defaultTranslations,
+    /* query_geometry     */    XtInheritQueryGeometry,
+    /* display_accelerator*/    XtInheritDisplayAccelerator,
+    /* extension          */    NULL
   }
 };
 #define tekWidgetClass ((WidgetClass)&tekClassRec)
@@ -289,7 +309,7 @@ Tekparse()
 				/* Set cross-hair cursor raster array */
 			if(GINcursor = make_tcross(
 			    screen->mousecolor,
-			    tekWidget->core.background_pixel))
+			    term->core.background_pixel))
 				XDefineCursor(
 				    screen->display,
 				    TShellWindow,
@@ -594,8 +614,8 @@ again:
 					FlushLog(screen);
 				if((Tbcnt = read(screen->respond,
 				 Tbptr = Tbuffer, BUF_SIZE)) < 0) {
-					if(errno == EIO && am_slave)
-						exit(0);
+					if(errno == EIO)
+						Cleanup (0);
 					else if(errno != EWOULDBLOCK)
 						Panic(
 				 "Tinput:read returned unexpected error (%d)\n",
@@ -659,7 +679,7 @@ static void TekConfigure(w)
     register int border = 2 * screen->border;
     register double d;
 
-    XClearWindow(screen->display, TWindow(screen));
+    if (TWindow(screen)) XClearWindow(screen->display, TWindow(screen));
     TWidth(screen) = w->core.width - border;
     THeight(screen) = w->core.height - border;
     TekScale(screen) = (double)TWidth(screen) / TEKWIDTH;
@@ -944,15 +964,15 @@ TekEnqMouse(c)
 int c;
 {
 	register TScreen *screen = &term->screen;
-	int mousex, mousey, winx, winy;
+	int mousex, mousey, rootx, rooty;
 	unsigned int mask; /* XQueryPointer */
 	Window root, subw;
 
 	XQueryPointer(
 	    screen->display, TWindow(screen), 
 	    &root, &subw,
+	    &rootx, &rooty,
 	    &mousex, &mousey,
-	    &winx, &winy,
 	    &mask);
 	if((mousex = (mousex - screen->border) / TekScale(screen)) < 0)
 		mousex = 0;
@@ -1002,7 +1022,7 @@ TekRun()
 	    set_tek_visibility (TRUE);
 	} 
 
-	if(screen->select)
+	if(screen->select || screen->always_highlight)
 		TekSelect();
 	if (L_flag > 0) {
 		XWarpPointer (screen->display, None, TWindow(screen),
@@ -1023,7 +1043,8 @@ TekRun()
 		Ttoggled = TRUE;
 	}
 	screen->TekEmu = FALSE;
-	TekUnselect();
+	if (!screen->always_highlight)
+	    TekUnselect ();
 	reselectwindow (screen);
 }
 
@@ -1071,8 +1092,6 @@ static void TekInitialize(request, new)
 		      HandleFocusChange, (caddr_t)NULL);
     XtAddEventHandler(new, ButtonPressMask, FALSE,
 		      TekButtonPressed, (caddr_t)NULL);
-    XtAddEventHandler(new, KeyPressMask, FALSE,
-		      HandleKeyPressed, (caddr_t)NULL);
 }
 
 
@@ -1096,6 +1115,8 @@ static void TekRealize (gw, valuemaskp, values)
     char Tdefault[32];
     extern char *malloc();
 
+    tw->core.border_pixel = term->core.border_pixel;
+
     if (!(screen->Tfont[SMALLFONT] = XLoadQueryFont (screen->display,
 						     SMALLFONTNAME))) {
 	fprintf(stderr, "%s: Could not get font %s; using server default\n",
@@ -1111,72 +1132,9 @@ static void TekRealize (gw, valuemaskp, values)
 
     screen->xorplane = 1;
 
-    screen->Tbackground = tw->core.background_pixel;
+    screen->Tbackground = term->core.background_pixel;
     screen->Tforeground = screen->foreground;
     screen->Tcursorcolor = screen->foreground;
-
-#ifdef obsolete
-	if (DisplayCells(screen->display, DefaultScreen(screen->display)) > 2
-	    && (fore_color || back_color || curs_color)) {
-		if (curs_color &&
-		    XParseColor(screen->display, TekColormap, curs_color, &cdef)) {
-			if(XAllocColorCells(
-			    screen->display,
-			    TekColormap,
-			    0, 
-			    &screen->xorplane, 1,
-			    pixels, 2)) {
-				screen->cellsused = TRUE;
-				screen->colorcells[2] = cdef;
-				screen->Tbackground = pixels[0];
-				screen->Tforeground = pixels[1];
-
-				screen->Tcursorcolor = screen->Tbackground |
-				 screen->xorplane;
-				screen->planeused = TRUE;
-			}
-		} else if (XAllocColorCells(
-		    screen->display,
-		    TekColormap, 0, 
-		    &screen->xorplane, 1, &screen->Tbackground, 1)) {
-			screen->Tforeground = screen->Tbackground |
-			 screen->xorplane;
-			screen->Tcursorcolor = screen->Tforeground;
-			screen->planeused = TRUE;
-		}
-		if (screen->Tbackground != XtDefaultBGPixel) {
-			if (back_color == NULL ||
-				!XParseColor(screen->display,
-				 TekColormap,
-				 back_color, &cdef)) {
-				cdef.pixel = XtDefaultBGPixel;
-				XQueryColor(screen->display, TekColormap, &cdef);
-			}
-			cdef.pixel = screen->Tbackground;
-			XStoreColor(screen->display, TekColormap, &cdef);
-			if(screen->cellsused) {
-				screen->colorcells[0] = cdef;
-				cdef.pixel = screen->Tforeground |
-					screen->xorplane;
-				XStoreColor(screen->display, TekColormap,&cdef);
-			}
-			if (fore_color == NULL ||
-				!XParseColor(screen->display,
-				 TekColormap,
-				 fore_color, &cdef)) {
-				cdef.pixel = XtDefaultFGPixel;
-				XQueryColor(screen->display, TekColormap, &cdef);
-			}
-			cdef.pixel = screen->Tforeground;
-			XStoreColor(screen->display, TekColormap, &cdef);
-			if(screen->cellsused) {
-				screen->colorcells[1] = cdef;
-				cdef.pixel = screen->Tcursorcolor;
-				XStoreColor(screen->display, TekColormap, &cdef);
-			}
-		}
-	}
-#endif /* obsolete */
 
     if (term->misc.T_geometry == NULL) {
 	sprintf (Tdefault, "=%dx%d",
@@ -1208,8 +1166,8 @@ static void TekRealize (gw, valuemaskp, values)
     if ((XValue&pr) || (YValue&pr))
       sizehints.flags |= USSize|USPosition;
     else sizehints.flags |= PSize|PPosition;
-    tw->core.width = sizehints.width = width;
-    tw->core.height = sizehints.height = height;
+    sizehints.width = width;
+    sizehints.height = height;
     if ((WidthValue&pr) || (HeightValue&pr))
       sizehints.flags |= USSize;
     else sizehints.flags |= PSize;
@@ -1316,7 +1274,7 @@ static void TekRealize (gw, valuemaskp, values)
     screen->TekGIN = FALSE;			/* GIN off		*/
 
 
-    XDefineCursor(screen->display, TShellWindow, screen->curs);
+    XDefineCursor(screen->display, TShellWindow, screen->pointer_cursor);
     TekUnselect ();
 
     {	/* there's gotta be a better way... */
@@ -1347,6 +1305,7 @@ static void TekRealize (gw, valuemaskp, values)
     tek->count = 0;
     tek->ptr = tek->data;
     Tpushback = Tpushb;
+    Tbptr = Tbuffer;
     screen->cur_X = 0;
     screen->cur_Y = TEKHOME;
     line_pt = Tline;
@@ -1432,7 +1391,7 @@ int toggle;
 	y = ((TEKHEIGHT + TEKTOPPAD - screen->cur_Y) * TekScale(screen)) +
 	 screen->border - screen->tobaseline[c];
 	if (toggle) {
-	   if (screen->select) 
+	   if (screen->select || screen->always_highlight) 
 		XFillRectangle(
 		    screen->display, TWindow(screen), screen->TcursorGC,
 		    x, y,
@@ -1445,7 +1404,7 @@ int toggle;
 		    screen->Tbox[c], NBOX, CoordModePrevious);
 	   }
 	} else {
-	   if (screen->select) 
+	   if (screen->select || screen->always_highlight) 
 		XClearArea(screen->display, TWindow(screen), x, y,
 		    (unsigned) Tf->Twidth, (unsigned) Tf->Theight, FALSE);
 	   else { 
@@ -1471,7 +1430,7 @@ TekUnselect()
 {
 	register TScreen *screen = &term->screen;
 
-	if (tekWidget && TShellWindow)
+	if (tekWidget && TShellWindow && !screen->always_highlight)
 	  XSetWindowBorderPixmap (screen->display, TShellWindow,
 				  screen->graybordertile);
 }
@@ -1563,7 +1522,7 @@ register Menu **menu;
 
 	curmodes = screen->cur;
 	if (*menu == NULL) {
-		if ((*menu = NewMenu("Tektronix", term->misc.re_verse)) == NULL)
+		if ((*menu = NewMenu("Tektronix")) == NULL)
 			return(NULL);
 		for(cp = Ttext ; *cp ; cp++)
 			AddMenuItem(*menu, *cp);

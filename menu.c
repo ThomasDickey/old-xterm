@@ -2,7 +2,7 @@
 static char sccsid[]="@(#)menu.c	1.7 Stellar 87/10/16";
 #endif
 /*
- *	@Header: menu.c,v 1.2 88/02/18 16:48:09 jim Exp @
+ *	$XConsortium: menu.c,v 1.11 88/11/16 13:47:32 rws Exp $
  */
 
 #include <X11/copyright.h>
@@ -33,7 +33,7 @@ static char sccsid[]="@(#)menu.c	1.7 Stellar 87/10/16";
 #include <stdio.h>
 #ifdef MODEMENU
 #include <X11/Xlib.h>
-#include <X11/Atoms.h>
+#include <X11/StringDefs.h>
 #include <X11/Intrinsic.h>
 #include <X11/Shell.h>
 #include <X11/Xutil.h>
@@ -45,7 +45,7 @@ static char sccsid[]="@(#)menu.c	1.7 Stellar 87/10/16";
 #include "data.h"
 
 #ifndef lint
-static char rcs_id[] = "@Header: menu.c,v 1.2 88/02/18 16:48:09 jim Exp @";
+static char rcs_id[] = "$XConsortium: menu.c,v 1.11 88/11/16 13:47:32 rws Exp $";
 #endif	lint
 
 #define DEFMENUBORDER	2
@@ -67,7 +67,7 @@ static char Check_MarkBits[] = {
 static GC MenuGC, MenuInverseGC, MenuInvertGC, MenuGrayGC;
 static int gotGCs = FALSE;
 
-Pixmap Gray_Tile, Check_Tile;
+Pixmap Gray_Tile, Check_Normal_Tile, Check_Inverse_Tile, Check_Tile;
 Menu Menu_Default;
 Cursor Menu_DefaultCursor;
 char *Menu_DefaultFont;
@@ -117,6 +117,8 @@ register char *name;
 	register XtermWidget xw = term;
 	register char *cp;
 	Display *dpy = XtDisplay(xw);
+	Pixel background = xw->core.background_pixel;
+	Pixel foreground = xw->screen.foreground;
 
 	/*
 	 * If the gray tile hasn't been set up, do it now.
@@ -124,17 +126,15 @@ register char *name;
 	if(!Gray_Tile) 
 		Gray_Tile = XtGrayPixmap(XtScreen(xw));
 	if (!Check_Tile) {
-	        Check_Tile = Make_tile(checkMarkWidth, checkMarkHeight,
-		  Check_MarkBits, BlackPixel(dpy, DefaultScreen(dpy)),
-		  WhitePixel(dpy, DefaultScreen(dpy)),
+	        Check_Normal_Tile = Make_tile(checkMarkWidth, checkMarkHeight,
+		  Check_MarkBits, foreground, background,
 		  DefaultDepth(dpy, DefaultScreen(dpy)));
+	        Check_Inverse_Tile = Make_tile(checkMarkWidth, checkMarkHeight,
+		  Check_MarkBits, background, foreground,
+		  DefaultDepth(dpy, DefaultScreen(dpy)));
+		Check_Tile = Check_Normal_Tile;
         }
 	Menu_Default.menuFlags = menuChanged;
-/*	if((cp = XGetDefault(dpy, name, "MenuFreeze")) && XStrCmp(cp, "on") == 0)
-		Menu_Default.menuFlags |= menuFreeze;
-	if((cp = XGetDefault(dpy, name, "MenuSave")) && XStrCmp(cp, "on") == 0)
-		Menu_Default.menuFlags |= menuSaveMenu;
-*/
 	Menu_Default.menuInitialItem = -1;
 	XtGetSubresources(xw, (caddr_t)&Menu_Default, "menu", "Menu",
            resourceList, XtNumber(resourceList), NULL, 0);
@@ -195,9 +195,8 @@ char *text;
  *
  * The Menu structure _menuDefault contains the default menu settings.
  */
-Menu *NewMenu(name, reverse)
+Menu *NewMenu (name)
 char *name;
-int reverse;
 {
 	register Menu *menu;
 	register XtermWidget xw = term;
@@ -205,6 +204,8 @@ int reverse;
 	extern char *malloc();
 	extern XFontStruct *XLoadQueryFont();
 	register Display *dpy = XtDisplay(xw);
+	Pixel background = xw->core.background_pixel;
+	Pixel foreground = xw->screen.foreground;
 
 	/*
 	 * If the GrayTile hasn't been defined, InitMenu() was never
@@ -236,17 +237,9 @@ int reverse;
 	 * Initialze the default background and border pixmaps and foreground
 	 * and background colors (black and white).
 	 */
-	if(reverse) {
-		menu->menuFgColor = WhitePixel(dpy, 
-			DefaultScreen(dpy));
-		menu->menuBgColor = BlackPixel(dpy, 
-			DefaultScreen(dpy));
-	} else {
-		menu->menuFgColor = BlackPixel(dpy, 
-			DefaultScreen(dpy));
-		menu->menuBgColor = WhitePixel(dpy, 
-			DefaultScreen(dpy));
-	}
+	menu->menuFgColor = foreground;
+	menu->menuBgColor = background;
+	
 	if(!gotGCs) {
 	        xgc.foreground = menu->menuFgColor;
 	        xgc.function = GXinvert;
@@ -271,8 +264,7 @@ int reverse;
 		 &xgc);
 	        xgc.foreground = menu->menuFgColor;
 	        xgc.background = menu->menuBgColor;
-	        xgc.function = menu->menuFgColor ? GXor : GXand;
-/*		xgc.function = GXcopy;*/
+		xgc.function = GXcopy;
 	        xgc.stipple = Gray_Tile;
 	        xgc.fill_style = FillStippled;
 	        MenuGrayGC = XCreateGC(dpy, DefaultRootWindow(dpy),
@@ -376,40 +368,15 @@ XEvent *event;
 	 * redraw the menu and save it away.
 	 */
 	if (event->type == NoExpose) return;
-	if(menu->menuSaved) {
-		XCopyArea(XtDisplay(xw), menu->menuSaved, menu->menuWindow, 
-		 MenuGC, 0, 0,
-		 menu->menuWidth, menu->menuHeight, 0, 0);
-		/*
-		 * If the menuItemChanged flag is still set,
-		 * then we need to redraw certain menu items.
-		 * ("i" is the vertical position of the top
-		 * of the current item.)
-		 */
-		if(changed & menuItemChanged) {
-			i = menu->menuItemTop;
-			for(item = menu->menuItems ; item ;
-			 item = item->nextItem) {
-				if(item->itemFlags & itemChanged)
-					Modify_Item(menu, item, i);
-				i += item->itemHeight;
-			}
-		}
-	} else
-		Draw_Menu(menu);
+	Draw_Menu(menu);
+
 	/*
 	 * If the menu has changed in any way and we want to
 	 * save the menu, throw away any existing save menu
 	 * image and make a new one.
 	 */
 	XFlush(XtDisplay(xw));
-	if(changed && (menu->menuFlags & menuSaveMenu)) {
-		if(menu->menuSaved)
-			XFreePixmap(XtDisplay(xw), menu->menuSaved);
-/*		menu->menuSaved = XPixmapSave(XtDisplay(xw), 
-		 menu->menuWindow, 0, 0, menu->menuWidth, menu->menuHeight);
-*/
-	}
+
 	/*
 	 * See which item the cursor may currently be in.  If
 	 * it is in a non-disabled item, hilite it.
@@ -522,9 +489,10 @@ XButtonEvent *event;
 	Unmap_Menu(menu);
 	drawn = 0;
 	if(hilited_item)
-		FinishModeMenu(menu->menuInitialItem = hilited_n);
+		FinishModeMenu(menu->menuInitialItem = hilited_n,
+			       event->time);
 	else
-		FinishModeMenu(-1);
+		FinishModeMenu(-1, event->time);
 }
 
 /*
@@ -555,9 +523,6 @@ register XButtonPressedEvent *event;
 	 * then call RecalcMenu().
 	 */
 	if(changed & menuChanged) {
-		if(menu->menuSaved)
-			XFreePixmap(XtDisplay(xw), menu->menuSaved);
-		menu->menuSaved = (Pixmap)0;
 		if(!Recalc_Menu(menu))
 			return(-1);
 		changed &= ~menuItemChanged;
@@ -571,12 +536,15 @@ register XButtonPressedEvent *event;
 		XtResizeWidget (menu->menuWidget, menu->menuWidth, menu->menuHeight, menu->menuBorderWidth);
 		XtRealizeWidget (menu->menuWidget);
 		menu->menuWindow = XtWindow (menu->menuWidget);
-	        attr.override_redirect = TRUE;
+	        attr.override_redirect = True;
 		attr.border_pixmap = XtGrayPixmap(XtScreen(xw));
 		attr.background_pixel = menu->menuBgColor;
 		attr.cursor = menu->menuCursor;
+		attr.save_under = True;
 		XChangeWindowAttributes (XtDisplay(xw), menu->menuWindow, 
-                   CWBorderPixmap+CWBackPixel+CWOverrideRedirect+CWCursor, &attr);
+					 (CWBorderPixmap | CWBackPixel | 
+					  CWOverrideRedirect | CWCursor |
+					  CWSaveUnder), &attr);
 
 		XtAddEventHandler(menu->menuWidget, ExposureMask, FALSE,
                    MenuExposeWindow, NULL);
@@ -605,6 +573,7 @@ register XButtonPressedEvent *event;
 	 | ButtonReleaseMask | ButtonPressMask,
 	 GrabModeAsync, GrabModeAsync, None, menu->menuCursor, CurrentTime
 	 );
+	return 0;
 }
 
 /*
@@ -717,14 +686,6 @@ XButtonPressedEvent *ev;
 		y -= n;
 	}
 	XtMoveWidget(menu->menuWidget, x, y);
-	/*
-	 * If we are in freeze mode, save what will be the coordinates of
-	 * the save image.
-	 */
-	if(menu->menuFlags & menuFreeze) {
-		menu->menuSavedImageX = x;
-		menu->menuSavedImageY = y;
-	}
 	return(1);
 }
 
@@ -734,23 +695,8 @@ XButtonPressedEvent *ev;
 static Map_Menu(menu)
 register Menu *menu;
 {
-	register int i;
 	register XtermWidget xw = term;
 
-	/*
-	 * If we are in freeze mode, save the pixmap underneath where the menu
-	 * will be (including the border).
-	 */
-	if(menu->menuFlags & menuFreeze) {
-		XGrabServer(XtDisplay(xw));
-		i = 2 * menu->menuBorderWidth;
-/*		if((menu->menuSavedImage = XPixmapSave(XtDisplay(xw),
-		 DefaultRootWindow(XtDisplay(xw)),
-		 menu->menuSavedImageX, menu->menuSavedImageY, menu->menuWidth
-		 + i, menu->menuHeight + i)) == (Pixmap)0)
-*/
-			return(0);
-	}
 	/*
 	 * Actually map the window.
 	 */
@@ -992,18 +938,52 @@ register Menu *menu;
 
 	if(!menu || !(menu->menuFlags & menuMapped))
 		return;
-	if(menu->menuFlags & menuFreeze) {
-	        XtPopdown (menu->menuWidget);
-		i = 2 * menu->menuBorderWidth;
-		XCopyArea(XtDisplay(xw), 
-		 menu->menuSavedImage, DefaultRootWindow(XtDisplay(xw)), 
-		 MenuGC, 0, 0, menu->menuWidth + i,
-		 menu->menuHeight + i, menu->menuSavedImageX, 
-		 menu->menuSavedImageY);
-		XFreePixmap(XtDisplay(xw), menu->menuSavedImage);
-		XUngrabServer(XtDisplay(xw));
-	} else
-		XtPopdown (menu->menuWidget);
+	XtPopdown (menu->menuWidget);
 	menu->menuFlags &= ~menuMapped;
 }
+
+MenuResetGCs (bgp, fgp)
+    Pixel *bgp, *fgp;
+{
+    register XtermWidget xw = term;
+    Display *dpy = XtDisplay (xw);
+    XGCValues xgc;
+
+    *bgp = xw->core.background_pixel;
+    *fgp = xw->screen.foreground;
+
+    if (MenuInvertGC) {
+	xgc.foreground = *fgp;
+	xgc.plane_mask = XOR(*fgp, *bgp);
+	XChangeGC (dpy, MenuInvertGC, (GCForeground | GCPlaneMask), &xgc);
+    }
+
+    if (MenuGC) {
+	xgc.foreground = *fgp;
+	xgc.background = *bgp;
+	XChangeGC (dpy, MenuGC, (GCForeground | GCBackground), &xgc);
+    }
+
+    if (MenuInverseGC) {
+	xgc.foreground = *bgp;
+	xgc.background = *fgp;
+	XChangeGC (dpy, MenuInverseGC, (GCForeground | GCBackground), &xgc);
+    }
+
+    if (MenuGrayGC) {
+	xgc.foreground = *fgp;
+	xgc.background = *bgp;
+	xgc.function = *fgp ? GXor : GXand;
+	XChangeGC (dpy, MenuGrayGC,
+		   (GCForeground | GCBackground | GCFunction), &xgc);
+    }
+
+    if (Check_Tile) {
+	Check_Tile = ((Check_Tile == Check_Normal_Tile) ? Check_Inverse_Tile :
+		      Check_Normal_Tile);
+    }
+
+    return;
+}
+
 #endif MODEMENU

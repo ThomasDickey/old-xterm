@@ -1,5 +1,5 @@
 /*
- *	@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @
+ *	$XConsortium: TekPrsTbl.c,v 1.2 88/09/06 17:07:28 jim Exp $
  */
 
 
@@ -29,12 +29,12 @@
  */
 
 #ifndef lint
-static char *rcsid_Tekparsetable_c = "@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @";
+static char *rcsid_Tekparsetable_c = "$XConsortium: TekPrsTbl.c,v 1.2 88/09/06 17:07:28 jim Exp $";
 #endif	/* lint */
 
 #include "Tekparse.h"
 #ifndef lint
-static char rcs_id[] = "@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @";
+static char rcs_id[] = "$XConsortium: TekPrsTbl.c,v 1.2 88/09/06 17:07:28 jim Exp $";
 #endif	/* lint */
 
 int Talptable[] = {

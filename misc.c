@@ -1,5 +1,5 @@
 /*
- *	@Header: misc.c,v 1.15 88/02/27 09:38:23 rws Exp @
+ *	$XConsortium: misc.c,v 1.29 89/01/04 12:25:17 jim Exp $
  */
 
 
@@ -45,6 +45,7 @@
 #include "wait.ic"
 #include "waitmask.ic"
 #include <X11/Shell.h>
+#include <X11/Xmu.h>
 
 extern char *malloc();
 extern char *mktemp();
@@ -53,7 +54,7 @@ extern void perror();
 extern void abort();
 
 #ifndef lint
-static char rcs_id[] = "@Header: misc.c,v 1.15 88/02/27 09:38:23 rws Exp @";
+static char rcs_id[] = "$XConsortium: misc.c,v 1.29 89/01/04 12:25:17 jim Exp $";
 #endif	/* lint */
 
 xevents()
@@ -68,7 +69,13 @@ xevents()
 		if (waitingForTrackInfo)
 			return;
 		XNextEvent (screen->display, &event);
-		XtDispatchEvent(&event);
+		if (!event.xany.send_event ||
+		    screen->allowSendEvents ||
+		    ((event.xany.type != KeyPress) &&
+		     (event.xany.type != KeyRelease) &&
+		     (event.xany.type != ButtonPress) &&
+		     (event.xany.type != ButtonRelease)))
+		    XtDispatchEvent(&event);
 	} while (QLength(screen->display) > 0);
 }
 
@@ -85,19 +92,16 @@ Cursor make_colored_cursor (cursorindex, fg, bg)
 	c = XCreateFontCursor (dpy, cursorindex);
 	if (c == (Cursor) 0) return (c);
 
-	foreback[0].pixel = fg;
-	foreback[1].pixel = bg;
-	XQueryColors (dpy, DefaultColormap (dpy, DefaultScreen (dpy)),
-		      foreback, 2);
-	XRecolorCursor (dpy, c, foreback, foreback+1);
+	recolor_cursor (c, fg, bg);
 	return (c);
 }
 
-/*ARGSUSED*/
-void HandleKeyPressed(w, eventdata, event)
-Widget w;
-XKeyPressedEvent *event;
-caddr_t eventdata;
+/* ARGSUSED */
+void HandleKeyPressed(w, event, params, nparams)
+    Widget w;
+    XEvent *event;
+    String *params;
+    Cardinal *nparams;
 {
     register TScreen *screen = &term->screen;
 
@@ -105,6 +109,41 @@ caddr_t eventdata;
     if (w == (screen->TekEmu ? (Widget)tekWidget : (Widget)term))
 #endif
 	Input (&term->keyboard, screen, event);
+}
+
+/* ARGSUSED */
+void HandleStringEvent(w, event, params, nparams)
+    Widget w;
+    XEvent *event;
+    String *params;
+    Cardinal *nparams;
+{
+    register TScreen *screen = &term->screen;
+
+#ifdef ACTIVEWINDOWINPUTONLY
+    if (w != (screen->TekEmu ? (Widget)tekWidget : (Widget)term)) return;
+#endif
+
+    if (*nparams != 1) return;
+
+    if ((*params)[0] == '0' && (*params)[1] == 'x' && (*params)[2] != '\0') {
+	char c, *p, hexval[2];
+	hexval[0] = hexval[1] = 0;
+	for (p = *params+2; (c = *p); p++) {
+	    hexval[0] *= 16;
+	    if (isupper(c)) c = tolower(c);
+	    if (c >= '0' && c <= '9')
+		hexval[0] += c - '0';
+	    else if (c >= 'a' && c <= 'f')
+		hexval[0] += c - 'a' + 10;
+	    else break;
+	}
+	if (c == '\0')
+	    StringInput (screen, hexval);
+    }
+    else {
+	StringInput (screen, *params);
+    }
 }
 
 /*ARGSUSED*/
@@ -152,9 +191,19 @@ caddr_t eventdata;
         register TScreen *screen = &term->screen;
 
         if(event->type == FocusIn)
-                selectwindow(screen, FOCUS);
-        else
-                unselectwindow(screen, FOCUS);
+                selectwindow(screen,
+			     (event->detail == NotifyPointer) ? INWINDOW :
+								FOCUS);
+        else {
+                unselectwindow(screen,
+			       (event->detail == NotifyPointer) ? INWINDOW :
+								  FOCUS);
+		if (screen->grabbedKbd && (event->mode == NotifyUngrab)) {
+		    screen->grabbedKbd = FALSE;
+		    ReverseVideo(term);
+		    XBell(screen->display, 100);
+		}
+	}
 }
 
 
@@ -199,6 +248,8 @@ register TScreen *screen;
 register int flag;
 {
     register int i;
+
+    if (screen->always_highlight) return;
 
     if(screen->TekEmu) {
 	if(!Ttoggled) TCursorToggle(TOGGLE);
@@ -309,13 +360,6 @@ Pixel fg, bg;
 	return (make_colored_cursor (XC_tcross, fg, bg));
 }
 
-/* ARGSUSED */
-Cursor make_xterm(fg, bg)
-unsigned long fg, bg;
-{
-	return (make_colored_cursor (XC_xterm, fg, bg));
-}
-
 static XColor background = { 0L, 65535, 65535, 65535 };
 static XColor foreground = { 0L,    0,     0,     0 };
 
@@ -346,6 +390,14 @@ unsigned long fg, bg;
 
 {
 	return (make_colored_cursor (XC_left_ptr, fg, bg));
+}
+
+/* ARGSUSED */
+Cursor make_xterm(fg, bg)
+unsigned long fg, bg;
+
+{
+	return (make_colored_cursor (XC_xterm, fg, bg));
 }
 
 char *uniquesuffix(name)
@@ -521,6 +573,12 @@ register TScreen *screen;
 	static char *log_default;
 	char *malloc(), *rindex();
 	extern logpipe();
+#ifdef SYSV
+	/* SYSV has another pointer which should be part of the
+	** FILE structure but is actually a separate array.
+	*/
+	unsigned char *old_bufend;
+#endif	/* SYSV */
 
 	if(screen->logging || (screen->inhibit & I_LOG))
 		return;
@@ -545,8 +603,14 @@ register TScreen *screen;
 			close(p[0]);
 			dup2(fileno(stderr), 1);
 			dup2(fileno(stderr), 2);
+#ifdef SYSV
+			old_bufend = _bufend(stderr);
+#endif	/* SYSV */
 			close(fileno(stderr));
 			fileno(stderr) = 2;
+#ifdef SYSV
+			_bufend(stderr) = old_bufend;
+#endif	/* SYSV */
 			close(screen->display->fd);
 			close(screen->respond);
 			if(!shell) {
@@ -622,6 +686,9 @@ logpipe()
 {
 	register TScreen *screen = &term->screen;
 
+#ifdef SYSV
+	(void) signal(SIGPIPE, SIG_IGN);
+#endif	/* SYSV */
 	if(screen->logging)
 		CloseLog(screen);
 }
@@ -709,24 +776,25 @@ int a;
 #endif	/* DEBUG */
 }
 
+char *SysErrorMsg (n)
+    int n;
+{
+    extern char *sys_errlist[];
+    extern int sys_nerr;
+
+    return ((n >= 0 && n < sys_nerr) ? sys_errlist[n] : "unknown error");
+}
+
+
 SysError (i)
 int i;
 {
 	int oerrno;
-#ifdef SYSV
-	extern char *sys_errlist[];
-#endif	/* SYSV */
 
 	oerrno = errno;
-#ifdef SYSV
-	/* SYSV perror write(2)s to file descriptor 2 */
+	/* perror(3) write(2)s to file descriptor 2 */
 	fprintf (stderr, "%s: Error %d, errno %d: ", xterm_name, i, oerrno);
-	fprintf (stderr, "%s\n", sys_errlist[oerrno]);
-#else	/* !SYSV */
-	fprintf (stderr, "%s: Error %d, errno %d:\n", xterm_name, i, oerrno);
-	errno = oerrno;
-	perror ("");
-#endif	/* !SYSV */
+	fprintf (stderr, "%s\n", SysErrorMsg (oerrno));
 	Cleanup(i);
 }
 
@@ -737,20 +805,20 @@ int i;
 	Cleanup(i);
 }
 
+
 /*
  * cleanup by sending SIGHUP to client processes
  */
 Cleanup (code)
 int code;
 {
-#ifdef notdef
 	extern XtermWidget term;
 	register TScreen *screen;
 
 	screen = &term->screen;
-	if (screen->pid > 1)
-		killpg(getpgrp(screen->pid), SIGHUP);
-#endif
+	if (screen->pid > 1) {
+	    (void) killpg (screen->pid, SIGHUP);
+	}
 	Exit (code);
 }
 
@@ -798,9 +866,10 @@ register char	*s1, *s2;
 {
 	register char	*s3;
 	char		*index();
+	int s2len = strlen (s2);
 
 	while ((s3=index(s1, *s2)) != NULL) {
-		if (strncmp(s3, s2, strlen(s2)) == 0)
+		if (strncmp(s3, s2, s2len) == 0)
 			return (s3);
 		s1 = ++s3;
 	}
@@ -812,21 +881,28 @@ xerror(d, ev)
 Display *d;
 register XErrorEvent *ev;
 {
-        char buffer[BUFSIZ];
-	XGetErrorText(d, ev->error_code, buffer, BUFSIZ);
-	fprintf(stderr, "%s: %s\n", xterm_name, buffer);
-	fprintf(stderr, "Request code %d, minor code %d, serial #%ld, resource id %ld\n",
-	 ev->request_code, ev->minor_code, ev->serial, (long)ev->resourceid);
-    	_cleanup();
-    	abort();
-/*	Exit(ERROR_XERROR); */
+    fprintf (stderr, "%s:  warning, error event receieved:\n", xterm_name);
+    (void) XmuPrintDefaultErrorMessage (d, ev, stderr);
+    Exit (ERROR_XERROR);
 }
 
 /*ARGSUSED*/
 xioerror(d)
 Display *d;
 {
-	perror(xterm_name);
+	/* Perror(3) writes to fd 2.  What we want to do is
+	** to write to stderr's fd.  Since the original code used
+	** perror which uses write(2), let's not use fprintf(3).
+	*/
+	int oerrno = errno;
+	char *msg = SysErrorMsg (oerrno);
+	int stderrfd = fileno (stderr);
+	
+	write(stderrfd, xterm_name, strlen(xterm_name));
+	write(stderrfd, ": ", 2);
+	write(stderrfd, msg, strlen (msg));
+	write(stderrfd, "\n", 1);
+
 	Exit(ERROR_XIOERROR);
 }
 

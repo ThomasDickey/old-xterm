@@ -1,6 +1,6 @@
 /*		@(#)menu.h	1.2 Stellar 87/10/07	*/
 /*
- *	@Header: menu.h,v 1.1 88/02/10 13:08:10 jim Exp @
+ *	$XConsortium: menu.h,v 1.3 88/09/06 17:08:17 jim Exp $
  */
 
 
@@ -70,8 +70,6 @@ typedef struct _menu {
 # define	menuChanged	0x0001		/* menu changed, must redraw */
 # define	menuItemChanged	0x0002		/* item changed, must redraw */
 # define	menuMapped	0x0004		/* menu is now mapped */
-# define	menuFreeze	0x0008		/* freeze when doing menu */
-# define	menuSaveMenu	0x0010		/* save copy of menu */
 
 	int menuMaxTextWidth;		/* width of widest text */
 	int menuInitialItem;		/* < 0 none, >= 0 initial item */
@@ -83,10 +81,6 @@ typedef struct _menu {
 	Widget menuWidget;
 	Window menuWindow;		/* window of menu */
 	Cursor menuCursor;		/* cursor used in menu */
-	Pixmap menuSaved;		/* copy of menu */
-	Pixmap menuSavedImage;		/* copy of image under menu */
-	int menuSavedImageX;		/* X coordinate of the saved image */
-	int menuSavedImageY;		/* Y coordinate of the saved image */
 	MenuItem *menuItems;		/* head of menu item chain */
 	char *menuTitle;		/* title of menu */
 	int menuTitleWidth;		/* width of title */
