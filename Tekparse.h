@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/Tekparse.h,v @
- *	@Header: Tekparse.h,v 1.5 87/09/11 08:16:56 toddb Exp @
+ *	@Header: Tekparse.h,v 1.1 88/02/11 22:08:38 jim Exp @
  */
 
 #include <X11/copyright.h>

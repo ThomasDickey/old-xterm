@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/scrollbar.h,v @
- *	@Header: scrollbar.h,v 1.5 87/09/11 08:17:38 toddb Exp @
+ *	@Header: scrollbar.h,v 1.1 88/02/11 22:08:41 jim Exp @
  */
 
 

@@ -1,11 +1,10 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/resize.c,v @
- *	@Header: resize.c,v 1.5 87/09/11 08:17:41 toddb Exp @
+ *	@Header: resize.c,v 1.1 88/02/12 08:42:27 jim Exp @
  */
 
 #ifndef lint
-static char *rcsid_resize_c = "@Header: resize.c,v 1.5 87/09/11 08:17:41 toddb Exp @";
-#endif	lint
+static char *rcsid_resize_c = "@Header: resize.c,v 1.1 88/02/12 08:42:27 jim Exp @";
+#endif	/* lint */
 
 #include <X11/copyright.h>
 
@@ -35,16 +34,29 @@ static char *rcsid_resize_c = "@Header: resize.c,v 1.5 87/09/11 08:17:41 toddb E
 
 /* resize.c */
 
+#include <X11/Xos.h>
 #include <stdio.h>
-#include <sgtty.h>
-#include <strings.h>
 #include <ctype.h>
 #include <sys/ioctl.h>
+#ifdef SYSV
+#include <sys/termio.h>
+#else	/* !SYSV */
+#include <sgtty.h>
+#endif	/* !SYSV */
 #include <signal.h>
-#include <sys/time.h>
+#include <pwd.h>
+#ifdef SYSV
+extern struct passwd *getpwent();
+extern struct passwd *getpwuid();
+extern struct passwd *getpwnam();
+extern void setpwent();
+extern void endpwent();
+extern struct passwd *fgetpwent();
+#define	bzero(s, n)	memset(s, 0, n)
+#endif	/* SYSV */
 
 #ifndef lint
-static char rcs_id[] = "@Header: resize.c,v 1.5 87/09/11 08:17:41 toddb Exp @";
+static char rcs_id[] = "@Header: resize.c,v 1.1 88/02/12 08:42:27 jim Exp @";
 #endif
 
 #define	EMULATIONS	2
@@ -52,12 +64,29 @@ static char rcs_id[] = "@Header: resize.c,v 1.5 87/09/11 08:17:41 toddb Exp @";
 #define	TIMEOUT		10
 #define	VT100		0
 
+#define	SHELL_UNKNOWN	0
+#define	SHELL_C		1
+#define	SHELL_BOURNE	2
+struct {
+	char *name;
+	int type;
+} shell_list[] = {
+	"csh",		SHELL_C,	/* vanilla cshell */
+	"tcsh",		SHELL_C,
+	"sh",		SHELL_BOURNE,	/* vanilla Bourne shell */
+	"ksh",		SHELL_BOURNE,	/* Korn shell (from AT&T toolchest) */
+	"ksh-i",	SHELL_BOURNE,	/* other name for latest Korn shell */
+	(char *) 0,	SHELL_BOURNE,	/* last effort default (same as
+					 * xterm's)
+					 */
+};
+
 char *emuname[EMULATIONS] = {
 	"VT100",
 	"Sun",
 };
 char *myname;
-int stdsh;
+int shell_type = SHELL_UNKNOWN;
 char *getsize[EMULATIONS] = {
 	"\0337\033[r\033[999;999H\033[6n",
 	"\033[18t",
@@ -68,8 +97,8 @@ char *getwsize[EMULATIONS] = {
 	0,
 	"\033[14t",
 };
-#endif TIOCSWINSZ
-#endif sun
+#endif	/* TIOCSWINSZ */
+#endif	/* sun */
 char *restore[EMULATIONS] = {
 	"\0338",
 	0,
@@ -79,7 +108,11 @@ char *setsize[EMULATIONS] = {
 	0,
 	"\033[8;%s;%st",
 };
+#ifdef SYSV
+struct termio tioorig;
+#else	/* !SYSV */
 struct sgttyb sgorig;
+#endif	/* !SYSV */
 char *size[EMULATIONS] = {
 	"\033[%d;%dR",
 	"\033[8;%d;%dt",
@@ -93,8 +126,8 @@ char *wsize[EMULATIONS] = {
 	0,
 	"\033[4;%hd;%hdt",
 };
-#endif TIOCSWINSZ
-#endif sun
+#endif	/* TIOCSWINSZ */
+#endif	/* sun */
 
 char *strindex (), *index (), *rindex();
 
@@ -106,20 +139,27 @@ char **argv;
 {
 	register char *ptr, *env;
 	register int emu = VT100;
+	char *shell;
+	struct passwd *pw;
+	int i;
 	int rows, cols;
+#ifdef SYSV
+	struct termio tio;
+#else	/* !SYSV */
 	struct sgttyb sg;
 	char termcap [1024];
 	char newtc [1024];
+#endif	/* !SYSV */
 	char buf[BUFSIZ];
 #ifdef sun
 #ifdef TIOCSSIZE
 	struct ttysize ts;
-#endif TIOCSSIZE
-#else sun
+#endif	/* TIOCSSIZE */
+#else	/* sun */
 #ifdef TIOCSWINSZ
 	struct winsize ws;
-#endif TIOCSWINSZ
-#endif sun
+#endif	/* TIOCSWINSZ */
+#endif	/* sun */
 	char *getenv();
 	int onintr();
 
@@ -135,12 +175,38 @@ char **argv;
 			emu = SUN;
 			break;
 		 case 'u':	/* Bourne (Unix) shell */
-		  	stdsh++;
+			shell_type = SHELL_BOURNE;
+			break;
+		 case 'c':	/* C shell */
+			shell_type = SHELL_C;
 			break;
 		 default:
 			Usage();	/* Never returns */
 		}
 	}
+
+	if (SHELL_UNKNOWN == shell_type) {
+		/* Find out what kind of shell this user is running.
+		 * This is the same algorithm that xterm uses.
+		 */
+		if (((ptr = getenv("SHELL")) == NULL || *ptr == 0) &&
+		 (((pw = getpwuid(getuid())) == NULL) ||
+		 *(ptr = pw->pw_shell) == 0))
+			/* this is the same default that xterm uses */
+			ptr = "/bin/sh";
+
+		if (shell = rindex(ptr, '/'))
+			shell++;
+		else
+			shell = ptr;
+
+		/* now that we know, what kind is it? */
+		for (i = 0; shell_list[i].name; i++)
+			if (!strcmp(shell_list[i].name, shell))
+				break;
+		shell_type = shell_list[i].type;
+	}
+
 	if(argc == 2) {
 		if(!setsize[emu]) {
 			fprintf(stderr,
@@ -157,13 +223,21 @@ char **argv;
 		exit(1);
 	}
 	tty = fileno(ttyfp);
+#ifdef SYSV
+	if(!(env = getenv("TERM")) || !*env) {
+		env = "xterm";
+		if(SHELL_BOURNE == shell_type)
+			setname = "TERM=xterm;\nexport TERM;\n";
+		else	setname = "setenv TERM xterm;\n";
+	}
+#else	/* !SYSV */
 	if((env = getenv("TERMCAP")) && *env)
 		strcpy(termcap, env);
 	else {
 		if(!(env = getenv("TERM")) || !*env) {
 			env = "xterm";
-			if(stdsh)
-				setname = "TERM=xterm;\n";
+			if(SHELL_BOURNE == shell_type)
+				setname = "TERM=xterm;\nexport TERM;\n";
 			else	setname = "setenv TERM xterm;\n";
 		}
 		if(tgetent (termcap, env) <= 0) {
@@ -172,15 +246,30 @@ char **argv;
 			exit(1);
 		}
 	}
+#endif	/* !SYSV */
 
+#ifdef SYSV
+	ioctl (tty, TCGETA, &tioorig);
+	tio = tioorig;
+	tio.c_iflag &= ~(ICRNL | IUCLC);
+	tio.c_lflag &= ~(ICANON | ECHO);
+	tio.c_cflag |= CS8;
+	tio.c_cc[VMIN] = 6;
+	tio.c_cc[VTIME] = 1;
+#else	/* !SYSV */
  	ioctl (tty, TIOCGETP, &sgorig);
 	sg = sgorig;
 	sg.sg_flags |= RAW;
 	sg.sg_flags &= ~ECHO;
+#endif	/* !SYSV */
 	signal(SIGINT, onintr);
 	signal(SIGQUIT, onintr);
 	signal(SIGTERM, onintr);
+#ifdef SYSV
+	ioctl (tty, TCSETAW, &tio);
+#else	/* !SYSV */
 	ioctl (tty, TIOCSETP, &sg);
+#endif	/* !SYSV */
 
 	if (argc == 2) {
 		sprintf (buf, setsize[emu], argv[0], argv[1]);
@@ -202,8 +291,8 @@ char **argv;
 		ts.ts_cols = cols;
 		ioctl (tty, TIOCSSIZE, &ts);
 	}
-#endif TIOCGSIZE
-#else sun
+#endif	/* TIOCGSIZE */
+#else	/* sun */
 #ifdef TIOCGWINSZ
 	/* finally, set the tty's window size */
 	if(getwsize[emu]) {
@@ -230,14 +319,19 @@ char **argv;
 	    ws.ws_col = cols;
 	    ioctl (tty, TIOCSWINSZ, &ws);
 	}
-#endif TIOCGWINSZ
-#endif sun
+#endif	/* TIOCGWINSZ */
+#endif	/* sun */
 
+#ifdef SYSV
+	ioctl (tty, TCSETAW, &tioorig);
+#else	/* !SYSV */
 	ioctl (tty, TIOCSETP, &sgorig);
+#endif	/* !SYSV */
 	signal(SIGINT, SIG_DFL);
 	signal(SIGQUIT, SIG_DFL);
 	signal(SIGTERM, SIG_DFL);
 
+#ifndef SYSV
 	/* update termcap string */
 	/* first do columns */
 	if ((ptr = strindex (termcap, "co#")) == NULL) {
@@ -258,12 +352,24 @@ char **argv;
 	sprintf (termcap + ((int) ptr - (int) newtc + 3), "%d", rows);
 	ptr = index (ptr, ':');
 	strcat (termcap, ptr);
+#endif	/* !SYSV */
 
-	if(stdsh)
+	if(SHELL_BOURNE == shell_type)
+#ifdef SYSV
+		printf ("%sCOLUMNS=%d;\nLINES=%d;\nexport COLUMNS LINES;\n",
+		 setname, cols, rows);
+#else	/* !SYSV */
 		printf ("%sTERMCAP='%s'\n",
 		 setname, termcap);
-	else	printf ("set noglob;\n%ssetenv TERMCAP '%s';\nunset noglob;\n",
+#endif	/* !SYSV */
+	else
+#ifdef SYSV
+		printf ("set noglob;\n%ssetenv COLUMNS '%d';\nsetenv LINES '%d';\nunset noglob;\n",
+		 setname, cols, rows);
+#else	/* !SYSV */
+		printf ("set noglob;\n%ssetenv TERMCAP '%s';\nunset noglob;\n",
 		 setname, termcap);
+#endif	/* !SYSV */
 	exit(0);
 }
 
@@ -323,7 +429,7 @@ Usage()
 {
 	fprintf(stderr, strcmp(myname, sunname) == 0 ?
 	 "Usage: %s [rows cols]\n" :
-	 "Usage: %s [-u] [-s [rows cols]]\n", myname);
+	 "Usage: %s [-u] [-c] [-s [rows cols]]\n", myname);
 	exit(1);
 }
 
@@ -335,6 +441,10 @@ timeout()
 
 onintr()
 {
+#ifdef SYSV
+	ioctl (tty, TCSETAW, &tioorig);
+#else	/* !SYSV */
 	ioctl (tty, TIOCSETP, &sgorig);
+#endif	/* !SYSV */
 	exit(1);
 }

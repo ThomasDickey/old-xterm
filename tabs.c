@@ -1,11 +1,10 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/tabs.c,v @
- *	@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @
+ *	@Header: tabs.c,v 1.1 88/02/10 13:08:17 jim Exp @
  */
 
 #ifndef lint
-static char *rcsid_tabs_c = "@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @";
-#endif	lint
+static char *rcsid_tabs_c = "@Header: tabs.c,v 1.1 88/02/10 13:08:17 jim Exp @";
+#endif	/* lint */
 
 #include <X11/copyright.h>
 
@@ -35,8 +34,8 @@ static char *rcsid_tabs_c = "@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @
 /* tabs.c */
 
 #ifndef lint
-static char rcs_id[] = "@Header: tabs.c,v 1.5 87/09/11 08:17:35 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: tabs.c,v 1.1 88/02/10 13:08:17 jim Exp @";
+#endif	/* lint */
 
 #include <X11/Xlib.h>
 #include "ptyx.h"
@@ -87,10 +86,10 @@ Tabs	tabs;
 TabNext (tabs, col)
 Tabs	tabs;
 {
-	extern Terminal term;
-	register TScreen *screen = &term.screen;
+	extern XtermWidget term;
+	register TScreen *screen = &term->screen;
 
-	if(screen->curses && screen->do_wrap && (term.flags & WRAPAROUND)) {
+	if(screen->curses && screen->do_wrap && (term->flags & WRAPAROUND)) {
 		Index(screen, 1);
 		col = screen->cur_col = screen->do_wrap = 0;
 	}

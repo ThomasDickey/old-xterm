@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/error.h,v @
- *	@Header: error.h,v 1.6 87/09/11 08:17:21 toddb Exp @
+ *	@Header: error.h,v 1.2 88/02/20 15:32:08 swick Exp @
  */
 
 
@@ -71,7 +70,6 @@
 #define	ERROR_TSELECT	60	/* Tinput: select() failed */
 #define	ERROR_TINIT	64	/* TekInit: can't initialize window */
 #define	ERROR_TBACK	65	/* TekBackground: can't make background */
-#define	ERROR_TWINNAME	66	/* TekInit: malloc failed */
 /* button.c */
 #define	ERROR_BMALLOC2	71	/* SaltTextAway: malloc() failed */
 #define ERROR_BADMENU   72      /* ModeMenu: don't know what menu to use */

@@ -1,6 +1,5 @@
 /*
- *	@Source: /orpheus/u1/X11/clients/xterm/RCS/data.c,v @
- *	@Header: data.c,v 1.9 87/08/16 16:31:23 swick Exp @
+ *	@Header: data.c,v 1.2 88/02/16 14:59:48 jim Exp @
  */
 
 #include <X11/copyright.h>
@@ -32,10 +31,11 @@
 #include <X11/Xlib.h>
 #include <X11/Intrinsic.h>
 #include "ptyx.h"
+#include "data.h"
 
 #ifndef lint
-static char rcs_id[] = "@Header: data.c,v 1.9 87/08/16 16:31:23 swick Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: data.c,v 1.2 88/02/16 14:59:48 jim Exp @";
+#endif	/* lint */
 
 XPoint T_boxlarge[NBOX] = {
 	{0, 0},
@@ -84,13 +84,6 @@ XPoint VTbox[NBOX] = {
 	{0, 0},
 	{0, 0},
 };
-XPoint icon_box[NBOX] = {
-	{0, 0},
-	{0, 0},
-	{0, 0},
-	{0, 0},
-	{0, 0},
-};
 T_fontsize Tfontsize[TEKNUMFONTS] = {
 	{9, 15},	/* large */
 	{8, 13},	/* #2 */
@@ -101,39 +94,28 @@ T_fontsize Tfontsize[TEKNUMFONTS] = {
 
 #ifdef DEBUG
 int debug = 0; 		/* true causes error messages to be displayed */
-#endif DEBUG
-Terminal term;		/* master data structure for client */
+#endif	/* DEBUG */
+XtermWidget term;		/* master data structure for client */
 char *xterm_name;	/* argv[0] */
 int am_slave = 0;	/* set to 1 if running as a slave process */
-char *icon_geom;
-Boolean iconstartup;
 int L_flag;
 int max_plus1;
 int pty_mask;
-int re_verse;
-int save_lines = SAVELINES;
 int Select_mask;
-char *window_name;
-char *title_name;
 int X_mask;
-char *curs_shape;
-char *f_b;
-char *f_n;
-char *f_t;
-char *geo_metry;
-char *T_geometry = 0;
-char *ptydev = "/dev/ptyxx";
-char *ttydev = "/dev/ttyxx";
+char *ptydev = PTYDEV;
+char *ttydev = TTYDEV;
 char log_def_name[] = "XtermLog.XXXXX";
 int T_lastx = -1;
 int T_lasty = -1;
 
 int waitingForTrackInfo = 0;
 EventMode eventMode = NORMAL;
-Window menuWindow;
 
 GC visualBellGC;
 
 int VTgcFontMask = GCFont;
 int TEKgcFontMask = GCFont;
 int MenugcFontMask = GCFont;
+
+TekWidget tekWidget;

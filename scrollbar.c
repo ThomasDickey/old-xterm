@@ -1,6 +1,5 @@
 /*
- *	@Source: /orpheus/u1/X11/clients/xterm/RCS/scrollbar.c,v @
- *	@Header: scrollbar.c,v 1.20 87/08/17 19:38:44 swick Exp @
+ *	@Header: scrollbar.c,v 1.3 88/02/20 15:31:26 swick Exp @
  */
 
 #include <X11/copyright.h>
@@ -31,34 +30,31 @@
 #include <stdio.h>
 #include <setjmp.h>
 #include <X11/Xlib.h>
-#include <X11/Xtlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#include <X11/Atoms.h>
 #include "ptyx.h"
 #include "data.h"
+#include <X11/Scroll.h> /* should come from Xaw/Scroll.h at some point */
 #include "error.h"
 
 extern void bcopy();
 
 #ifndef lint
-static char rcs_id[] = "@Header: scrollbar.c,v 1.20 87/08/17 19:38:44 swick Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: scrollbar.c,v 1.3 88/02/20 15:31:26 swick Exp @";
+#endif	/* lint */
 
 /* Event handlers */
-extern EventDoNothing();
 
-extern ScrollTextTo();
-extern ScrollTextUpDownBy();
+static void ScrollTextTo();
+static void ScrollTextUpDownBy();
 
 static Bool IsEventType( display, event, type )
 	Display *display;
 	XEvent *event;
 	int type;
 {
-	if (event->type == type)
-	    return( True );
-	else
-	    return( False );
+	return (event->type == type);
 }
 
 
@@ -66,17 +62,19 @@ static Bool IsEventType( display, event, type )
  * appropriate WM_SIZE_HINTS and taking advantage of bit gravity.
  */
 
-static void ResizeScreen( screen, min_width, min_height )
-	register TScreen *screen;
+static void ResizeScreen(xw, min_width, min_height )
+	register XtermWidget xw;
 	int min_width, min_height;
 {
+	register TScreen *screen = &xw->screen;
 	XSizeHints sizehints;
 	XSetWindowAttributes newAttributes;
 	XWindowAttributes oldAttributes;
 	XEvent event;
+        Dimension junk;  /* for values returned by XtMakeResizeRequest */
 
 	XGrabServer(screen->display);
-	if (!XGetSizeHints(screen->display, VWindow(screen),
+	if (!XGetSizeHints(screen->display, XtWindow(xw->core.parent),
 		&sizehints, XA_WM_NORMAL_HINTS))
 	    sizehints.flags = 0;
 	sizehints.min_width = min_width;
@@ -89,7 +87,7 @@ static void ResizeScreen( screen, min_width, min_height )
 				+ min_height;
 	sizehints.flags |= PMinSize|PResizeInc|PSize;
 	XSetSizeHints(screen->display,
-	 TextWindow(screen), &sizehints, XA_WM_NORMAL_HINTS);
+	 XtWindow(xw->core.parent), &sizehints, XA_WM_NORMAL_HINTS);
 	XUngrabServer(screen->display);
 
 	XGetWindowAttributes( screen->display, TextWindow(screen),
@@ -97,18 +95,18 @@ static void ResizeScreen( screen, min_width, min_height )
 
 	newAttributes.event_mask =
 	    oldAttributes.your_event_mask | StructureNotifyMask;
-	/* assume that the scrollbar always goes on the left! */
 	newAttributes.bit_gravity = EastGravity;
 
+        /* The following statement assumes scrollbar is on Left! 
+           If we ever have scrollbars on the right, then the
+           bit-gravity should be left alone, NOT changed to EastGravity. */
 	XChangeWindowAttributes( screen->display, TextWindow(screen),
-				 CWEventMask|CWBitGravity,
-				 &newAttributes );
-	XResizeWindow(
-	    screen->display,
-	    TextWindow(screen),
+	     CWEventMask|CWBitGravity, &newAttributes );
+
+	(void) XtMakeResizeRequest((Widget)xw,
 	    (unsigned) (screen->max_col + 1) * FontWidth(screen) + min_width,
-	    (unsigned) FontHeight(screen) * (screen->max_row + 1)
-		      + min_height );
+	    (unsigned) FontHeight(screen) * (screen->max_row + 1) + min_height,
+            &junk, &junk);
 
 	/* wait for a window manager to actually do it */
 	XIfEvent( screen->display, &event, IsEventType, ConfigureNotify );
@@ -121,113 +119,81 @@ static void ResizeScreen( screen, min_width, min_height )
 }
 
 
-Window CreateScrollBar(w, x, y, height)
-	Window w;
+static Widget CreateScrollBar(xw, x, y, height)
+	XtermWidget xw;
 	int x, y, height;
 {
-	Window scrollWindow;
-	TScreen *screen = &term.screen;
+	Widget scrollWidget;
+	TScreen *screen = &xw->screen;
 	XSetWindowAttributes attr;
 	extern char *calloc();
 
 	static Arg argList[] = {
-	   {XtNbackground,	(caddr_t) 0},
-	   {XtNborder,		(caddr_t) 0},
-	   {XtNx,		(caddr_t) 0},
-	   {XtNy,		(caddr_t) 0},
-	   {XtNheight,		(caddr_t) 0},
-	   {XtNorientation,	(caddr_t) XtorientVertical},
-	   {XtNscrollUpDownProc,(caddr_t) ScrollTextUpDownBy},
-	   {XtNthumbProc,	(caddr_t) ScrollTextTo},
-	   {XtNborderWidth,	(caddr_t) 1},
-	   {XtNwidth,		(caddr_t) SCROLLBARWIDTH-1},
+	   {XtNx,		(XtArgVal) 0},
+	   {XtNy,		(XtArgVal) 0},
+	   {XtNheight,		(XtArgVal) 0},
+	   {XtNreverseVideo,	(XtArgVal) 0},
+	   {XtNorientation,	(XtArgVal) XtorientVertical},
+	   {XtNborderWidth,	(XtArgVal) 1},
+	   {XtNwidth,		(XtArgVal) SCROLLBARWIDTH-1},
 	};   
 
-	argList[0].value = (caddr_t) screen->background;
-	argList[1].value = (caddr_t) screen->bordercolor;
-	argList[2].value = (caddr_t) x;
-	argList[3].value = (caddr_t) y;
-	argList[4].value = (caddr_t) height;
+	argList[0].value = (XtArgVal) x;
+	argList[1].value = (XtArgVal) y;
+	argList[2].value = (XtArgVal) height;
+	argList[3].value = (XtArgVal) xw->misc.re_verse;
 
-	scrollWindow = XtScrollBarCreate(screen->display, w, 
-	  argList, XtNumber(argList));
+
+	scrollWidget = XtCreateWidget("scrollbar", scrollbarWidgetClass, 
+	  xw, argList, XtNumber(argList));
+        XtAddCallback (scrollWidget, XtNscrollProc, ScrollTextUpDownBy, 0);
+        XtAddCallback (scrollWidget, XtNthumbProc, ScrollTextTo, 0);
+	XtRealizeWidget(scrollWidget);
 
 	attr.do_not_propagate_mask = 
 	  LeaveWindowMask | EnterWindowMask | StructureNotifyMask;
-	XChangeWindowAttributes(screen->display, scrollWindow, 
+	XChangeWindowAttributes(screen->display, XtWindow(scrollWidget), 
 	  CWDontPropagate, &attr);
 
-	return(scrollWindow);
+	return(scrollWidget);
 }
 
 
-RedrawScrollBar(scrollWindow)
-	Window scrollWindow;
+ScrollBarReverseVideo(scrollWidget)
+	register Widget scrollWidget;
 {
+	Arg argList[1];
 
-	TScreen *screen = &term.screen;
-	XtSendExpose(screen->display, scrollWindow);
-}
-
-ScrollBarReverseVideo(scrollWindow)
-	register Window scrollWindow;
-{
-	register TScreen *screen = &term.screen;
-	register caddr_t temp;
-
-	static Arg argList[] = {
-/* Don't muck with the order */
-	   {XtNforeground,	(caddr_t) NULL},	
-	   {XtNbackground,	(caddr_t) NULL},
-	   {XtNborder,		(caddr_t) NULL},
-	};   
-
-	XtScrollBarGetValues(
-		screen->display, scrollWindow, argList, XtNumber(argList));
-
-	/* Swap background and foreground */
-	temp   		 = argList[0].value;
-	argList[0].value = argList[1].value;
-	argList[1].value = temp;
-
-	/* Should really only do this if the old bordertile is the same as
-	   the scrollbar's current bordertile |||  LGR: ???*/
-	argList[2].value = (caddr_t) screen->bordercolor;
-
-	XtScrollBarGetValues(
-		screen->display, scrollWindow, argList, XtNumber(argList));
-
+	XtSetArg(argList[0], XtNreverseVideo, term->misc.re_verse);
+	XtSetValues(scrollWidget, argList, XtNumber(argList));
 }
 
 
-ScrollBarDrawThumb(scrollWindow)
-	register Window scrollWindow;
+
+ScrollBarDrawThumb(scrollWidget)
+	register Widget scrollWidget;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register int thumbTop, thumbHeight, totalHeight;
 	
 	thumbTop    = screen->topline + screen->savedlines;
 	thumbHeight = screen->max_row + 1;
 	totalHeight = thumbHeight + screen->savedlines;
 
-	XtScrollBarSetThumb(screen->display, scrollWindow,
+	XtScrollBarSetThumb(scrollWidget,
 	 ((float)thumbTop) / totalHeight,
 	 ((float)thumbHeight) / totalHeight);
 	
 }
 
-ResizeScrollBar(scrollWindow, x, y, height)
-	register Window scrollWindow;
+ResizeScrollBar(scrollWidget, x, y, height)
+	register Widget scrollWidget;
 	int x, y;
 	unsigned height;
 {
-	register TScreen *screen = &term.screen;
-
-	XMoveResizeWindow(
-	    screen->display, scrollWindow,
-	    x, y, 
-	    (SCROLLBARWIDTH - 1), height);
-	ScrollBarDrawThumb(scrollWindow);
+	XtConfigureWidget(scrollWidget, x, y, (SCROLLBARWIDTH - 1), height,
+	    scrollWidget->core.border_width);
+	ScrollBarDrawThumb(scrollWidget);
 }
 
 WindowScroll(screen, top)
@@ -236,13 +202,14 @@ WindowScroll(screen, top)
 {
 	register int i, lines;
 	register int scrolltop, scrollheight, refreshtop;
+	register int x = 0;
 
 	if (top < -screen->savedlines)
 		top = -screen->savedlines;
 	else if (top > 0)
 		top = 0;
 	if((i = screen->topline - top) == 0) {
-		ScrollBarDrawThumb(screen->scrollWindow);
+		ScrollBarDrawThumb(screen->scrollWidget);
 		return;
 	}
 
@@ -260,6 +227,7 @@ WindowScroll(screen, top)
 		scrolltop = lines;
 		refreshtop = scrollheight;
 	}
+	x = screen->scrollbar +	screen->border;
 	if(scrollheight > 0) {
 		if (screen->multiscroll && scrollheight == 1 &&
 		 screen->topline == 0 && screen->top_marg == 0 &&
@@ -276,11 +244,11 @@ WindowScroll(screen, top)
 		    screen->display, 
 		    TextWindow(screen), TextWindow(screen),
 		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar,
+		    (int) x,
 		    (int) scrolltop * FontHeight(screen) + screen->border, 
 		    (unsigned) Width(screen),
 		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar,
+		    (int) x,
 		    (int) (scrolltop + i) * FontHeight(screen)
 			+ screen->border);
 	}
@@ -288,14 +256,14 @@ WindowScroll(screen, top)
 	XClearArea(
 	    screen->display,
 	    TextWindow(screen), 
-	    (int) screen->border + screen->scrollbar, 
+	    (int) x,
 	    (int) refreshtop * FontHeight(screen) + screen->border, 
 	    (unsigned) Width(screen),
 	    (unsigned) lines * FontHeight(screen),
 	    FALSE);
 	ScrnRefresh(screen, refreshtop, 0, lines, screen->max_col + 1);
 
-	ScrollBarDrawThumb(screen->scrollWindow);
+	ScrollBarDrawThumb(screen->scrollWidget);
 }
 
 ScrollBarOn(screen, init)
@@ -308,29 +276,31 @@ ScrollBarOn(screen, init)
 
 	if(screen->scrollbar)
 		return;
-	if(!screen->scrollWindow) {
-		if((screen->scrollWindow = CreateScrollBar(TextWindow(screen),
+	if(!screen->scrollWidget) {
+		if((screen->scrollWidget = CreateScrollBar(term,
 		 -1, - 1, Height(screen) + border)) == NULL) {
 			Bell();
 			return;
 		}
-		if((screen->allbuf = (ScrnBuf) realloc((char *) screen->buf,
-		 (unsigned) 2*(screen->max_row + 2 + screen->savelines) * sizeof(char *)))
-		 == NULL)
-			Error (ERROR_SBRALLOC);
-		screen->buf = &screen->allbuf[2 * screen->savelines];
-		bcopy ((char *)screen->allbuf, (char *)screen->buf,
-		 2 * (screen->max_row + 2) * sizeof (char *));
-		for(i = 2 * screen->savelines - 1 ; i >= 0 ; i--)
+		if (screen->allbuf) {
+		    if((screen->allbuf = (ScrnBuf) realloc((char *) screen->buf,
+			(unsigned) 2*(screen->max_row + 2 + screen->savelines) * sizeof(char *)))
+		            == NULL)
+			       Error (ERROR_SBRALLOC);
+		    screen->buf = &screen->allbuf[2 * screen->savelines];
+		    bcopy ((char *)screen->allbuf, (char *)screen->buf,
+			   2 * (screen->max_row + 2) * sizeof (char *));
+		    for(i = 2 * screen->savelines - 1 ; i >= 0 ; i--)
 			if((screen->allbuf[i] =
 			 calloc((unsigned) screen->max_col + 1, sizeof(char))) == NULL)
 				Error (ERROR_SBRALLOC2);
+		    }
 	}
 	screen->scrollbar = SCROLLBARWIDTH;
-	ScrollBarDrawThumb(screen->scrollWindow);
-	if (!init) ResizeScreen( screen, border + SCROLLBARWIDTH, border );
+	ScrollBarDrawThumb(screen->scrollWidget);
+	if (!init) ResizeScreen(term, border + SCROLLBARWIDTH, border );
 	/* map afterwards so BitGravity can be used profitably */
-	XMapWindow(screen->display, screen->scrollWindow);
+	XMapWindow(screen->display, XtWindow(screen->scrollWidget));
 }
 
 ScrollBarOff(screen)
@@ -341,17 +311,17 @@ ScrollBarOff(screen)
 	if(!screen->scrollbar)
 		return;
 	screen->scrollbar = 0;
-	XUnmapWindow(screen->display, screen->scrollWindow);
-	ResizeScreen( screen, border, border );
+	XUnmapWindow(screen->display, XtWindow(screen->scrollWidget));
+	ResizeScreen( term, border, border );
 }
 
 /*ARGSUSED*/
-ScrollTextTo(dpy, scrollbarWindow, clientWindow, topPercent)
-	Display *dpy;
-	Window scrollbarWindow, clientWindow;
+static void ScrollTextTo(scrollbarWidget, closure, topPercent)
+	Widget scrollbarWidget;
+	Opaque closure;
 	float topPercent;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	int thumbTop;	/* relative to first saved line */
 	int newTopLine;
 
@@ -367,12 +337,12 @@ ScrollTextTo(dpy, scrollbarWindow, clientWindow, topPercent)
 }
 
 /*ARGSUSED*/
-ScrollTextUpDownBy(dpy, scrollbarWindow, clientWindow, pixels)
-	Display *dpy;
-	Window scrollbarWindow, clientWindow;
+static void ScrollTextUpDownBy(scrollbarWidget, closure, pixels)
+	Widget scrollbarWidget;
+	Opaque closure;
 	int pixels;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register int rowOnScreen, newTopLine;
 
 	rowOnScreen = pixels / FontHeight(screen);

@@ -1,6 +1,5 @@
 /*
- *	@Source: /orpheus/u1/X11/clients/xterm/RCS/button.c,v @
- *	@Header: button.c,v 1.19 87/09/10 17:20:59 swick Exp @
+ *	@Header: button.c,v 1.1 88/02/10 13:08:02 jim Exp @
  */
 
 
@@ -36,35 +35,37 @@ button.c	Handles button events in the terminal emulator.
 				J. Gettys.
 */
 #ifndef lint
-static char rcs_id[] = "@Header: button.c,v 1.19 87/09/10 17:20:59 swick Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: button.c,v 1.1 88/02/10 13:08:02 jim Exp @";
+#endif	/* lint */
+#include <X11/Xos.h>
+#include <X11/Xlib.h>
 #include <stdio.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <ctype.h>
-#include <strings.h>
-#include <X11/Xlib.h>
 #include <X11/Intrinsic.h>
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
 #ifdef MODEMENU
 #include "menu.h"
-#endif MODEMENU
+#endif	/* MODEMENU */
 
 extern char *malloc();
 
-#define KeyState(x) ((x) & (ShiftMask|ControlMask|Mod1Mask))
-#define X10Map(state) ((state&ShiftMask?4:0) + (state&ControlMask?16:0) \
-			+ (state&Mod1Mask?8:0))
-
+#define KeyState(x) (((x) & (ShiftMask|ControlMask)) + (((x) & Mod1Mask) ? 2 : 0))
+    /* adds together the bits:
+        shift key -> 1
+        meta key  -> 2
+        control key -> 4 */
+  
 #define TEXTMODES 4
 #define NBUTS 3
 #define DIRS 2
 #define UP 1
 #define DOWN 0
 #define SHIFTS 8		/* three keys, so eight combinations */
-#define	Coordinate(r,c)		((r) * (term.screen.max_col+1) + (c))
+#define	Coordinate(r,c)		((r) * (term->screen.max_col+1) + (c))
 
 char *SaveText();
 extern UnSaltText();
@@ -209,7 +210,7 @@ static int (*Tbfunc[SHIFTS][NBUTS])() = {
 
 };	/* button and shift keys */
 
-extern Terminal term;
+extern XtermWidget term;
 
 /* Selection/extension variables */
 
@@ -245,27 +246,28 @@ static int replyToEmacs;
 
 
 /*ARGSUSED*/
-XtEventReturnCode VTButtonPressed(event, eventdata)
-register XButtonEvent *event;
+void VTButtonPressed(w, eventdata, event)
+Widget w;
 caddr_t eventdata;
+register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	/* so table above will be nice, we index from 0 */
 	int button = event->button - 1; 
 	int shift = KeyState(event->state);
 
 	if (eventMode != NORMAL)
-		return (XteventHandled);
+		return;
 	if (screen->incopy)
 		CopyWait (screen);
 	textfunc[screen->send_mouse_pos][shift][0][button](event);
-	return (XteventHandled);
 }
 
 /*ARGSUSED*/
-XtEventReturnCode VTMouseMoved(event, eventdata)
-register XMotionEvent *event;
+void VTMouseMoved(w, eventdata, event)
+Widget w;
 caddr_t eventdata;
+register XMotionEvent *event;
 {
 	switch (eventMode) {
 		case LEFTEXTENSION :
@@ -278,16 +280,16 @@ caddr_t eventdata;
 /*			fprintf(stderr, "Race mouse motion\n");
 */			break;
 	}
-	return (XteventHandled);
 }
 
 
 /*ARGSUSED*/
-XtEventReturnCode VTButtonReleased(event, eventdata)
-register XButtonEvent *event;
+void VTButtonReleased(w, eventdata, event)
+Widget w;
 caddr_t eventdata;
+register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	/* so table above will be nice, we index from 0 */
 	int button = event->button - 1; 
 	int shift = KeyState(event->state);
@@ -303,15 +305,15 @@ caddr_t eventdata;
 				EndExtend(event);
 			break;
 	}
-	return (XteventHandled);
 }
 
 /*ARGSUSED*/
-XtEventReturnCode TekButtonPressed(event, eventdata)
-register XButtonEvent *event;
+void TekButtonPressed(w, eventdata, event)
+Widget w;
 caddr_t eventdata;
+register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	/* so table above will be nice, we index from 0 */
 	int button = event->button - 1; 
 	int shift = KeyState(event->state);
@@ -319,7 +321,6 @@ caddr_t eventdata;
 	if (screen->incopy)
 		CopyWait (screen);
 	Tbfunc[shift][button](event);
-	return (XteventHandled);
 }
 
 
@@ -327,11 +328,11 @@ caddr_t eventdata;
 UnSaltText(event)
 XEvent *event;
 {
-	int pty = term.screen.respond;	/* file descriptor of pty */
+	int pty = term->screen.respond;	/* file descriptor of pty */
 	char *line;
 	int nbytes;
 	register char *lag, *cp, *end;
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 
 	line = XFetchBytes(screen->display,&nbytes);
 	if (!nbytes) return;
@@ -371,7 +372,7 @@ SelectUnit defaultUnit;
 StartCut(event)
 register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	int startrow, startcol;
 
 	firstValidRow = 0;
@@ -418,7 +419,7 @@ int func, startrow, startcol, firstrow, lastrow;
 StartSelect(startrow, startcol)
 int startrow, startcol;
 {
-	TScreen *screen = &term.screen;
+	TScreen *screen = &term->screen;
 
 	if (screen->cursor_state)
 	    HideCursor ();
@@ -450,7 +451,7 @@ EndExtend(event)
 XButtonEvent *event;
 {
 	int	row, col;
-	TScreen *screen = &term.screen;
+	TScreen *screen = &term->screen;
 	char line[9];
 
 	ExtendExtend(event->x, event->y);
@@ -490,7 +491,7 @@ XButtonEvent *event;
 StartExtend(event)
 XButtonEvent *event;
 {
-	TScreen *screen = &term.screen;
+	TScreen *screen = &term->screen;
 	int row, col, coord;
 
 	firstValidRow = 0;
@@ -582,7 +583,7 @@ int *r, *c;
    Columns are clipped between to be 0 or greater, but are not clipped to some
        maximum value. */
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register row, col;
 
 	row = (y - screen->border) / FontHeight(screen);
@@ -603,7 +604,7 @@ int *r, *c;
 int LastTextCol(row)
 register int row;
 {
-	register TScreen *screen =  &term.screen;
+	register TScreen *screen =  &term->screen;
 	register int i;
 	register char *ch;
 
@@ -651,7 +652,7 @@ static int charClass[128] = {
 ComputeSelect(startRow, startCol, endRow, endCol)
 int startRow, startCol, endRow, endCol;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register char *ptr;
 	register int length;
 	register int class;
@@ -733,7 +734,7 @@ register int frow, fcol, trow, tcol;
 /* Guaranteed (frow, fcol) <= (trow, tcol) */
 {
 	register int from, to;
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 
 	/* (frow, fcol) may have been scrolled off top of display */
 	if (frow < 0)
@@ -778,7 +779,7 @@ register int frow, fcol, trow, tcol;
 int hilite;
 /* Guaranteed that (frow, fcol) <= (trow, tcol) */
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register int i, j;
 	GC tempgc;
 
@@ -794,9 +795,9 @@ int hilite;
 
 
 		i = screen->foreground;
-		screen->foreground = screen->background;
-		screen->background = i;
-		XSetWindowBackground(screen->display,VWindow(screen),screen->background);
+		screen->foreground = term->core.background_pixel;
+		term->core.background_pixel = i;
+		XSetWindowBackground(screen->display,VWindow(screen),term->core.background_pixel);
 
 	}
 	if(frow != trow) {	/* do multiple rows */
@@ -855,9 +856,9 @@ int hilite;
 		screen->reverseboldGC = tempgc;
 
 		i = screen->foreground;
-		screen->foreground = screen->background;
-		screen->background = i;
-		XSetWindowBackground(screen->display,VWindow(screen),screen->background);
+		screen->foreground = term->core.background_pixel;
+		term->core.background_pixel = i;
+		XSetWindowBackground(screen->display,VWindow(screen),term->core.background_pixel);
 
 	}
 }
@@ -867,7 +868,7 @@ register crow, ccol, row, col;
 /* Guaranteed that (crow, ccol) <= (row, col), and that both points are valid
    (may have row = screen->max_row+1, col = 0) */
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register int i, j = 0;
 	char *line, *lp;
 
@@ -950,7 +951,7 @@ register char *lp;		/* pointer to where to put the text */
 EditorButton(event)
 register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	int pty = screen->respond;
 	char line[6];
 	register unsigned row, col;
@@ -966,7 +967,7 @@ register XButtonEvent *event;
 	if (screen->send_mouse_pos == 1) {
 		line[3] = ' ' + button;
 	} else {
-		line[3] = ' ' + X10Map(event->state) + 
+		line[3] = ' ' + (KeyState(event->state) << 2) + 
 			((event->type == ButtonPress)? button:3);
 	}
 	line[4] = ' ' + col + 1;
@@ -987,7 +988,7 @@ extern TekLink *TekRefresh;
 ModeMenu(event)
 register XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register Menu *menu;
 	register int item;
 	static int inited;
@@ -1047,7 +1048,7 @@ register XButtonEvent *event;
 FinishModeMenu(item)
 register int item;
 {
-	TScreen *screen = &term.screen;
+	TScreen *screen = &term->screen;
 
 	menusync();
 	screen->waitrefresh = FALSE;
@@ -1073,7 +1074,7 @@ register int item;
 
 menusync()
 {
-	TScreen *screen = &term.screen;
+	TScreen *screen = &term->screen;
 	XSync(screen->display, 0);
 	if (QLength(screen->display) > 0)
 		xevents();
@@ -1110,12 +1111,12 @@ static int xlog;
 Menu *xsetupmenu(menu)
 register Menu **menu;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register char **cp;
 	register int i;
 
 	if (*menu == NULL) {
-		if ((*menu = NewMenu("xterm X11", re_verse)) == NULL)
+		if ((*menu = NewMenu("xterm X11", term->misc.re_verse)) == NULL)
 			return(NULL);
 		for(cp = xtext ; *cp ; cp++)
 			AddMenuItem(*menu, *cp);
@@ -1147,7 +1148,7 @@ register Menu **menu;
 xdomenufunc(item)
 int item;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 
 	switch (item) {
 	case XMENU_VISUALBELL:
@@ -1166,13 +1167,17 @@ int item;
 		break;
 
 	case XMENU_RESUME:
+#if !defined(SYSV) || defined(JOBCONTROL)
 		if(screen->pid > 1)
 			killpg(getpgrp(screen->pid), SIGCONT);
+#endif	/* !defined(SYSV) || defined(JOBCONTROL) */
 		break;
 
 	case XMENU_SUSPEND:
+#if !defined(SYSV) || defined(JOBCONTROL)
 		if(screen->pid > 1)
 			killpg(getpgrp(screen->pid), SIGTSTP);
+#endif	/* !defined(SYSV) || defined(JOBCONTROL) */
 		break;
 
 	case XMENU_INTR:
@@ -1203,7 +1208,7 @@ register Cursor cur;
 {
 	register Menu **menu;
 	register int i;
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	extern Cursor Menu_DefaultCursor;
 
 	Menu_DefaultCursor = cur;
@@ -1216,16 +1221,16 @@ register Cursor cur;
 			 cur);
 	}
 }
-#else MODEMENU
+#else	/* MODEMENU */
 
 /*ARGSUSED*/
 ModeMenu(event) register XButtonEvent *event; { Bell(); }
-#endif MODEMENU
+#endif	/* MODEMENU */
 
 GINbutton(event)
 XButtonEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register TScreen *screen = &term->screen;
 	register int i;
 
 	if(screen->TekGIN) {

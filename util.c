@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/util.c,v @
- *	@Header: util.c,v 1.11 87/09/11 08:16:49 toddb Exp @
+ *	@Header: util.c,v 1.4 88/02/18 17:54:48 jim Exp @
  */
 
 #include <X11/copyright.h>
@@ -31,8 +30,8 @@
 /* util.c */
 
 #ifndef lint
-static char rcs_id[] = "@Header: util.c,v 1.11 87/09/11 08:16:49 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: util.c,v 1.4 88/02/18 17:54:48 jim Exp @";
+#endif	/* lint */
 
 #include <stdio.h>
 #include <X11/Xlib.h>
@@ -68,7 +67,7 @@ register TScreen *screen;
 		if((refreshtop = screen->bot_marg - refreshheight + 1 + shift) >
 		 (i = screen->max_row - screen->scroll_amt + 1))
 			refreshtop = i;
-		if(screen->scrollWindow && !screen->alternate
+		if(screen->scrollWidget && !screen->alternate
 		 && screen->top_marg == 0) {
 			scrolltop = 0;
 			if((scrollheight += shift) > i)
@@ -81,7 +80,7 @@ register TScreen *screen;
 				  screen->savelines)
 					i = screen->savelines;
 				screen->savedlines = i;
-				ScrollBarDrawThumb(screen->scrollWindow);
+				ScrollBarDrawThumb(screen->scrollWidget);
 			}
 		} else {
 			scrolltop = screen->top_marg + shift;
@@ -228,7 +227,7 @@ register int amount;
 	if((refreshtop = screen->bot_marg - refreshheight + 1 + shift) >
 	 (i = screen->max_row - refreshheight + 1))
 		refreshtop = i;
-	if(screen->scrollWindow && !screen->alternate
+	if(screen->scrollWidget && !screen->alternate
 	 && screen->top_marg == 0) {
 		scrolltop = 0;
 		if((scrollheight += shift) > i)
@@ -237,7 +236,7 @@ register int amount;
 			if((i += amount) > screen->savelines)
 				i = screen->savelines;
 			screen->savedlines = i;
-			ScrollBarDrawThumb(screen->scrollWindow);
+			ScrollBarDrawThumb(screen->scrollWidget);
 		}
 	} else {
 		scrolltop = screen->top_marg + shift;
@@ -288,7 +287,7 @@ register int amount;
 			refreshheight = shift;
 	}
     }
-	if(screen->scrollWindow && !screen->alternate && screen->top_marg == 0)
+	if(screen->scrollWidget && !screen->alternate && screen->top_marg == 0)
 		ScrnDeleteLine(screen->allbuf, screen->bot_marg +
 		 screen->savelines, 0, amount, screen->max_col + 1);
 	else
@@ -505,7 +504,7 @@ register int n;
 	if((refreshtop = screen->bot_marg - refreshheight + 1 + shift) >
 	 (i = screen->max_row - refreshheight + 1))
 		refreshtop = i;
-	if(screen->scrollWindow && !screen->alternate && screen->cur_row == 0) {
+	if(screen->scrollWidget && !screen->alternate && screen->cur_row == 0) {
 		scrolltop = 0;
 		if((scrollheight += shift) > i)
 			scrollheight = i;
@@ -513,7 +512,7 @@ register int n;
 			if((i += n) > screen->savelines)
 				i = screen->savelines;
 			screen->savedlines = i;
-			ScrollBarDrawThumb(screen->scrollWindow);
+			ScrollBarDrawThumb(screen->scrollWidget);
 		}
 	} else {
 		scrolltop = screen->cur_row + shift;
@@ -552,7 +551,7 @@ register int n;
 		    FALSE);
     }
 	/* adjust screen->buf */
-	if(screen->scrollWindow && !screen->alternate && screen->cur_row == 0)
+	if(screen->scrollWidget && !screen->alternate && screen->cur_row == 0)
 		ScrnDeleteLine(screen->allbuf, screen->bot_marg +
 		 screen->savelines, 0, n, screen->max_col + 1);
 	else
@@ -845,7 +844,6 @@ register TScreen *screen;
 register XExposeEvent *reply;
 {
 	register int toprow, leftcol, nrows, ncols;
-	extern Terminal term;	/* kludge */
 
 	if((toprow = (reply->y - screen->border) /
 	 FontHeight(screen)) < 0)
@@ -880,19 +878,19 @@ register XExposeEvent *reply;
 }
 
 ReverseVideo (term)
-	Terminal *term;
+	XtermWidget term;
 {
 	register TScreen *screen = &term->screen;
 	register GC tmpGC;
 	register int tmp;
 	register Window tek = TWindow(screen);
 
-	tmp = screen->background;
+	tmp = term->core.background_pixel;
 	if(screen->cursorcolor == screen->foreground)
 		screen->cursorcolor = tmp;
 	if(screen->mousecolor == screen->foreground)
 		screen->mousecolor = tmp;
-	screen->background = screen->foreground;
+	term->core.background_pixel = screen->foreground;
 	screen->foreground = tmp;
 
 	tmpGC = screen->normalGC;
@@ -903,39 +901,47 @@ ReverseVideo (term)
 	screen->normalboldGC = screen->reverseboldGC;
 	screen->reverseboldGC = tmpGC;
 
-	screen->color = (screen->color & ~C_FBMASK) | switchfb[screen->color
-	 & C_FBMASK];
-
-
 	XFreeCursor(screen->display, screen->curs);
-	if (XStrCmp(curs_shape, "arrow") == 0) {
-		screen->curs = make_arrow(screen->mousecolor, screen->background);
-	} else {
-		screen->curs = make_xterm(screen->mousecolor, screen->background);
-	}
 	XFreeCursor(screen->display, screen->arrow);
-	screen->arrow = make_arrow(screen->mousecolor, screen->background);
+	{
+	    unsigned long fg, bg;
+	    bg = term->core.background_pixel;
+	    if (screen->mousecolor == term->core.background_pixel) {
+		fg = screen->foreground;
+	    } else {
+		fg = screen->mousecolor;
+	    }
+	    if (XStrCmp(term->misc.curs_shape, "arrow") == 0) {
+		screen->curs = make_arrow (fg, bg);
+	    } else {
+		screen->curs = make_xterm (fg, bg);
+	    }
+	    screen->arrow = make_arrow (fg, bg);
+	}
 
 	XDefineCursor(screen->display, TextWindow(screen), screen->curs);
 	if(tek)
 		XDefineCursor(screen->display, tek, screen->arrow);
 #ifdef MODEMENU
 	MenuNewCursor(screen->arrow);
-#endif MODEMENU
+#endif	/* MODEMENU */
 
-	if (screen->borderwidth && screen->bordercolor == screen->background
-	 && (screen->foreground)) {
-	    screen->bordercolor = screen->foreground;
-	    XSetWindowBorder(screen->display, TextWindow(screen), screen->foreground);
-	    if(tek) {
-		XSetWindowBorder(screen->display, tek,screen->foreground );
+	
+	if (term) {
+	    if (term->core.border_pixel == term->core.background_pixel) {
+		term->core.border_pixel = screen->foreground;
+		term->core.parent->core.border_pixel = screen->foreground;
+		if (term->core.parent->core.window)
+		  XSetWindowBorder (screen->display,
+				    term->core.parent->core.window,
+				    term->core.border_pixel);
 	    }
 	}
 
-	if(screen->scrollWindow)
-		ScrollBarReverseVideo(screen->scrollWindow);
+	if(screen->scrollWidget)
+		ScrollBarReverseVideo(screen->scrollWidget);
 
-	XSetWindowBackground(screen->display, TextWindow(screen), screen->background);
+	XSetWindowBackground(screen->display, TextWindow(screen), term->core.background_pixel);
 	if(tek) {
 	    TekReverseVideo(screen);
 	}
