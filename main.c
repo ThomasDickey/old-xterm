@@ -1,5 +1,5 @@
 #ifndef lint
-static char *rid="$TOG: main.c /main/250 1998/02/09 14:17:13 kaleb $";
+static char *rid="$Xorg: main.c,v 1.6 2000/08/18 11:04:49 xorgcvs Exp $";
 #endif /* lint */
 
 /*
@@ -120,7 +120,7 @@ static Bool IsPts = False;
 #endif
 
 #ifdef linux
-#define USE_SYSV_TERMIO
+#define USE_TERMIOS
 #define USE_SYSV_PGRP
 #define USE_SYSV_UTMP
 #define USE_SYSV_SIGNALS
@@ -283,10 +283,6 @@ extern struct utmp *getutid __((struct utmp *_Id));
 #include <local/openpty.h>
 int	Ptyfd;
 #endif /* PUCC_PTYD */
-
-#ifdef sequent
-#define USE_GET_PSEUDOTTY
-#endif
 
 #ifndef UTMP_FILENAME
 #ifdef UTMP_FILE
@@ -987,7 +983,9 @@ char **argv;
 
 #ifdef USE_TERMIOS /* { */
 	d_tio.c_cc[VSUSP] = CSUSP;
+#ifdef VDSUSP
 	d_tio.c_cc[VDSUSP] = CDSUSP;
+#endif
 	d_tio.c_cc[VREPRINT] = CRPRNT;
 	d_tio.c_cc[VDISCARD] = CFLUSH;
 	d_tio.c_cc[VWERASE] = CWERASE;
@@ -1128,7 +1126,9 @@ char **argv;
 #endif	/* } TIOCSLTC */
 #ifdef USE_TERMIOS /* { */
 	d_tio.c_cc[VSUSP] = CSUSP;
+#ifdef VDSUSP
 	d_tio.c_cc[VDSUSP] = '\000';
+#endif
 	d_tio.c_cc[VREPRINT] = '\377';
 	d_tio.c_cc[VDISCARD] = '\377';
 	d_tio.c_cc[VWERASE] = '\377';
@@ -2238,7 +2238,7 @@ spawn ()
 		/* use the same tty name that everyone else will use
 		** (from ttyname)
 		*/
-		if (ptr = ttyname(tty))
+		if ((ptr = ttyname(tty)))
 		{
 			/* it may be bigger */
 			ttydev = realloc (ttydev, (unsigned) (strlen(ptr) + 1));
@@ -2254,7 +2254,7 @@ spawn ()
 	{ 
 #include <grp.h>
 		struct group *ttygrp;
-		if (ttygrp = getgrnam("tty")) {
+		if ((ttygrp = getgrnam("tty"))) {
 			/* change ownership of tty to real uid, "tty" gid */
 			chown (ttydev, screen->uid, ttygrp->gr_gid);
 			chmod (ttydev, 0620);
@@ -2881,7 +2881,7 @@ spawn ()
 		 *(ptr = pw->pw_shell) == 0))
 #endif	/* UTMP */
 			ptr = "/bin/sh";
-		if(shname = strrchr(ptr, '/'))
+		if((shname = strrchr(ptr, '/')))
 			shname++;
 		else
 			shname = ptr;
@@ -3251,32 +3251,6 @@ static SIGNAL_T reapchild (n)
     } while ( (pid=nonblocking_wait()) > 0);
 
     SIGNAL_RETURN;
-}
-
-/* VARARGS1 */
-consolepr(fmt,x0,x1,x2,x3,x4,x5,x6,x7,x8,x9)
-char *fmt;
-{
-	extern char *SysErrorMsg();
-	int oerrno;
-	int f;
- 	char buf[ BUFSIZ ];
-
-	oerrno = errno;
- 	strcpy(buf, "xterm: ");
- 	sprintf(buf+strlen(buf), fmt, x0,x1,x2,x3,x4,x5,x6,x7,x8,x9);
- 	strcat(buf, ": ");
- 	strcat(buf, SysErrorMsg (oerrno));
- 	strcat(buf, "\n");	
-	f = open("/dev/console",O_WRONLY);
-	write(f, buf, strlen(buf));
-	close(f);
-#ifdef TIOCNOTTY
-	if ((f = open("/dev/tty", 2)) >= 0) {
-		ioctl(f, TIOCNOTTY, (char *)NULL);
-		close(f);
-	}
-#endif	/* TIOCNOTTY */
 }
 
 

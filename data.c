@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: data.c,v 1.12 95/04/05 19:58:47 kaleb Exp $
+ *	$Xorg: data.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
 /*

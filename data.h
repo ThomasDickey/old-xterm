@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: data.h /main/13 1996/11/24 17:35:40 rws $
+ *	$Xorg: data.h,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.

@@ -1,4 +1,4 @@
-/* $TOG: button.c /main/76 1997/07/30 16:56:19 kaleb $ */
+/* $Xorg: button.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $ */
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *

@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: scrollbar.c /main/47 1996/12/01 23:47:08 swick $
+ *	$Xorg: scrollbar.c,v 1.4 2000/08/17 19:55:09 cpqbld Exp $
  */
 
 /*
@@ -471,7 +471,7 @@ static int params_to_pixels (screen, params, n)
     String *params;
     int n;
 {
-    register mult = 1;
+    register int mult = 1;
     register char *s;
 
     switch (n > 2 ? 2 : n) {
@@ -483,7 +483,9 @@ static int params_to_pixels (screen, params, n)
 	    mult = ((screen->max_row + 1) * FontHeight(screen)) >> 1;
 	} else if (specialcmplowerwiths (s, "pixel")) {
 	    mult = 1;
-	} /* else assume that it is Line */
+	} else if (specialcmplowerwiths (s, "line")) {
+	    mult *= FontHeight(screen);
+	}
 	mult *= atoi (params[0]);
 	break;
       case 1:

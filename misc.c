@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: misc.c /main/112 1996/11/29 10:34:07 swick $
+ *	$Xorg: misc.c,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
 /*

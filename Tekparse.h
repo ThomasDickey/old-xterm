@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: Tekparse.h,v 1.4 91/01/06 12:46:47 rws Exp $
+ *	$Xorg: Tekparse.h,v 1.3 2000/08/17 19:55:07 cpqbld Exp $
  */
 
 /*

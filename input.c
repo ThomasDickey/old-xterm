@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: input.c /main/21 1996/04/17 15:54:23 kaleb $
+ *	$Xorg: input.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
 /*

@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: ptyx.h /main/67 1996/11/29 10:34:19 swick $
+ *	$Xorg: ptyx.h,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
 /*

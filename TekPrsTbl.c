@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: TekPrsTbl.c,v 1.8 95/06/08 23:20:39 gildea Exp $
+ *	$Xorg: TekPrsTbl.c,v 1.3 2000/08/17 19:55:07 cpqbld Exp $
  */
 
 
