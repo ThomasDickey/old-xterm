@@ -1,3 +1,12 @@
+/*
+ *	@Source: /u1/X/xterm/RCS/tabs.c,v @
+ *	@Header: tabs.c,v 10.100 86/12/01 14:45:38 jg Rel @
+ */
+
+#ifndef lint
+static char *rcsid_tabs_c = "@Header: tabs.c,v 10.100 86/12/01 14:45:38 jg Rel @";
+#endif	lint
+
 #include <X/mit-copyright.h>
 
 /* Copyright    Massachusetts Institute of Technology    1984	*/
@@ -5,10 +14,11 @@
 /* tabs.c */
 
 #ifndef lint
-static char *rcsid_tabs_c = "@Header: tabs.c,v 10.7 86/02/01 16:07:10 tony Rel @";
+static char sccs_id[] = "@(#)tabs.c\tX10/6.6\t11/3/86";
 #endif	lint
 
 #include <X/Xlib.h>
+#include "scrollbar.h"
 #include "ptyx.h"
 /*
  * This file presumes 32bits/word.  This is somewhat of a crock, and should
@@ -57,6 +67,13 @@ Tabs	tabs;
 TabNext (tabs, col)
 Tabs	tabs;
 {
+	extern Terminal term;
+	register Screen *screen = &term.screen;
+
+	if(screen->curses && screen->do_wrap && (term.flags & WRAPAROUND)) {
+		Index(screen, 1);
+		col = screen->cur_col = screen->do_wrap = 0;
+	}
 	for (++col; col<MAX_TABS; ++col)
 		if (tabs[col >> 5] & (1 << (col & 31)))
 			return (col);
