@@ -1,11 +1,16 @@
+/*
+ *	@Source: /u1/X/xterm/RCS/main.c,v @
+ *	@Header: main.c,v 10.102 86/12/08 09:30:16 swick Exp @
+ */
+
 #include <X/mit-copyright.h>
 
 /* Copyright    Massachusetts Institute of Technology    1984, 1985	*/
 
-/* ptyx.c */
+/* main.c */
 
 #ifndef lint
-static char *rcsid_ptyx_c = "@Header: main.c,v 10.44 86/05/16 10:17:20 jg Exp @";
+static char sccs_id[] = "@(#)main.c\tX10/6.6\t11/10/86";
 #endif	lint
 
 #include <pwd.h>
@@ -18,31 +23,22 @@ static char *rcsid_ptyx_c = "@Header: main.c,v 10.44 86/05/16 10:17:20 jg Exp @"
 #include <errno.h>
 #include <signal.h>
 #include <strings.h>
-#include <X/Xlib.h>
-#include "ptyx.h"
-#include <grp.h>
-#include <ttyent.h>
+#include <setjmp.h>
 #include <utmp.h>
+#include <sys/param.h>	/* for NOFILE */
+#include <X/Xlib.h>
+#include "scrollbar.h"
+#include "ptyx.h"
+#include "data.h"
+#include "error.h"
+#include "main.h"
 
-char *xterm_name;	/* argv[0] */
-Terminal term;		/* master data structure for client */
-int am_slave = 0;	/* set to 1 if running as a slave process */
-int debug = 0; 		/* true causes error messages to be displayed */
-
-static char *ptydev = "/dev/ptyxx";
-static char *ttydev = "/dev/ttyxx";
-
-#include "../cursors/xterm.cursor"
-#include "../cursors/xterm_mask.cursor"
-#include "icon.ic"
-#include "icon_mask.ic"
+int switchfb[] = {0, 2, 1, 3};
 
 static int reapchild ();
 
-static char **command_to_exec = (char **) NULL;
-static char *win_name = (char *) 0;
-
-
+static char *brdr_color;
+static char **command_to_exec;
 static struct  sgttyb d_sg = {
         0, 0, 0177, CKILL, EVENP|ODDP|ECHO|XTABS|CRMOD
 };
@@ -56,878 +52,978 @@ static struct  ltchars d_ltc = {
 };
 static int d_disipline = NTTYDISC;
 static int d_lmode = LCRTBS|LCRTERA|LCRTKIL|LCTLECH;
-static int no_dev_tty = 0;
-static int loginflag = 0;
-static int dologinflag = 0;
-#ifdef sun
+static char def_bold_font[] = DEFBOLDFONT;
+static char def_font[] = DEFFONT;
+static char def_title_font[] = DEFTITLEFONT;
+static char def_icon_font[] = DEFICONFONT;
+static char display[256];
+static char etc_utmp[] = "/etc/utmp";
+static char *get_ty;
+static char *iconbitmap;
+static int inhibit;
+static int log_on;
+static int login_shell;
+static char passedPty[2];	/* name if pty if slave */
+static int loginpty;
 #ifdef TIOCCONS
-static int SunConsole = 0;
+static int Console;
 #endif TIOCCONS
-#endif sun
-
+static char *tekiconbitmap;
+static int tslot;
+static char *xdef[] = {
+	"ActiveIcon",		/* DEF_ACTIVEICON */
+	"AllowIconInput",	/* DEF_ALLOWICONINPUT */
+	"AutoRaise",		/* DEF_AUTORAISE */
+	"Background",		/* DEF_BACKGROUND */
+	"BodyFont",		/* DEF_BODYFONT */
+	"BoldFont",		/* DEF_BOLDFONT */
+	"Border",		/* DEF_BORDER */
+	"BorderWidth",		/* DEF_BORDERWIDTH */
+	"C132",			/* DEF_C132 */
+	"Curses",		/* DEF_CURSES */
+	"Cursor",		/* DEF_CURSOR */
+	"DeiconifyWarp",	/* DEF_DEICONWARP */
+	"Foreground",		/* DEF_FOREGROUND */
+	"IconBitmap",		/* DEF_ICONBITMAP */
+	"IconFont",		/* DEF_ICONFONT */
+	"IconStartup",		/* DEF_ICONSTARTUP */
+	"InternalBorder",	/* DEF_INTERNALBORDER */
+	"JumpScroll",		/* DEF_JUMPSCROLL */
+#ifdef KEYBD
+	"KeyBoard",		/* DEF_KEYBOARD */
+#endif KEYBD
+	"LogFile",		/* DEF_LOGFILE */
+	"Logging",		/* DEF_LOGGING */
+	"LogInhibit",		/* DEF_LOGINHIBIT */
+	"LoginShell",		/* DEF_LOGINSHELL */
+	"MarginBell",		/* DEF_MARGINBELL */
+	"Mouse",		/* DEF_MOUSE */
+	"NMarginBell",		/* DEF_NMARGINBELL */
+	"PageOverlap",		/* DEF_PAGEOVERLAP */
+	"PageScroll",		/* DEF_PAGESCROLL */
+	"ReverseVideo",		/* DEF_REVERSEVIDEO */
+	"ReverseWrap",		/* DEF_REVERSEWRAP */
+	"SaveLines",		/* DEF_SAVELINES */
+	"ScrollBar",		/* DEF_SCROLLBAR */
+	"ScrollInput",		/* DEF_SCROLLINPUT */
+	"ScrollKey",		/* DEF_SCROLLKEY */
+	"SignalInhibit",	/* DEF_SIGNALINHIBIT */
+	"StatusLine",		/* DEF_STATUSLINE */
+	"StatusNormal",		/* DEF_STATUSNORMAL */
+	"TekIconBitmap",	/* DEF_TEKICONBITMAP */
+	"TekInhibit",		/* DEF_TEKINHIBIT */
+	"TextUnderIcon",	/* DEF_TEXTUNDERICON */
+	"TitleBar",		/* DEF_TITLEBAR */
+	"TitleFont",		/* DEF_TITLEFONT */
+	"VisualBell",		/* DEF_VISUALBELL */
+	0,
+};
 
 main (argc, argv)
 int argc;
 char **argv;
 {
-	int ind;
-	char *strind, *strind1, *strscan();
-	char *fn = "vtsingle";
-	char *fb = "vtbold";
+	register Screen *screen = &term.screen;
+	register char *strind;
+	register int i, pty;
+	register char **cp;
 	short fnflag = 0;	/* True iff -fn option used */
 	short fbflag = 0;	/* True iff -fb option used */
-	char *getty = NULL;
-	int reverse = 0, multiscroll = 0;
-	int border = 1, tek = 0;
-	int borderwidth = 2;
-	int bitmapicon = 0;
-#ifdef JUMPSCROLL
-	int jumpscroll = 0;
-#endif JUMPSCROLL
-	int slave = 0;		/* if non-zero, run as slave */
-	char passedPty[2];	/* name if pty if slave */
-	char *fore_color;
-	char *back_color;
-	char *brdr_color;
-	char *curs_color;
-	char *mous_color;
-	char display[256];
+	int Xsocket, mode;
+	extern onalarm();
+	char *malloc();
+	char *basename();
+	int xerror(), xioerror();
+#ifdef KEYBD
+	extern char *keyboardtype;	/* used in XKeyBind.c */
 	char *getenv();
-	char *option;
-	char *geometry, *def = "=80x24+1+1";
+#endif KEYBD
 
-	xterm_name = argv[0];
+	xterm_name = (strcmp(*argv, "-") == 0) ? "xterm" : basename(*argv);
+
+	term.flags = WRAPAROUND | SMOOTHSCROLL | AUTOREPEAT;
+	screen->border = DEFBORDER;
+	screen->borderwidth = DEFBORDERWIDTH;
+	screen->reversestatus = TRUE;
+	screen->mappedVwin = &screen->fullVwin;
+	screen->mappedTwin = &screen->fullTwin;
+	screen->active_icon = DEFACTIVEICON;
+	screen->scrollinput = DEFSCROLLINPUT;
+	screen->fullVwin.titlebar = DEFTITLEBAR;
+	f_b = def_bold_font;
+	f_n = def_font;
+	f_t = def_title_font;
+	f_i = def_icon_font;
 
 	display[0] = '\0';
+#ifdef KEYBD
+	if((strind = getenv("KEYBD")) && *strind) {
+		if((keyboardtype = malloc(strlen(strind) + 1)) == NULL)
+			SysError(ERROR_KMALLOC);
+		strcpy(keyboardtype, strind);
+	}
+#endif KEYBD
+
 	/*
 	 * go get options out of default file
 	 */
-	if ((option = XGetDefault(argv[0], "BodyFont")) != NULL) {
-		fn = option;
-		fnflag = 1;
+	for(i = 0, cp = xdef ; *cp ; i++, cp++) {
+		if(!(strind = XGetDefault(xterm_name, *cp)))
+			continue;
+		switch(i) {
+		 case DEF_ACTIVEICON:
+			if (strcmp (strind, "off") == 0)
+				screen->active_icon = FALSE;
+			continue;
+		 case DEF_ALLOWICONINPUT:
+		 	if (strcmp (strind, "on") == 0)
+			        term.flags |= ICONINPUT;
+			continue;
+		 case DEF_AUTORAISE:
+			if (strcmp (strind, "on") == 0) 
+				screen->autoraise = TRUE;
+			continue;
+		 case DEF_BACKGROUND:
+			back_color = strind;
+			continue;
+		 case DEF_BODYFONT:
+			f_n = strind;
+			fnflag = TRUE;
+			continue;
+		 case DEF_BOLDFONT:
+			f_b = strind;
+			fbflag = TRUE;
+			continue;
+		 case DEF_BORDER:
+			brdr_color = strind;
+			continue;
+		 case DEF_BORDERWIDTH:
+			screen->borderwidth = atoi (strind);
+			continue;
+		 case DEF_C132:
+			if (strcmp (strind, "on") == 0) 
+				screen->c132 = TRUE;
+			continue;
+		 case DEF_CURSES:
+			if (strcmp (strind, "on") == 0) 
+				screen->curses = TRUE;
+			continue;
+		 case DEF_CURSOR:
+			curs_color = strind;
+			continue;
+		 case DEF_DEICONWARP:
+			if (strcmp (strind, "on") == 0)
+				screen->deiconwarp = TRUE;
+			continue;
+		 case DEF_FOREGROUND:
+			fore_color = strind;
+			continue;
+		 case DEF_ICONBITMAP:
+			iconbitmap = strind;
+			continue;
+		 case DEF_ICONFONT:
+		 	f_i = strind;
+			continue;
+		 case DEF_ICONSTARTUP:
+			if (strcmp (strind, "on") == 0)
+				screen->icon_show = -1;
+			continue;
+		 case DEF_INTERNALBORDER:
+			screen->border = atoi (strind);
+			continue;
+		 case DEF_JUMPSCROLL:
+			if (strcmp (strind, "on") == 0) {
+				screen->jumpscroll = TRUE;
+				term.flags &= ~SMOOTHSCROLL;
+			}
+			continue;
+#ifdef KEYBD
+		 case DEF_KEYBOARD:
+			if(keyboardtype)
+				free(keyboardtype);
+			keyboardtype = strind;
+			continue;
+#endif KEYBD
+		 case DEF_LOGFILE:
+			if(screen->logfile = malloc(strlen(strind) + 1))
+				strcpy(screen->logfile, strind);
+			continue;
+		 case DEF_LOGGING:
+			if (strcmp (strind, "on") == 0) 
+				log_on = TRUE;
+			continue;
+		 case DEF_LOGINHIBIT:
+			if (strcmp (strind, "on") == 0) 
+				inhibit |= I_LOG;
+			continue;
+		 case DEF_LOGINSHELL:
+			if (strcmp (strind, "on") == 0) 
+				login_shell = TRUE;
+			continue;
+		 case DEF_MARGINBELL:
+			if (strcmp (strind, "on") == 0) 
+				screen->marginbell = TRUE;
+			continue;
+		 case DEF_MOUSE:
+			mous_color = strind;
+			continue;
+		 case DEF_NMARGINBELL:
+			n_marginbell = atoi (strind);
+			continue;
+		 case DEF_PAGEOVERLAP:
+			if((screen->pageoverlap = atoi (strind) - 1) < 0)
+				screen->pageoverlap = -1;
+			continue;
+		 case DEF_PAGESCROLL:
+			if (strcmp (strind, "on") == 0)
+				screen->pagemode = TRUE;
+			continue;
+		 case DEF_REVERSEVIDEO:
+			if (strcmp (strind, "on") == 0)
+				re_verse = TRUE;
+			continue;
+		 case DEF_REVERSEWRAP:
+			if (strcmp (strind, "on") == 0) 
+				term.flags |= REVERSEWRAP;
+			continue;
+		 case DEF_SAVELINES:
+			save_lines = atoi (strind);
+			continue;
+		 case DEF_SCROLLBAR:
+			if (strcmp (strind, "on") == 0) 
+				screen->scrollbar = SCROLLBARWIDTH;
+			continue;
+		 case DEF_SCROLLINPUT:
+			if (strcmp (strind, "off") == 0) 
+				screen->scrollinput = FALSE;
+			continue;
+		 case DEF_SCROLLKEY:
+			if (strcmp (strind, "on") == 0) 
+				screen->scrollkey = TRUE;
+			continue;
+		 case DEF_SIGNALINHIBIT:
+			if (strcmp (strind, "on") == 0) 
+				inhibit |= I_SIGNAL;
+			continue;
+		 case DEF_STATUSLINE:
+			if (strcmp (strind, "on") == 0) 
+				screen->statusline = TRUE;
+			continue;
+		 case DEF_STATUSNORMAL:
+			screen->reversestatus = (strcmp (strind, "on") != 0);
+			continue;
+		 case DEF_TEKICONBITMAP:
+			tekiconbitmap = strind;
+			continue;
+		 case DEF_TEKINHIBIT:
+			if (strcmp (strind, "on") == 0) 
+				inhibit |= I_TEK;
+			continue;
+		 case DEF_TEXTUNDERICON:
+			if (strcmp (strind, "on") == 0) 
+				screen->textundericon = TRUE;
+			continue;
+		 case DEF_TITLEBAR:
+			if (strcmp (strind, "off") == 0) 
+			    screen->fullVwin.titlebar = FALSE;
+			continue;
+		 case DEF_TITLEFONT:
+			f_t = strind;
+			continue;
+		 case DEF_VISUALBELL:
+			if (strcmp (strind, "on") == 0) 
+				screen->visualbell = TRUE;
+			continue;
+		}
 	}
-	if ((option = XGetDefault(argv[0], "BoldFont")) != NULL) {
-		fb = option;
-		fbflag = 1;
-	}
-	if ((option = XGetDefault(argv[0], "InternalBorder")) != NULL) {
-		border = atoi (option);
-	}
-	if ((option = XGetDefault(argv[0], "BorderWidth")) != NULL) {
-		borderwidth = atoi (option);
-	}
-
-	if ((option = XGetDefault(argv[0], "BitmapIcon")) != NULL)
-		if (strcmp (option, "on") == 0) 
-			bitmapicon = 1;
-
-	if ((option = XGetDefault(argv[0], "ReverseVideo")) != NULL)
-		if (strcmp (option, "on") == 0)
-			reverse = 1;
-
-	if ((option = XGetDefault(argv[0], "Tektronix")) != NULL)
-		if (strcmp (option, "on") == 0) 
-			tek = 1;
-#ifdef JUMPSCROLL
-	if ((option = XGetDefault(argv[0], "JumpScroll")) != NULL)
-		if (strcmp (option, "on") == 0) 
-			jumpscroll = 1;
-#endif JUMPSCROLL
-
-	fore_color = XGetDefault(argv[0], "Foreground");
-	back_color = XGetDefault(argv[0], "Background");
-	brdr_color = XGetDefault(argv[0], "Border");
-	curs_color = XGetDefault(argv[0], "Cursor");
-	mous_color = XGetDefault(argv[0], "Mouse");
 
 	/* parse command line */
 	
-	for (ind = 1; ind < argc; ind++) {
-	    if (argv [ind] [0] == '=') {
-		geometry = argv[ind];
+	for (argc--, argv++ ; argc > 0 ; argc--, argv++) {
+	    if (**argv == '=') {
+		geo_metry = *argv;
 		continue;
 	    }
 
-	    strind = index (argv[ind], ':');
-	    if(strind != NULL) {
-		strncpy(display,argv[ind],sizeof(display));
+	    if (**argv == '%') {
+		T_geometry = *argv;
+		*T_geometry = '=';
 		continue;
 	    }
 
+	    if (**argv == '#') {
+		icon_geom = *argv;
+		*icon_geom = '=';
+		continue;
+	    }
 
-	    strind = (char *) index (argv [ind], '-');
+	    if((strind = index (*argv, ':')) != NULL) {
+		strncpy(display, *argv, sizeof(display));
+		continue;
+	    }
 
-	    if (strind == NULL) Syntax ();
+	    if(!(i = (**argv == '-')) && **argv != '+') Syntax ();
 
-	    if (strcmp (argv [ind], "-L") == 0) {
+	    switch(argument(&(*argv)[1])) {
+	     case ARG_132:
+		screen->c132 = i;
+		continue;
+#ifdef TIOCCONS
+	     case ARG__C:
+		Console = i;
+		continue;
+#endif TIOCCONS
+	     case ARG__L:
+		{
 		char tt[32];
-		int mode = O_RDWR|O_NDELAY;
-		loginflag = 1;
-		getty = argv[argc-1];
-		argc -= 1;
+
+		L_flag = 1;
+		get_ty = argv[--argc];
 		strcpy(tt,"/dev/");
-		strcat(tt, getty);
+		strcat(tt, get_ty);
+		tt[5] = 'p';
+		loginpty = open( tt, O_RDWR, 0 );
+		dup2( loginpty, 4 );
+		close( loginpty );
+		loginpty = 4;
+		tt[5] = 't';
 		chown(tt, 0, 0);
 		chmod(tt, 0622);
-		if (open(tt, mode, 0) < 0) {
+		if (open(tt, O_RDWR) < 0) {
 			consolepr("open failed\n");
 		}
 		signal(SIGHUP, SIG_IGN);
 		vhangup();
 		setpgrp(0,0);
 		signal(SIGHUP, SIG_DFL);
-		open(tt, mode, 0);
-		close(0);
-		dup(1);
-		dup(0);
+		(void) close(0);
+		open(tt, O_RDWR, 0);
+		dup2(0, 1);
+		dup2(0, 2);
 		continue;
-	    }
-    
-	    if (strncmp (argv [ind], "-S", 2) == 0) {
-		sscanf(argv[ind] + 2, "%c%c%d", passedPty, passedPty+1,
-			&slave);
-		if (slave <= 0) Syntax();
-		am_slave = 1;
+		}
+	     case ARG__S:
+		sscanf(*argv + 2, "%c%c%d", passedPty, passedPty+1,
+		 &am_slave);
+		if (am_slave <= 0) Syntax();
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-e") == 0) {
-		if (++ind >= argc) Syntax ();
-		command_to_exec = argv + ind;
+	     case ARG_AR:
+		screen->autoraise = i;
+		continue;
+	     case ARG_B:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    screen->border = atoi (*++argv);
+		} else
+		    screen->border = DEFBORDER;
+		continue;
+	     case ARG_BD:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    brdr_color = *++argv;
+		} else
+		    brdr_color = NULL;
+		continue;
+	     case ARG_BG:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    back_color = *++argv;
+		} else
+		    back_color = NULL;
+		continue;
+	     case ARG_BI:
+	        screen->active_icon = !i;
+		continue;
+	     case ARG_BW:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    screen->borderwidth = atoi (*++argv);
+		} else
+		    screen->borderwidth = DEFBORDERWIDTH;
+		continue;
+	     case ARG_CR:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    curs_color = *++argv;
+		} else
+		    curs_color = NULL;
+		continue;
+	     case ARG_CU:
+		screen->curses = i;
+		continue;
+#ifdef DEBUG
+	     case ARG_D:
+		debug = i;
+		continue;
+#endif DEBUG
+	     case ARG_DW:
+		screen->deiconwarp = i;
+		continue;
+	     case ARG_E:
+	 	if(!i) Syntax();
+		if (argc <= 1) Syntax ();
+		command_to_exec = ++argv;
 		break;
-	    }
-		
-	    /* Switch to set up Tektronix-shaped (4096x3128 -> 512x390) window
-	     * with characters sized to fit 39 lines of 85 characters each */
-
-	    if (strcmp (argv [ind], "-t") == 0) {
-		tek = 1;
-		if (!fnflag) fn = "6x10";
-		if (!fbflag) fb = "6x10";
-		def = "85x39+1+1";
+	     case ARG_FB:
+		if(fbflag = i) {
+		    if (--argc <= 0) Syntax ();
+		    f_b = *++argv;
+		    fbflag = TRUE;
+		} else {
+		    f_b = def_bold_font;
+		    fbflag = FALSE;
+		}
 		continue;
-	    }
-		
-	    if (strcmp (argv [ind], "-fn") == 0) {
-		if (++ind >= argc) Syntax ();
-		fn = argv [ind];
-		fnflag = 1;
+	     case ARG_FG:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    fore_color = *++argv;
+		} else
+		    fore_color = NULL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-fb") == 0) {
-		if (++ind >= argc) Syntax ();
-		fb = argv [ind];
-		fbflag = 1;
+	     case ARG_FI:
+	        if (i) {
+		    if (--argc <= 0) Syntax();
+		    f_i = *++argv;
+		} else
+		    f_i = def_icon_font;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-fg") == 0) {
-		if (++ind >= argc) Syntax ();
-		fore_color = argv [ind];
+	     case ARG_FN:
+		if(fnflag = i) {
+		    if (--argc <= 0) Syntax ();
+		    f_n = *++argv;
+		    fnflag = TRUE;
+		} else {
+		    f_n = def_font;
+		    fnflag = FALSE;
+		}
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-bg") == 0) {
-		if (++ind >= argc) Syntax ();
-		back_color = argv [ind];
+	     case ARG_FT:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    f_t = *++argv;
+		} else
+		    f_t = def_title_font;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-bd") == 0) {
-		if (++ind >= argc) Syntax ();
-		brdr_color = argv [ind];
+	     case ARG_I:
+		screen->icon_show = i ? -1 : 0;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-cr") == 0) {
-		if (++ind >= argc) Syntax ();
-		curs_color = argv [ind];
+	     case ARG_IB:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    iconbitmap = *++argv;
+		} else
+		    iconbitmap = NULL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-ms") == 0) {
-		if (++ind >= argc) Syntax ();
-		mous_color = argv [ind];
+	     case ARG_IT:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    tekiconbitmap = *++argv;
+		} else
+		    tekiconbitmap = NULL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-l") == 0) {
-		dologinflag = 1;
+	     case ARG_J:
+		if(screen->jumpscroll = i)
+			term.flags &= ~SMOOTHSCROLL;
+		else
+			term.flags |= SMOOTHSCROLL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-d") == 0) {
-		debug = 1;
+#ifdef KEYBD
+	     case ARG_K:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    keyboardtype = *++argv;
+		} else
+		    keyboardtype = NULL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-b") == 0) {
-		if (++ind >= argc) Syntax ();
-		border = atoi (argv [ind]);
+#endif KEYBD
+	     case ARG_L:
+		log_on = i;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-bw") == 0 ||
-		strcmp (argv [ind], "-w") == 0) {
-		if (++ind >= argc) Syntax ();
-		borderwidth = atoi (argv [ind]);
+	     case ARG_LF:
+		if(screen->logfile)
+			free(screen->logfile);
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    if(screen->logfile = malloc(strlen(*++argv) + 1))
+			    strcpy(screen->logfile, *argv);
+		} else
+		    screen->logfile = NULL;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-rv") == 0 ||
-		strcmp (argv [ind], "-r") == 0) {
-		reverse = 1;	/* backwards from usual definition */
+	     case ARG_LS:
+		login_shell = i;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-s") == 0) {
-		multiscroll = 1;
+	     case ARG_MB:
+		screen->marginbell = i;
 		continue;
-	    }
-
-	    if (strcmp (argv [ind], "-i") == 0) {
-		bitmapicon = 1;
+	     case ARG_MS:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    mous_color = *++argv;
+		} else
+		    mous_color = NULL;
 		continue;
-	    }
-
-#ifdef JUMPSCROLL
-	    if (strcmp (argv [ind], "-j") == 0) {
-		jumpscroll = 1;
+	     case ARG_N:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    win_name = *++argv;
+		} else
+		    win_name = NULL;
 		continue;
-	    }
-#endif JUMPSCROLL
-
-	    if (strcmp (argv [ind], "-n") == 0) {
-		if (++ind >= argc) Syntax ();
-		win_name = argv [ind];
+	     case ARG_NB:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    n_marginbell = atoi (*++argv);
+		} else
+		    n_marginbell = N_MARGINBELL;
 		continue;
-	    }
-#ifdef sun
-#ifdef TIOCCONS
-	    if (strcmp (argv [ind], "-C") == 0) {
-		SunConsole = 1;
+	     case ARG_PO:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    if((screen->pageoverlap = atoi (*++argv) - 1) < 0)
+			screen->pageoverlap = -1;
+		} else
+		    screen->pageoverlap = 0;
 		continue;
+	     case ARG_PS:
+		screen->pagemode = i;
+		continue;
+	     case ARG_RV:
+		re_verse = i;
+		continue;
+	     case ARG_RW:
+		if(i)
+		    term.flags |= REVERSEWRAP;
+		else
+		    term.flags &= ~REVERSEWRAP;
+		continue;
+	     case ARG_S:
+		screen->multiscroll = i;
+		continue;
+	     case ARG_SB:
+		screen->scrollbar = i ? SCROLLBARWIDTH : 0;
+		continue;
+	     case ARG_SI:
+		screen->scrollinput = i ? FALSE : DEFSCROLLINPUT;
+		continue;
+	     case ARG_SK:
+		screen->scrollkey = i;
+		continue;
+	     case ARG_SL:
+		if(i) {
+		    if (--argc <= 0) Syntax ();
+		    save_lines = atoi (*++argv);
+		} else
+		    save_lines = SAVELINES;
+		continue;
+	     case ARG_SN:
+		screen->reversestatus = !i;
+		continue;
+	     case ARG_ST:
+		screen->statusline = i;
+		continue;
+	     case ARG_T:
+		screen->TekEmu = i;
+		continue;
+	     case ARG_TB:
+		screen->fullVwin.titlebar = i ? FALSE : DEFTITLEBAR;
+		continue;
+	     case ARG_TI:
+		screen->textundericon = i;
+		continue;
+	     case ARG_VB:
+		screen->visualbell = i;
+		continue;
+	     default:
+		Syntax ();
 	    }
-#endif TIOCCONS
-#endif sun
-
-	    Syntax ();
+	    break;
 	}
-	
-	if (fnflag && !fbflag) fb = fn;
-	if (!fnflag && fbflag) fn = fb;
-#ifdef JUMPSCROLL
-	if(tek)
-		jumpscroll = 0;
-#endif JUMPSCROLL
-	Serve (display, fn, fb, geometry, def, getty, slave, passedPty,
-	   border, borderwidth, tek, reverse, multiscroll, bitmapicon,
-	   fore_color, back_color, brdr_color, curs_color, mous_color
-#ifdef JUMPSCROLL
-	   , jumpscroll
-#endif JUMPSCROLL
-	   );
-}
 
-Syntax ()
-{
-	static char *ustring[] = {
-	"Usage: xterm [-rv] [-fn normal_font] [-fb bold_font]\n",
-	"\t[=[width]x[height][[+-]xoff[[+-]yoff]]] [-bw bdr_width]\n",
-	"\t[-fg color] [-bg color] [-bd color] [-cr color] [-ms color]\n",
-	"\t[[[host]:vs]] [-d] [-s] [-t] [-i] [-j] [-e command_to_exec]\n",
-	"\t[-n window_name]\n\n",
-	"Fonts must be of fixed width and of same size;\n",
-	"If only one font is specified, it will be used for normal and bold text\n",
-#ifdef JUMPSCROLL
-	"The -j option enables jump scroll\n",
-#endif
-	"The -s option enables asynchronous scrolling\n",
-	"The -t option enables Tektronics 4010 emulation\n",
-	"The -i option enables bitmap icons\n",
-	"The -d option turns debugging on (error messages printed)\n",
-	"The -n option sets the window name\n",
-	"The -b option specifies the inner padding\n",
-	"Default is: xterm -fn vtsingle -fb vtbold =80x24 :0\n",
-	0};
-	char **us = ustring;
-	while (*us) fputs(*us++, stderr);
-	exit (1);
-}
+	term.initflags = term.flags;
 
-char *strscan (search, what)
-/*
-   Returns pointer to first char ins search which is also in what, else NULL.
- */
-char *search, *what;
-{
-	int i, len = strlen (what);
-	char c;
+	if (fnflag && !fbflag) f_b = NULL;
+	if (!fnflag && fbflag) f_n = f_b;
+	if (!win_name && get_ty) {
+		win_name = (char *)malloc( 32 );
+		strcpy( win_name, "login(" );
+		gethostname( win_name+6, 25 );
+		strcat( win_name, ")" );
+	}
+	if(!win_name)
+		win_name = (get_ty ? "login" : (am_slave ? "xterm slave" :
+		 (command_to_exec ? basename(command_to_exec[0]) :
+		 xterm_name)));
+	if(inhibit & I_TEK)
+		screen->TekEmu = FALSE;
 
-	while ((c = *(search++)) != NULL)
-	    for (i = 0; i < len; i++)
-	    	if (c == what [i]) return (--search);
-
-	return (NULL);
-}
-
-Serve (disp, fn, fb, geometry, def, getty, slave, passedPty,
-       border, borderwidth, tek, reverse, multiscroll, bitmapicon,
-       fore_color, back_color, brdr_color, curs_color, mous_color
-#ifdef JUMPSCROLL
-       , jumpscroll
-#endif JUMPSCROLL
-       )
-char *disp;	 /* host of display to serve */
-char *fn;	 /* fontname of normal characters */
-char *fb;	 /* fontname of bold characters */
-char *getty;	 /* true iff child should be getty */
-int slave;	 /* true if should run as slave (contains file # of pty) */
-char *passedPty; /* name of pty to use if slave */
-char *geometry;	 /* user supplied geometry spec */
-char *def;	 /* default geometry spec */
-int border;	 /* inner border in pixels */
-int borderwidth; /* outer border in pixels */
-int tek;	 /* true ==> Tektronics emulation */
-int reverse;	 /* true ==> black background, white characters */
-int multiscroll; /* true ==> asynchronous full-screen scrolling */
-int bitmapicon;  /* true ==> bitmap icons rather than text icon */
-#ifdef JUMPSCROLL
-int jumpscroll;  /* true ==> fast multi-line scrolling */
-#endif JUMPSCROLL
-char *fore_color;/* text color */
-char *back_color;/* background color */
-char *brdr_color;/* border color */
-char *curs_color;/* text cursor color */
-char *mous_color;/* mouse cursor color */
-{
-	int pty;	/* fildes for pty of client */
-	XEvent reply;
-	XEvent *rep = & reply;
-	int aborted = 0;
-	int Select_mask, select_mask = 0;
-	int maxplus1;
-	short toggled = NULL;
-	Screen *screen = &term.screen;
-	int Xsocket;
-	int pty_mask, X_mask;
-	extern int errno;
-	int mode = 1;
-#ifdef TIOCSWINSZ
-	struct winsize ws;
-#endif
+	/* set up stderr properly */
+	i = -1;
+#ifdef DEBUG
+	if(debug)
+		i = open ("xterm.debug.log", O_WRONLY | O_CREAT | O_TRUNC,
+		 0666);
+	else
+#endif DEBUG
+	if(get_ty)
+		i = open("/dev/console", O_WRONLY);
+	if(i >= 0)
+		fileno(stderr) = i;
+	if(fileno(stderr) != (NOFILE - 1)) {
+		dup2(fileno(stderr), (NOFILE - 1));
+		if(fileno(stderr) >= 3)
+			close(fileno(stderr));
+		fileno(stderr) = (NOFILE - 1);
+	}
 
 	signal (SIGCHLD, reapchild);
 	signal (SIGHUP, SIG_IGN);
+	signal(SIGALRM, onalarm);
 
 	/* open a terminal for client */
-	get_terminal (disp, &term, fn, fb, geometry, def, border,
-	   borderwidth, (int)getty, slave, reverse, multiscroll, bitmapicon,
-	   tek, fore_color, back_color, brdr_color, curs_color, mous_color
-#ifdef JUMPSCROLL
-	   , jumpscroll
-#endif JUMPSCROLL
-	   );
+	get_terminal ();
+	spawn ();
 
 	Xsocket = screen->display->fd;
+	pty = screen->respond;
 
-	spawn (disp, &pty, Xsocket, screen, getty, slave, passedPty);
-
-	if (slave) {	/* Write window id so master end can read and use */
-	    write(pty, &screen->window, sizeof(screen->window));
+	if (am_slave) { /* Write window id so master end can read and use */
+	    write(pty, screen->TekEmu ? (char *)&TWindow(screen) :
+	     (char *)&VWindow(screen), sizeof(Window));
 	    write(pty, "\n", 1);
 	}
 
-	screen->respond = term.buf.fildes = pty;
-
-#ifdef TIOCSWINSZ
-	/* tell tty how big window is */
-	ws.ws_row = screen->max_row + 1;
-	ws.ws_col = screen->max_col + 1;
-	ws.ws_xpixel = screen->width;
-	ws.ws_ypixel = screen->height;
-	ioctl (screen->respond, TIOCSWINSZ, &ws);
-#endif
-
-	/* Initialize Tektronix graphics mode parameters */
-	TekErase (&term);
-	screen->TekEmu = tek;
-	screen->cur_x = screen->cur_y = 0;
-	screen->cur_X = screen->cur_Y = 0;
-	screen->TekGMode = 0;
-	screen->TekAMode = 0;
-	screen->TekPMode = 0;
-
-	if (ioctl (pty, FIONBIO, &mode) == -1) Error ();
+	if(log_on) {
+		log_on = FALSE;
+		StartLog(screen);
+	}
+	screen->inhibit = inhibit;
+	mode = 1;
+	if (ioctl (pty, FIONBIO, &mode) == -1) SysError (ERROR_FIONBIO);
 	
 	pty_mask = 1 << pty;
 	X_mask = 1 << Xsocket;
 	Select_mask = pty_mask | X_mask;
-	maxplus1 = (pty < Xsocket) ? (1 + Xsocket) : (1 + pty);
+	max_plus1 = (pty < Xsocket) ? (1 + Xsocket) : (1 + pty);
 
+#ifdef DEBUG
 	if (debug) printf ("debugging on\n");
-
-	while (1)
-	{
-	   if (! aborted)
-	   {
-#ifdef JUMPSCROLL
-		if(screen->scroll_amt)
-			FlushScroll(screen);
-#endif JUMPSCROLL
-		if (toggled)
-		{
-		    CursorToggle (screen, toggled);
-		    toggled = NULL;
-		}
-
-		select_mask = Select_mask;
-		XFlush();
-		while (select (maxplus1, &select_mask, NULL, NULL, 0) <= 0) {
-			if (errno != EINTR) Error();
-			}
-	   }
-	   else select_mask = NULL;
-
-	   if (select_mask & pty_mask || aborted)
-	   {
- 		if (!toggled)
-		{
-		    CursorToggle (screen, toggled);
-		    toggled = 1;
-		}
-		do {
-			aborted = (*screen->mode)(&term);
-		} while (screen->display->qlen==0 && term.buf.cnt>0);
-	   }
-
-	   if (select_mask & X_mask || aborted)
-	   {
-#ifdef JUMPSCROLL
-		if(screen->scroll_amt)
-			FlushScroll(screen);
-#endif JUMPSCROLL
-		XPending ();
-		do {
-		    XNextEvent (&reply);
-
-		    switch ((int)reply.type)
-		    {
-			case KeyPressed:
-				Input (&term.keyboard, &term.screen,
-					(XKeyPressedEvent *)rep);
-				break;
-
-			case ExposeWindow:
-				if (bitmapicon) {
-					if (((XExposeWindowEvent *)rep)->window
-					== screen->iconwindow) {
-						RefreshIcon(screen);
-						break;
-						}
-					}
-				toggled = 1;
-				if (ScreenResize (screen,
-					((XExposeWindowEvent *)rep)->width,
-					((XExposeWindowEvent *)rep)->height,
-					&term.flags) != -1)
-				{
-				    TabReset (term.tabs);
-				    XClear (screen->window);
-				    ScrnRefresh (screen, 0, 0,
-				    		 screen->max_row + 1,
-						 screen->max_col + 1);
-
-				    if (screen->TekEmu) TekRefresh (&term);
-				}
-				break;
-
-			case ExposeRegion:
-				if (((XExposeWindowEvent *)rep)->detail ==
-				    	ExposeCopy &&
-				    screen->incopy <= 0) {
-					screen->incopy = 1;
-					if (screen->scrolls > 0)
-						screen->scrolls--;
-				}
-				if (HandleExposure (screen, &reply))
-					toggled = 1;
-				break;
-
-			case ExposeCopy:
-				if (screen->incopy <= 0 && screen->scrolls > 0)
-					screen->scrolls--;
-				if (screen->scrolls)
-					screen->incopy = -1;
-				else
-					screen->incopy = 0;
-				break;
-
-			case ButtonPressed:
-			case ButtonReleased:
-				if (screen->incopy)
-					CopyWait (screen);
-				if (HandleButtons(&term,&reply,pty))
-					toggled = 1;
-				break;
-		        /*
-			 *  Enter window is being handled just to give xterm
-			 *  a kick in the pants when the mouse gets in the
-			 *  window in case it was swapped out.  Of course,
-			 *  one might thrash...
-			 */
-			case EnterWindow:
-				break;
-			default:
-				break;
-			}
-		} while (screen->display->qlen > 0);
-	   }
-	}
+#endif DEBUG
+	XErrorHandler(xerror);
+	XIOErrorHandler(xioerror);
+	for( ; ; )
+		if(screen->TekEmu)
+			TekRun();
+		else
+			VTRun();
 }
 
-RefreshIcon(screen)
-register Screen *screen;
+char *basename(name)
+char *name;
 {
-	XBitmapBitsPut(screen->iconwindow, 0, 0, icon_width, icon_height,
-		icon_bits, screen->foreground, screen->background,
-		screen->iconmask, GXcopy, AllPlanes);
+	register char *cp;
+	char *rindex();
+
+	return((cp = rindex(name, '/')) ? cp + 1 : name);
 }
 
-get_pty (pty, pty_name)
+static struct argstr {
+	char *arg;
+	int val;
+} arg[] = {
+	{"132",	ARG_132},
+#ifdef TIOCCONS
+	{"C",	ARG__C},
+#endif TIOCCONS
+	{"L",	ARG__L},
+	{"S",	ARG__S},
+	{"ar",	ARG_AR},
+	{"b",	ARG_B},
+	{"bd",	ARG_BD},
+	{"bg",	ARG_BG},
+	{"bi",	ARG_BI},
+	{"bw",	ARG_BW},
+	{"cr",	ARG_CR},
+	{"cu",	ARG_CU},
+#ifdef DEBUG
+	{"d",	ARG_D},
+#endif DEBUG
+	{"dw",	ARG_DW},
+	{"e",	ARG_E},
+	{"fb",	ARG_FB},
+	{"fg",	ARG_FG},
+	{"fi",	ARG_FI},
+	{"fn",	ARG_FN},
+	{"ft",	ARG_FT},
+	{"i",	ARG_I},
+	{"ib",	ARG_IB},
+	{"it",	ARG_IT},
+	{"j",	ARG_J},
+#ifdef KEYBD
+	{"k",	ARG_K},
+#endif KEYBD
+	{"l",	ARG_L},
+	{"lf",	ARG_LF},
+	{"ls",	ARG_LS},
+	{"mb",	ARG_MB},
+	{"ms",	ARG_MS},
+	{"n",	ARG_N},
+	{"nb",	ARG_NB},
+	{"po",	ARG_PO},
+	{"ps",	ARG_PS},
+	{"r",	ARG_RV},
+	{"rv",	ARG_RV},
+	{"rw",	ARG_RW},
+	{"s",	ARG_S},
+	{"sb",	ARG_SB},
+	{"si",	ARG_SI},
+	{"sk",	ARG_SK},
+	{"sl",	ARG_SL},
+	{"sn",	ARG_SN},
+	{"st",	ARG_ST},
+	{"t",	ARG_T},
+	{"tb",	ARG_TB},
+	{"ti",	ARG_TI},
+	{"vb",	ARG_VB},
+	{"w",	ARG_BW},
+};
+
+argument(s)
+register char *s;
+{
+	register int i, low, high, com;
+
+	low = 0;
+	high = sizeof(arg) / sizeof(struct argstr) - 1;
+	while(low <= high) {/* use binary search, arg in lexigraphic order */
+		i = (low + high) / 2;
+		if ((com = strcmp(s, arg[i].arg)) == 0)
+			return(arg[i].val);
+		if(com > 0)
+			low = i + 1;
+		else
+			high = i - 1;
+	}
+	return(-1);
+}
+
+static char *ustring[] = {
+"Usage: xterm [-132] [-ar] [-b margin_width] [-bd border_color] \\\n",
+#ifdef ARG__C
+" [-bg backgrnd_color] [-bi] [-bw border_width] [-C] [-cr cursor_color] [-cu] \\\n",
+#else ARG__C
+" [-bg backgrnd_color] [-bi] [-bw border_width] [-cr cursor_color] [-cu] \\\n",
+#endif ARG__C
+" [-dw] [-fb bold_font] [-fg foregrnd_color] [-fi icon_font] [-fn norm_font] \\\n",
+" [-ft title_font] [-i] [-ib iconbitmap] [-it tekiconbitmap] [-j] \\\n",
+#ifdef ARG_K
+" [-k keybd] [-l] [-lf logfile] [-ls] [-mb] [-ms mouse_color] \\\n",
+#else ARG_K
+" [-l] [-lf logfile] [-ls] [-mb] [-ms mouse_color] \\\n",
+#endif ARG_K
+" [-n name] [-nb bell_margin] [-po] [-ps] [-rv] [-rw] [-s] \\\n",
+" [-sb] [-si] [-sk] [-sl save_lines] [-sn] [-st] [-t] [-tb] \\\n",
+" [-ti] [-vb] [=[width]x[height][[+-]xoff[[+-]yoff]]] \\\n",
+" [%[width]x[height][[+-]xoff[[+-]yoff]]] [#[+-]xoff[[+-]yoff]] \\\n",
+" [-e command_to_exec]\n\n",
+"Fonts must be of fixed width and of same size;\n",
+"If only one font is specified, it will be used for normal and bold text\n",
+"The -132 option allows 80 <-> 132 column escape sequences\n",
+"The -ar option turns auto raise window mode on\n",
+#ifdef ARG__C
+"The -C option forces output to /dev/console to appear in this window\n",
+#endif ARG__C
+"The -bi option turns off miniature (active) icons and uses a bitmap icon\n",
+"The -cu option turns a curses bug fix on\n",
+"The -dw option warps the mouse on deiconify\n",
+"The -i option enables icon startup\n",
+"The -j option enables jump scroll\n",
+"The -l option enables logging\n",
+"The -ls option makes the shell a login shell\n",
+"The -mb option turns the margin bell on\n",
+"The -ps option turns page scroll on\n",
+"The -rv option turns reverse video on\n",
+"The -rw option turns reverse wraparound on\n",
+"The -s option enables asynchronous scrolling\n",
+"The -sb option enables the scrollbar\n",
+"The -si option disables re-positioning the scrollbar at the bottom on input\n",
+"The -sk option causes the scrollbar to position at the bottom on a key\n",
+"The -sn option makes the status line normal video \n",
+"The -st option enables the status line\n",
+"The -t option starts Tektronix mode\n",
+"The -tb option disables the titlebar\n",
+"The -ti option places the window name under the icon\n",
+"The -vb option enables visual bell\n",
+0
+};
+
+Syntax ()
+{
+	register char **us = ustring;
+
+	while (*us) fputs(*us++, stderr);
+	exit (1);
+}
+
+get_pty (pty, tty)
 /*
-   opens a pty, storing fildes in pty
-   and it's identifying character in pty_name.
+   opens a pty, storing fildes in pty and tty.
  */
-int *pty;
-char *pty_name;
+int *pty, *tty;
 {
 	int devindex, letter = 0;
-	int fd;
-	extern errno;
-
-	if (debug) {
-	    fd = open ("xterm.debug.log", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-	    dup2 (fd, fileno (stderr));
-	}
 
 	while (letter < 4) {
 	    ttydev [8] = ptydev [8] = "pqrs" [letter++];
 	    devindex = 0;
 
 	    while (devindex < 16) {
-		ptydev [9] = *pty_name = "0123456789abcdef" [devindex++];
-		if ((*pty = open (ptydev, O_RDWR, 0)) < 0)	{
-			if (debug) fprintf (stderr, "pty %d code %d\n",
-					devindex - 1, errno);
+		ttydev [9] = ptydev [9] = "0123456789abcdef" [devindex++];
+		if ((*pty = open (ptydev, O_RDWR)) < 0)
+			continue;
+		if ((*tty = open (ttydev, O_RDWR)) < 0) {
+			close(*pty);
 			continue;
 		}
-		goto got_pty;
+		return;
 	    }
 	}
 	
-	fprintf (stderr,"Not enough available pty's\n");
-	exit (11);
-
-got_pty:
-	if (debug) {
-		close (fileno (stderr));
-		close (fd);
-	}
+	fprintf (stderr, "%s: Not enough available pty's\n", xterm_name);
+	exit (ERROR_PTYS);
 }
 
-get_terminal (disp, term, fn, fb, geometry, def,
-      border, borderwidth, do_warp, slave, reverse, multiscroll, bitmapicon,
-      tek, fore_color, back_color, brdr_color, curs_color, mous_color
-#ifdef JUMPSCROLL
-      , jumpscroll
-#endif JUMPSCROLL
-      )
+get_terminal ()
 /* 
  * sets up X and initializes the terminal structure except for term.buf.fildes.
  */
-char *disp;
-register Terminal *term;
-char *fn, *fb;
-char *geometry, *def;
-int border, borderwidth, do_warp, reverse, multiscroll, bitmapicon;
-int slave;
-int tek;
-#ifdef JUMPSCROLL
-int jumpscroll;
-#endif JUMPSCROLL
-char *fore_color, *back_color, *brdr_color, *curs_color, *mous_color;
 {
-	int width, height;
-	FontInfo *fInfo;
-	register Keyboard *keyboard;
-	register Screen *screen;
-	Buffer *buf;
-	double scale_x, scale_y;
+	register Screen *screen = &term.screen;
+	register int try;
 	Color cdef;
-	int pixels[2];
-	int try = 10;
-	OpaqueFrame twindow;
-
-	keyboard = &term->keyboard;
-	screen = &term->screen;
-	buf = &term->buf;
-
-	term->flags = WRAPAROUND|SMOOTHSCROLL;
-
-	keyboard->flags = NULL;
-	keyboard->offset = 0;
+	char *malloc();
 	
-	buf->cnt = 0;
-	buf->ptr = &buf->buf[0];
-	
-	TabReset (term->tabs);
-
-	while (try--)
-	    if ((screen->display = XOpenDisplay(disp)) == NULL) {
-		if (loginflag == 0) {
-			fprintf(stderr,"No such display server %s\n", disp);
-			exit(1);
-		}
-		sleep (5);
-		continue;
+	for (try = 10 ; ; ) {
+	    if (screen->display = XOpenDisplay(display))
+		break;
+	    if (!get_ty) {
+		fprintf(stderr, "%s: No such display server %s\n", xterm_name,
+		 XDisplayName(display));
+		exit(ERROR_NOX);
 	    }
-	    else break;
-
-	if (try <= 0)  {
-		fprintf (stderr,"Can't connect to display server %s\n",
-		disp);
-		exit (111);
-	}	    
-
-	screen->foreground = BlackPixel;
-	screen->background = WhitePixel;
-	screen->cursorcolor = BlackPixel;
-	screen->mousecolor = BlackPixel;
-	screen->xorplane = 1;
-	if (DisplayCells() > 2 && (fore_color || back_color || curs_color)) {
-		if (tek) {
-			if (curs_color && XParseColor(curs_color, &cdef)) {
-				if (XGetColorCells(0, 2, 1, &screen->xorplane,
-								pixels)) {
-					screen->background = pixels[0];
-					screen->foreground = pixels[1];
-					screen->cursorcolor = screen->background |
-					screen->xorplane;
-					cdef.pixel = screen->cursorcolor;
-					XStoreColor(&cdef);
-				}
-			} 
-			else if (XGetColorCells(0, 1, 1, &screen->xorplane,
-							&screen->background)) {
-				screen->foreground = screen->background |
-				screen->xorplane;
-				screen->cursorcolor = screen->foreground;
-			}
-			if (screen->background != WhitePixel) {
-				if (back_color == NULL ||
-					!XParseColor(back_color, &cdef)) {
-					cdef.pixel = WhitePixel;
-					XQueryColor(&cdef);
-				}
-				cdef.pixel = screen->background;
-				XStoreColor(&cdef);
-				if(screen->cursorcolor != screen->foreground) {
-					cdef.pixel = screen->foreground |
-						screen->xorplane;
-					XStoreColor(&cdef);
-				}
-				if (fore_color == NULL ||
-					!XParseColor(fore_color, &cdef)) {
-					cdef.pixel = BlackPixel;
-					XQueryColor(&cdef);
-				}
-				cdef.pixel = screen->foreground;
-				XStoreColor(&cdef);
-			}
-		}
-		else {
-			if (fore_color && XParseColor(fore_color, &cdef) &&
-						XGetHardwareColor(&cdef)) {
-				screen->foreground = 
-					screen->foreground = cdef.pixel;
-				reverse = 0;
-			}
-			if (back_color && XParseColor(back_color, &cdef) &&
-						XGetHardwareColor(&cdef)) {
-				screen->background = cdef.pixel;
-				reverse = 0;
-			}
-			if (curs_color && XParseColor(curs_color, &cdef) &&
-			XGetHardwareColor(&cdef))
-			screen->cursorcolor = cdef.pixel;
-			else
-			screen->cursorcolor = screen->foreground;
-		}
+	    if (--try <= 0)  {
+		fprintf (stderr, "%s: Can't connect to display server %s\n",
+		 xterm_name, XDisplayName(display));
+		exit (ERROR_NOX2);
+	    }	    
+	    sleep (5);
 	}
 
-	screen->border = border;
-	screen->borderwidth = borderwidth;
-	screen->fnt_norm = screen->fnt_bold = NULL;
-	   
-	if ((fInfo = XOpenFont(fn)) == NULL) {
-		fprintf(stderr, "%s: Could not open font %s!\n",
-			xterm_name, fn);
-		exit(1);
+	if(re_verse) {
+		B_Pixel = WhitePixel;
+		B_Pixmap = WhitePixmap;
+		W_Pixel = BlackPixel;
+		W_Pixmap = BlackPixmap;
+	} else {
+		B_Pixel = BlackPixel;
+		B_Pixmap = BlackPixmap;
+		W_Pixel = WhitePixel;
+		W_Pixmap = WhitePixmap;
 	}
-	if (fn) screen->fnt_norm = fInfo->id;
-	if (fb) screen->fnt_bold = XOpenFont(fb)->id;
-	screen->f_width = fInfo->width;
-	screen->f_height = fInfo->height;
 
 	if (brdr_color && DisplayCells() > 2 &&
-	    XParseColor(brdr_color, &cdef) && XGetHardwareColor(&cdef))
-	    screen->bordertile = XMakeTile(cdef.pixel);
-	else
-	    screen->bordertile = BlackPixmap;
+	 XParseColor(brdr_color, &cdef) && XGetHardwareColor(&cdef)) {
+	    if(!(screen->bordertile = XMakeTile(cdef.pixel)))
+		Error(ERROR_BORDER);
+	} else
+	    screen->bordertile = B_Pixmap;
+	screen->graybordertile = make_gray();
 
-	screen->cursor = XStoreBitmap(xterm_width, xterm_height, xterm_bits);
-	screen->mask = 	XStoreBitmap(xterm_mask_width, xterm_mask_height, 
-				    xterm_mask_bits);
+	screen->foreground = B_Pixel;
+	screen->background = W_Pixel;
+	screen->cursorcolor = B_Pixel;
+	screen->mousecolor = B_Pixel;
+
+	if (DisplayCells() > 2 && (fore_color || back_color ||
+	 curs_color)) {
+		if (fore_color && XParseColor(fore_color, &cdef) &&
+		 XGetHardwareColor(&cdef)) {
+			screen->foreground = cdef.pixel;
+			screen->color |= C_FOREGROUND;
+		}
+		if (back_color && XParseColor(back_color, &cdef) &&
+		 XGetHardwareColor(&cdef)) {
+			screen->background = cdef.pixel;
+			screen->color |= C_BACKGROUND;
+		}
+		if (curs_color && XParseColor(curs_color, &cdef) &&
+		 XGetHardwareColor(&cdef)) {
+			screen->cursorcolor = cdef.pixel;
+			screen->color |= C_CURSOR;
+		} else
+			screen->cursorcolor = screen->foreground;
+	}
+
 	if (mous_color && DisplayCells() > 2 &&
-	    XParseColor(mous_color, &cdef) && XGetHardwareColor(&cdef))
+	 XParseColor(mous_color, &cdef) && XGetHardwareColor(&cdef)) {
 	    screen->mousecolor = cdef.pixel;
-	else
+	    screen->color |= C_MOUSE;
+	} else
 	    screen->mousecolor = screen->cursorcolor;
-	screen->curs = XStoreCursor(screen->cursor, screen->mask, 5, 8,
-		screen->mousecolor, screen->background, GXcopy);
-	screen->rcurs = XStoreCursor(screen->cursor, screen->mask, 5, 8,
-		screen->background, screen->mousecolor, GXcopy);
 
-	if (reverse) {	/* reverse is black background with white chars */
-		term->flags |= REVERSE_VIDEO;
-		screen->cursorcolor = screen->background;
-		screen->background = screen->foreground;
-		screen->foreground = screen->cursorcolor;
-		if (screen->bordertile == BlackPixmap)
-		    screen->bordertile = WhitePixmap;
+	if(screen->color & C_BACKGROUND) {
+	    if(!(screen->bgndtile = XMakeTile(screen->background)))
+		Error(ERROR_BACK);
+	} else
+		screen->bgndtile = W_Pixmap;
+	screen->arrow = make_arrow(screen->mousecolor, screen->background,
+	 GXcopy);
+
+	XAutoRepeatOn();
+	if((screen->titlefont = XOpenFont(f_t)) == NULL) {
+		fprintf(stderr, "%s: Can't get title font %s\n", xterm_name,
+		 f_t);
+		exit(ERROR_TITLEFONT);
 	}
-	screen->bgndtile = XMakeTile(screen->background);
-
-	twindow.bdrwidth = screen->borderwidth;
-	twindow.border = screen->bordertile;
-	twindow.background = screen->bgndtile;
-
-	screen->window = XCreateTerm ("Terminal Emulator", xterm_name,
-		geometry, def, &twindow, 12, 8, 
-		screen->border * 2, screen->border * 2,
-		&width, &height, 
-		fInfo, fInfo->width, fInfo->height);
-
-	screen->width = twindow.width - border * 2;
-	screen->height = twindow.height - border * 2;
-
-	/* Reset variables used by ANSI emulation. */
-
-	screen->ansi.a_type = 0;		/* New sequence.	*/
-	screen->ansi.a_pintro = 0;		/* New sequence.	*/
-	screen->ansi.a_final = 0;		/* New sequence.	*/
-	screen->gsets[0] = 'B';			/* ASCII_G		*/
-	screen->gsets[1] = 'B';
-	screen->gsets[2] = '<';			/* DEC supplemental.	*/
-	screen->gsets[3] = '<';
-	screen->curgl = 0;			/* G0 => GL.		*/
-	screen->curgr = 2;			/* G2 => GR.		*/
-	screen->curss = 0;			/* No single shift.	*/
-	screen->rx8bit = 0;			/* 7 bit.		*/
-	screen->tx8bit = 0;			/* 7 bit.		*/
-	screen->mode = ANSInormal;
-
-	/* Reset Tektronix alpha mode */
-	screen->TekGMode = 0;
-	screen->TekAMode = 0;
-	screen->cur_x = screen->cur_y = 0;
-	screen->cur_X = screen->cur_Y = 0;
-
-	scale_x = screen->width / 4096.0;
-	scale_y = screen->height / 3128.0;
-	screen->TekScale = scale_x;
-	if (scale_y < scale_x) screen->TekScale = scale_y;
-
-	if (bitmapicon) {
-		screen->iconwindow = XCreateWindow (RootWindow,
-			0, 0, icon_width, icon_height, 0, 0, 0);
-
-		XTileRelative(screen->iconwindow);
-
-		XSetIconWindow(screen->window, screen->iconwindow);
-
-		screen->iconmask = XStoreBitmap(icon_mask_width,
-			icon_mask_height, icon_mask_bits);
-		
-		XSelectInput (screen->iconwindow, ExposeWindow);
-	}
-
-	if (reverse)
-		XDefineCursor(screen->window, screen->rcurs);
-	else	XDefineCursor(screen->window, screen->curs);
-
-	XStoreName (screen->window, (win_name != (char *) 0 ? win_name:
-			(do_warp ? "login" :
-			(slave ? "xtermslave" :
-			(command_to_exec ? command_to_exec[0] : "xterm")))));
-
-	XSetResizeHint (screen->window,
-			2 * border, 2 * border, fInfo->width, fInfo->height);
-		
-	XMapWindow (screen->window);
-
-	XSelectInput (screen->window, KeyPressed | ExposeWindow | EnterWindow |
-		ButtonPressed | ButtonReleased | ExposeRegion | ExposeCopy);
-
-
-	if (do_warp)
-		XWarpMouse (screen->window,
-			    screen->width >> 1, screen->height >>1);
-
-	screen->cur_col = screen->cur_row = 0;
-	screen->max_col = screen->width  / fInfo->width - 1;
-	screen->top_marg = 0;
-	screen->bot_marg = screen->max_row = screen->height/ fInfo->height - 1;
-
-	screen->sc.row = screen->sc.col = screen->sc.flags = NULL;
-
-
-	/* allocate memory for screen buffer */
-	screen->buf = (ScrnBuf) Allocate (screen->max_row + 1,
-					  screen->max_col +1);
-
-	screen->do_wrap = NULL;
-	screen->scrolls = screen->incopy = 0;
-	screen->multiscroll = multiscroll;
-#ifdef JUMPSCROLL
-	if (screen->jumpscroll = jumpscroll)
-		term->flags &= ~SMOOTHSCROLL;
-#endif JUMPSCROLL
-
-
-	/* display initial cursor */
-	CursorToggle (screen, 1);
+	screen->title_n_size= XQueryWidth("m", screen->titlefont->id);
+	screen->titleheight = screen->titlefont->height + 2 * TITLEPAD + 1;
+	if(screen->fullVwin.titlebar)
+		screen->fullVwin.titlebar =
+		    screen->fullTwin.titlebar = screen->titleheight;
+	IconInit(screen, iconbitmap, tekiconbitmap);
 }
 
-spawn (display, pty, Xsocket, screen, getty, slave, passedPty)
+static char *tekterm[] = {
+	"tek4015",
+	"tek4014",
+	"tek4013",
+	"tek4010",
+	"dumb",
+	0
+};
+
+static char *vtterm[] = {
+	"xterms",
+	"xterm",
+	"vt102",
+	"vt100",
+	"ansi",
+	"dumb",
+	0
+};
+
+spawn ()
 /* 
- *  Inits pty and tty and forks a login process. Returns fd for pty in pty.
+ *  Inits pty and tty and forks a login process.
  *  Does not close fd Xsocket.
  *  If getty,  execs getty rather than csh and uses std fd's rather
  *  than opening a pty/tty pair.
  *  If slave, the pty named in passedPty is already open for use
  */
-int *pty, Xsocket;
-Screen *screen;
-char *getty;		/* if true execs /etc/getty - Xwindow */
-int slave;
-char *passedPty;
-char *display;
 {
-	int index1, tty;
-	char pty_name;
+	register Screen *screen = &term.screen;
+	int Xsocket = screen->display->fd;
+	int index1, tty = -1;
 	int discipline;
 	unsigned lmode;
 	struct tchars tc;
@@ -936,117 +1032,121 @@ char *display;
 
 	char termcap [1024];
 	char newtc [1024];
-	char prog [256];
-	char numbuf[10];
-	char *ptr;
-	char *index (), *strindex ();
-	int i = 0;
+	char *ptr, *shname;
+	int i, no_dev_tty = FALSE;
 	char **envnew;		/* new environment */
-	struct passwd *getpwuid();
-	struct passwd *pw;
-	char logindev[32];
-	char *TermName = "xterm";
+	char buf[32];
+	char *TermName = NULL;
 	int ldisc = 0;
+#ifdef sun
+#ifdef TIOCSSIZE
+	struct ttysize ts;
+#endif TIOCSSIZE
+#else sun
+#ifdef TIOCSWINSZ
+	struct winsize ws;
+#endif TIOCSWINSZ
+#endif sun
+	struct passwd *pw = NULL;
+#ifdef UTMP
+	struct utmp utmp;
+#endif UTMP
+	extern int Exit();
+	struct passwd *getpwuid();
+	char *getenv();
+	char *index (), *rindex (), *strindex ();
 
-	/* be real paranoid about getting some usable entry */
-	if (tgetent (termcap, TermName)  == 1
-		|| (TermName = "vt102", tgetent(termcap, TermName)) == 1
-		|| (TermName = "ansi",  tgetent(termcap, TermName)) == 1) {
-		/* update termcap string */
-		/* first do columns */
-		if ((ptr = strindex (termcap, "co#")) == NULL){
-			fprintf(stderr,"Can't find co# in termcap string %s\n",
-				TermName);
-			exit (1);
-		}
-		strncpy (newtc, termcap, ptr - termcap + 3);
-		newtc[ptr-termcap+3] = '\0';
-		sprintf (numbuf, "%d\0", screen->max_col + 1);
-		strcat (newtc, numbuf);
-		ptr = index (ptr, ':');
-		strcat (newtc, ptr);
-		strncpy (termcap, newtc, sizeof(termcap));
-		/* now do lines */
-		if ((ptr = strindex (termcap, "li#")) == NULL) {
-			fprintf(stderr,"Can't find li# in termcap string %s\n",
-				TermName);
-			exit (1);
-		}
-		strncpy (newtc, termcap, ptr - termcap + 3);
-		newtc[ptr-termcap+3] = '\0';
-		sprintf (numbuf, "%d\0", screen->max_row + 1);
-		strcat (newtc, numbuf);
-		ptr = index (ptr, ':');
-		strcat (newtc, ptr);
-		if (strcmp(TermName, "xterm") != 0)
-		    fprintf(stderr, 
-		    "xterm: can't find xterm termcap entry, using %s instead!\n", TermName);
-	}
-	else fprintf(stderr,"xterm: can't find any usable termcap entry!\n");
+	screen->uid = getuid();
+	screen->gid = getgid();
 
-	if (getty) {
-		strcpy(logindev,"/dev/");
-		strcat(logindev,getty);
-		logindev [5] = 'p';
-		*pty = open (logindev, O_RDWR, 0);
+	/* so that TIOCSWINSZ || TIOCSIZE doesn't block */
+	signal(SIGTTOU,SIG_IGN);
+	if(!(screen->TekEmu ? TekInit() : VTInit()))
+		exit(ERROR_INIT);
+
+	if(screen->TekEmu) {
+		envnew = tekterm;
+		ptr = newtc;
+	} else {
+		/*
+		 * Special case of a 80x24 window, use "xterms"
+		 */
+		envnew = (screen->max_col == 79 && screen->max_row ==
+		 23) ? vtterm : &vtterm[1];
+		ptr = termcap;
 	}
-	else if (slave) {
-	    *pty = slave;
-	    ptydev[8] = ttydev[8] = passedPty[0];
-	    ptydev[9] = ttydev[9] = passedPty[1];
+	while(*envnew) {
+		if(tgetent(ptr, *envnew) == 1) {
+			TermName = *envnew;
+			if(!screen->TekEmu)
+			    resize(screen, TermName, termcap, newtc);
+			break;
+		}
+		envnew++;
 	}
-	else {
+
+	if (get_ty) {
+		screen->respond = loginpty;
+		if((tslot = ttyslot()) <= 0)
+			SysError(ERROR_TSLOT);
+	} else if (am_slave) {
+		screen->respond = am_slave;
+		ptydev[8] = ttydev[8] = passedPty[0];
+		ptydev[9] = ttydev[9] = passedPty[1];
+		if((tslot = ttyslot()) <= 0)
+			SysError(ERROR_TSLOT2);
+		setgid (screen->gid);
+		setuid (screen->uid);
+	} else {
 		if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0) {
-			if (errno != ENXIO) Error();
+			if (errno != ENXIO) SysError(ERROR_OPDEVTTY);
 			else {
-				no_dev_tty = 1;
+				no_dev_tty = TRUE;
 				sg = d_sg;
 				tc = d_tc;
 				discipline = d_disipline;
 				ltc = d_ltc;
 				lmode = d_lmode;
-				for (index1 = 0; index1 < 3; index1++)
-				    close (index1);
 			}
-		}
-		else {
+		} else {
 			/* get a copy of the current terminal's state */
 
-			if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0) Error ();
-
-			if (ioctl (tty, TIOCGETP, &sg) == -1) Error ();
-			if (ioctl (tty, TIOCGETC, (int *)&tc) == -1) Error ();
-			if (ioctl (tty, TIOCGETD, &discipline) == -1) Error ();
-			if (ioctl (tty, TIOCGLTC, (int *)&ltc) == -1) Error ();
-			if (ioctl (tty, TIOCLGET, &lmode) == -1) Error ();
-
+			if(ioctl(tty, TIOCGETP, &sg) == -1)
+				SysError (ERROR_TIOCGETP);
+			if(ioctl(tty, TIOCGETC, &tc) == -1)
+				SysError (ERROR_TIOCGETC);
+			if(ioctl(tty, TIOCGETD, &discipline) == -1)
+				SysError (ERROR_TIOCGETD);
+			if(ioctl(tty, TIOCGLTC, &ltc) == -1)
+				SysError (ERROR_TIOCGLTC);
+			if(ioctl(tty, TIOCLGET, &lmode) == -1)
+				SysError (ERROR_TIOCLGET);
 			close (tty);
 
 			/* close all std file descriptors */
 			for (index1 = 0; index1 < 3; index1++)
-			    close (index1);
-			if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0) Error ();
+				close (index1);
+			if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0)
+				SysError (ERROR_OPDEVTTY2);
 
-			if (ioctl (tty, TIOCNOTTY, 0) == -1) Error ();
+			if (ioctl (tty, TIOCNOTTY, 0) == -1)
+				SysError (ERROR_NOTTY);
 			close (tty);
 		}
 
-		get_pty (pty, &pty_name);
+		get_pty (&screen->respond, &tty);
 
-		if (*pty != Xsocket + 1) {
-			dup2 (*pty, Xsocket + 1);
-			close (*pty);
-			*pty = Xsocket + 1;
+		if (screen->respond != Xsocket + 1) {
+			dup2 (screen->respond, Xsocket + 1);
+			close (screen->respond);
+			screen->respond = Xsocket + 1;
 		}
 
-		ttydev [9] = pty_name;
-		if ((tty = open (ttydev, O_RDWR, 0)) < 0) Error ();
-
 		/* change ownership of tty to real group and user id */
-		chown (ttydev, getuid (), tty_gid (getgid()));
+		chown (ttydev, screen->uid, screen->gid);
 
 		/* change protection of tty */
-		chmod (ttydev, 0620);
+		chmod (ttydev, 0622);
 
 		if (tty != Xsocket + 2)	{
 			dup2 (tty, Xsocket + 2);
@@ -1062,135 +1162,263 @@ char *display;
 		/* make sure speed is set on pty so that editors work right*/
 		sg.sg_ispeed = B9600;
 		sg.sg_ospeed = B9600;
+		/* reset t_brkc to default value */
+		tc.t_brkc = -1;
 
-		if (ioctl (tty, TIOCSETP, &sg) == -1) Error ();
-		if (ioctl (tty, TIOCSETC, (int *)&tc) == -1) Error ();
-		if (ioctl (tty, TIOCSETD, &discipline) == -1) Error ();
-		if (ioctl (tty, TIOCSLTC, (int *)&ltc) == -1) Error ();
-		if (ioctl (tty, TIOCLSET, &lmode) == -1) Error ();
-#ifdef sun
+		if (ioctl (tty, TIOCSETP, &sg) == -1)
+			SysError (ERROR_TIOCSETP);
+		if (ioctl (tty, TIOCSETC, &tc) == -1)
+			SysError (ERROR_TIOCSETC);
+		if (ioctl (tty, TIOCSETD, &discipline) == -1)
+			SysError (ERROR_TIOCSETD);
+		if (ioctl (tty, TIOCSLTC, &ltc) == -1)
+			SysError (ERROR_TIOCSLTC);
+		if (ioctl (tty, TIOCLSET, &lmode) == -1)
+			SysError (ERROR_TIOCLSET);
 #ifdef TIOCCONS
-		if (SunConsole) {
+		if (Console) {
 			int on = 1;
-			if (ioctl (tty, TIOCCONS, &on) == -1) Error();
+			if (ioctl (tty, TIOCCONS, &on) == -1)
+				SysError(ERROR_TIOCCONS);
 		}
 #endif TIOCCONS
-#endif sun
 
 		close (open ("/dev/null", O_RDWR, 0));
 
 		for (index1 = 0; index1 < 3; index1++)
 			dup2 (tty, index1);
+		if((tslot = ttyslot()) <= 0)
+			SysError(ERROR_TSLOT3);
+#ifdef UTMP
+		if((pw = getpwuid(screen->uid)) &&
+		 (i = open(etc_utmp, O_WRONLY)) >= 0) {
+			bzero((char *)&utmp, sizeof(struct utmp));
+			(void) strcpy(utmp.ut_line, &ttydev[5]);
+			(void) strcpy(utmp.ut_name, pw->pw_name);
+			(void) strcpy(utmp.ut_host, DisplayName());
+			time(&utmp.ut_time);
+			lseek(i, (long)(tslot * sizeof(struct utmp)), 0);
+			write(i, (char *)&utmp, sizeof(struct utmp));
+			close(i);
+		} else
+			tslot = -tslot;
+#endif UTMP
 	}
 
-	if (!slave && (screen->pid = fork ()) == -1) Error ();
+#ifdef sun
+#ifdef TIOCSSIZE
+	/* tell tty how big window is */
+	if(screen->TekEmu) {
+		ts.ts_lines = 38;
+		ts.ts_cols = 81;
+	} else {
+		ts.ts_lines = screen->max_row + 1;
+		ts.ts_cols = screen->max_col + 1;
+	}
+	ioctl (screen->respond, TIOCSSIZE, &ts);
+#endif TIOCSSIZE
+#else sun
+#ifdef TIOCSWINSZ
+	/* tell tty how big window is */
+	if(screen->TekEmu) {
+		ws.ws_row = 38;
+		ws.ws_col = 81;
+		ws.ws_xpixel = TFullWidth(screen);
+		ws.ws_ypixel = TFullHeight(screen);
+	} else {
+		ws.ws_row = screen->max_row + 1;
+		ws.ws_col = screen->max_col + 1;
+		ws.ws_xpixel = FullWidth(screen);
+		ws.ws_ypixel = FullHeight(screen);
+	}
+	ioctl (screen->respond, TIOCSWINSZ, &ws);
+#endif TIOCSWINSZ
+#endif sun
+
+	if (!am_slave) {
+	    if ((screen->pid = fork ()) == -1)
+		SysError (ERROR_FORK);
 		
-	if (!slave && screen->pid == 0) {
+	    if (screen->pid == 0) {
 		extern char **environ;
 		int pgrp = getpid();
 
 		close (Xsocket);
-		close (*pty);
+		close (screen->respond);
+		if(fileno(stderr) >= 3)
+			close (fileno(stderr));
 
-		if (getty == NULL) close (tty);
+		if (tty >= 0) close (tty);
 
 		signal (SIGCHLD, SIG_DFL);
 		signal (SIGHUP, SIG_IGN);
 
 		/* copy the environment before Setenving */
-		while (environ [i] != NULL) i++;
-		envnew = (char **) malloc (sizeof (char *) * (i + 4));
-		for (; i >= 0; i--) envnew [i] = environ [i];
+		for (i = 0 ; environ [i] != NULL ; i++) ;
+		/*
+		 * The `4' is the number of Setenv() calls which may add
+		 * a new entry to the environment.  The `1' is for the
+		 * NULL terminating entry.
+		 */
+		envnew = (char **) calloc (i + (4 + 1), sizeof(char *));
+		bcopy((char *)environ, (char *)envnew, i * sizeof(char *));
 		environ = envnew;
 		Setenv ("TERM=", TermName);
+		if(!TermName)
+			*newtc = 0;
 		Setenv ("TERMCAP=", newtc);
+		sprintf(buf, "%d", screen->TekEmu ? (int)TWindow(screen) :
+		 (int)VWindow(screen));
+		Setenv ("WINDOWID=", buf);
 		/* put the display into the environment of the shell*/
 		if (display[0] != '\0') 
-		Setenv ("DISPLAY=", screen->display->displayname);
+			Setenv ("DISPLAY=", screen->display->displayname);
 
-		pw = getpwuid (getuid ());
 		signal(SIGTERM, SIG_DFL);
 		ioctl(0, TIOCSPGRP, &pgrp);
 		setpgrp (0, 0);
 		close(open(ttyname(0), O_WRONLY, 0));
 		setpgrp (0, pgrp);
-		if (dologinflag)	/* login */
-			utrelog(1, pw->pw_name, screen->display->displayname);
 
-		setgid(getgid ());
-		setuid(getuid ());
+		setgid (screen->gid);
+		setuid (screen->uid);
 
 		if (command_to_exec) {
-			execvp(command_to_exec[0], command_to_exec, 0);
+			execvp(*command_to_exec, command_to_exec);
+			/* print error message on screen */
+			fprintf(stderr, "%s: Can't execvp %s\n", xterm_name,
+			 *command_to_exec);
 		}
 		signal(SIGHUP, SIG_IGN);
-		if (getty) {
+		if (get_ty) {
 			ioctl (0, TIOCNOTTY, 0);
-			execl ("/etc/getty", "+", "Xwindow", getty, 0);
+			execl ("/etc/getty", "+", "Xwindow", get_ty, 0);
 		}
 		signal(SIGHUP, SIG_DFL);
 
-		if (*pw->pw_shell == '\0') pw->pw_shell = "/bin/sh";
-
-		/* make sure line discipline gets set */
-		ldisc = 0;
-		ioctl(0, TIOCSETD, &ldisc);
-		if (!strcmp(pw->pw_shell, "/bin/csh")) {
-			ldisc = NTTYDISC;
-			ioctl(0, TIOCSETD, &ldisc);
-		}
-		
-		ptr = rindex(pw->pw_shell, '/');
-		if (ptr == NULL)
-			ptr = pw->pw_shell;
+#ifdef UTMP
+		if(((ptr = getenv("SHELL")) == NULL || *ptr == 0) &&
+		 ((pw == NULL && (pw = getpwuid(screen->uid)) == NULL) ||
+		 *(ptr = pw->pw_shell) == 0))
+#else UTMP
+		if(((ptr = getenv("SHELL")) == NULL || *ptr == 0) &&
+		 ((pw = getpwuid(screen->uid)) == NULL ||
+		 *(ptr = pw->pw_shell) == 0))
+#endif UTMP
+			ptr = "/bin/sh";
+		if(shname = rindex(ptr, '/'))
+			shname++;
 		else
-			ptr++;
-		if (dologinflag) {
-			prog[0] = '-';
-			strcpy(&prog[1], ptr);
-		} else
-			strcpy(prog, ptr);
-		execlp (pw->pw_shell, prog, 0);
-		fprintf (stderr,"Error: Could not exec %s!\n", pw->pw_shell);
+			shname = ptr;
+		ldisc = strcmp("csh", shname + strlen(shname) - 3) == 0 ?
+		 NTTYDISC : 0;
+		ioctl(0, TIOCSETD, &ldisc);
+		execl (ptr, login_shell ? "-" : shname, 0);
+		fprintf (stderr, "%s: Could not exec %s!\n", xterm_name, ptr);
 		sleep(5);
-		Cleanup(121);
+		exit(ERROR_EXEC);
+	    }
 	}
 
-	close (tty);
+	if(tty >= 0) close (tty);
 	signal(SIGHUP,SIG_IGN);
-	signal(SIGTTOU,SIG_IGN); /* so that TIOCSWINSZ doesn't block */
 
-	if ((tty = open (no_dev_tty ? "/dev/null" : "/dev/tty",
-	    O_RDWR, 0)) < 0) Error();
-	for (index1 = 0; index1 < 3; index1++)
-		dup2 (tty, index1);
-	if (tty > 2) close (tty);
+	if (!no_dev_tty) {
+		if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0)
+			SysError(ERROR_OPDEVTTY3);
+		for (index1 = 0; index1 < 3; index1++)
+			dup2 (tty, index1);
+		if (tty > 2) close (tty);
+	}
 
-	/* set ids to user's */
-	/*
-	setgid (getgid ());
-	setuid (getuid ());
-		setregid (getegid (), getgid ());
-		setreuid (geteuid (), getuid ());
-	*/
-
+	signal(SIGINT, Exit);
+	signal(SIGQUIT, Exit);
+	signal(SIGTERM, Exit);
 }
 
+Exit(n)
+int n;
+{
+	register Screen *screen = &term.screen;
+#ifdef UTMP
+	register int i;
+	struct utmp utmp;
+
+	if(!am_slave && tslot > 0 && (i = open(etc_utmp, O_WRONLY)) >= 0) {
+		bzero((char *)&utmp, sizeof(struct utmp));
+		lseek(i, (long)(tslot * sizeof(struct utmp)), 0);
+		write(i, (char *)&utmp, sizeof(struct utmp));
+		close(i);
+	}
+#endif UTMP
+	if(screen->logging)
+		CloseLog(screen);
+
+	if(!get_ty && !am_slave) {
+		/* restore ownership of tty */
+		chown (ttydev, 0, 0);
+
+		/* restore modes of tty */
+		chmod (ttydev, 0666);
+	}
+	exit(n);
+}
+
+resize(screen, TermName, oldtc, newtc)
+Screen *screen;
+char *TermName;
+register char *oldtc, *newtc;
+{
+	register char *ptr1, *ptr2;
+	register int i;
+	register int li_first = 0;
+	register char *temp;
+	char *index(), *strindex();
+
+	if ((ptr1 = strindex (oldtc, "co#")) == NULL){
+		fprintf(stderr, "%s: Can't find co# in termcap string %s\n",
+			xterm_name, TermName);
+		exit (ERROR_NOCO);
+	}
+	if ((ptr2 = strindex (oldtc, "li#")) == NULL){
+		fprintf(stderr, "%s: Can't find li# in termcap string %s\n",
+			xterm_name, TermName);
+		exit (ERROR_NOLI);
+	}
+	if(ptr1 > ptr2) {
+		li_first++;
+		temp = ptr1;
+		ptr1 = ptr2;
+		ptr2 = temp;
+	}
+	ptr1 += 3;
+	ptr2 += 3;
+	strncpy (newtc, oldtc, i = ptr1 - oldtc);
+	newtc += i;
+	sprintf (newtc, "%d", li_first ? screen->max_row + 1 :
+	 screen->max_col + 1);
+	newtc += strlen(newtc);
+	ptr1 = index (ptr1, ':');
+	strncpy (newtc, ptr1, i = ptr2 - ptr1);
+	newtc += i;
+	sprintf (newtc, "%d", li_first ? screen->max_col + 1 :
+	 screen->max_row + 1);
+	ptr2 = index (ptr2, ':');
+	strcat (newtc, ptr2);
+}
 
 static reapchild ()
 {
-	extern Terminal term;
-	register long pgrp;
 	union wait status;
-	int pid;
+	register int pid;
 	
-	if (debug) printf ("Exiting\n");
+#ifdef DEBUG
+	if (debug) fputs ("Exiting\n", stderr);
+#endif DEBUG
 	pid  = wait3 (&status, WNOHANG, NULL);
 	if (!pid) return;
 	if (pid != term.screen.pid) return;
 	
-	if (dologinflag)
-		utrelog(0, "", "");
 	Cleanup(0);
 }
 
@@ -1201,87 +1429,39 @@ char *string;
 	extern char *sys_errlist[];
 	int oerrno;
 	int f;
+
 	oerrno = errno;
-	f = open("/dev/console",O_WRONLY, 0);
+	f = open("/dev/console",O_WRONLY);
 	write(f, "xterm: ", 7);
 	write(f, string, strlen(string));
 	write(f, ": ", 2);
 	write(f, sys_errlist[oerrno],strlen(sys_errlist[oerrno]));
 	write(f, "\n", 1);
 	close(f);
-	if ((f = open("/dev/tty", 2, 0)) >= 0) {
+	if ((f = open("/dev/tty", 2)) >= 0) {
 		ioctl(f, TIOCNOTTY, 0);
 		close(f);
 	}
 }
 
-#define TTYGRPNAME	"tty"
-
-tty_gid(default_gid)
-	int default_gid;
+checklogin()
 {
-	struct group *getgrnam(), *gr;
-	int gid = default_gid;
+	register int ts, i;
+	register struct passwd *pw;
+	struct utmp utmp;
 
-	gr = getgrnam(TTYGRPNAME);
-	if (gr != (struct group *) 0)
-		gid = gr->gr_gid;
-
-	endgrent();
-
-	return (gid);
-}
-
-utrelog(io, user, display)
-int io;
-char *user;
-char *display;
-{
-	struct utmp ut;
-	struct ttyent *ty;
-	register int s;
-	long slot;
-	int ufd;
-	char *colon;
-	
-	if (io == 1) {
-		strncpy(ut.ut_line, &ttydev[5], sizeof ut.ut_line);
-		colon = index(display, ':');
-		if (colon)
-			*colon = '\0';
-		strncpy(ut.ut_host, display, sizeof ut.ut_host);
-		if (colon)
-			*colon = ':';
-		strncpy(ut.ut_name, user, sizeof ut.ut_name);
-		(void) time(&ut.ut_time);
-	}
-	else {
-		strcpy(ut.ut_line, "");
-		strcpy(ut.ut_name, "");
-		strcpy(ut.ut_host, "");
-		ut.ut_time = 0;
-		chown(ttydev, 0, 0);
-		chmod(ttydev, 0666);
-	}
-
-	setttyent();
-	slot = 0;
-	s = 0;
-	while ((ty = getttyent()) != NULL) {
-		s++;
-		if (strcmp(ty->ty_name, &ttydev[5]) == 0) {
-			slot = s;
-			break;
-		}
-	}
-	endttyent();
-	if (slot > 0 && (ufd = open("/etc/utmp", O_WRONLY, 0)) >= 0) {
-		if (lseek(ufd, slot * sizeof ut, 0) < 0L ||
-		    write(ufd, (char *)&ut, sizeof ut) != sizeof ut) {
-			close(ufd);
-			return(-1);
-		}
-		close(ufd);
-	}
-	return(0);
+	ts = tslot > 0 ? tslot : -tslot;
+	if((i = open(etc_utmp, O_RDONLY)) < 0)
+		return(FALSE);
+	lseek(i, (long)(ts * sizeof(struct utmp)), 0);
+	ts = read(i, (char *)&utmp, sizeof(utmp));
+	close(i);
+	if(ts != sizeof(utmp) || strcmp(get_ty, utmp.ut_line) != 0 ||
+	 !*utmp.ut_name || (pw = getpwnam(utmp.ut_name)) == NULL)
+		return(FALSE);
+	chdir(pw->pw_dir);
+	setgid(pw->pw_gid);
+	setuid(pw->pw_uid);
+	L_flag = 0;
+	return(TRUE);
 }
