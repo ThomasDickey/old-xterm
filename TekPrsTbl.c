@@ -1,9 +1,7 @@
 /*
- *	$XConsortium: TekPrsTbl.c,v 1.3 89/03/01 19:59:14 jim Exp $
+ *	$XConsortium: TekPrsTbl.c,v 1.7 91/05/29 18:06:16 gildea Exp $
  */
 
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -28,16 +26,16 @@
  * SOFTWARE.
  */
 
-#ifndef lint
-static char *rcsid_Tekparsetable_c = "$XConsortium: TekPrsTbl.c,v 1.3 89/03/01 19:59:14 jim Exp $";
-#endif	/* lint */
-
 #include "Tekparse.h"
-#ifndef lint
-static char rcs_id[] = "$XConsortium: TekPrsTbl.c,v 1.3 89/03/01 19:59:14 jim Exp $";
-#endif	/* lint */
 
-int Talptable[] = {
+#if __STDC__
+#define Const const
+#else
+#define Const /**/
+#endif
+
+Const int Talptable[] =		/* US (^_) normal alpha mode */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -360,7 +358,8 @@ CASE_PRINT,
 CASE_PRINT,
 };
 
-int Tbestable[] = {
+Const int Tbestable[] =		/* ESC while in bypass state */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_BYP_STATE,
 CASE_BYP_STATE,
@@ -683,7 +682,8 @@ CASE_BYP_STATE,
 CASE_BYP_STATE,
 };
 
-int Tbyptable[] = {
+Const int Tbyptable[] =		/* ESC CAN (^X) bypass state */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1006,7 +1006,8 @@ CASE_IGNORE,
 CASE_IGNORE,
 };
 
-int Tesctable[] = {
+Const int Tesctable[] =		/* ESC */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_CURSTATE,
 CASE_CURSTATE,
@@ -1329,7 +1330,8 @@ CASE_IGNORE,
 CASE_IGNORE,
 };
 
-int Tipltable[] = {
+Const int Tipltable[] =		/* RS (^^) incremental plot */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1652,7 +1654,8 @@ CASE_IGNORE,
 CASE_IGNORE,
 };
 
-int Tplttable[] = {
+Const int Tplttable[] =		/* GS (^]) graph (plot) mode */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1975,7 +1978,8 @@ CASE_IGNORE,
 CASE_IGNORE,
 };
 
-int Tpttable[] = {
+Const int Tpttable[] =		/* FS (^\) point plot mode */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -2298,7 +2302,8 @@ CASE_IGNORE,
 CASE_IGNORE,
 };
 
-int Tspttable[] = {
+Const int Tspttable[] =		/* ESC FS (^\) special point plot */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,

@@ -1,12 +1,6 @@
 /*
- * $XConsortium: charproc.c,v 1.121 89/12/15 19:07:43 jim Exp $
+ * $XConsortium: charproc.c,v 1.176.1.1 93/11/03 17:24:20 gildea Exp $
  */
-
-
-#include <X11/copyright.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
-#include <X11/Xmu/Atoms.h>
 
 /*
  * Copyright 1988 Massachusetts Institute of Technology
@@ -32,125 +26,150 @@
  * SOFTWARE.
  */
 
-
 /* charproc.c */
 
-#ifdef att
-#ifndef STREAMSCONN
-#define STREAMSCONN
-#endif
-#endif
-
-#include <stdio.h>
-#include <X11/Xos.h>
-#ifndef CRAY
-#include <sgtty.h>
-#endif
-#include <ctype.h>
-#include <errno.h>
-#include <setjmp.h>
-#if defined(macII) || defined(CRAY)
-#undef FIOCLEX					/* redefined from sgtty.h */
-#undef FIONCLEX					/* redefined from sgtty.h */
-#endif
 #include "ptyx.h"
 #include "VTparse.h"
 #include "data.h"
-#include <X11/Xutil.h>
 #include "error.h"
+#include "menu.h"
 #include "main.h"
+#include <X11/Xos.h>
+#include <X11/Xatom.h>
+#include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/StringDefs.h>
-#include "menu.h"
+#include <X11/Xmu/Atoms.h>
+#include <X11/Xmu/CharSet.h>
+#include <X11/Xmu/Converters.h>
+#include <stdio.h>
+#include <errno.h>
+#include <setjmp.h>
+#include <ctype.h>
 
-#if !defined(EWOULDBLOCK) && defined(EAGAIN)
-#define EWOULDBLOCK EAGAIN
+/*
+ * Check for both EAGAIN and EWOULDBLOCK, because some supposedly POSIX
+ * systems are broken and return EWOULDBLOCK when they should return EAGAIN.
+ * Note that this macro may evaluate its argument more than once.
+ */
+#if defined(EAGAIN) && defined(EWOULDBLOCK)
+#define E_TEST(err) ((err) == EAGAIN || (err) == EWOULDBLOCK)
+#else
+#ifdef EAGAIN
+#define E_TEST(err) ((err) == EAGAIN)
+#else
+#define E_TEST(err) ((err) == EWOULDBLOCK)
+#endif
 #endif
 
-extern Widget toplevel;
-extern void exit(), bcopy();
-static void VTallocbuf();
+extern jmp_buf VTend;
 
+extern Widget toplevel;
+extern void exit();
+extern char *malloc();
+extern char *realloc();
+
+static void VTallocbuf();
+static int finput();
+static void dotext();
+static void WriteText();
+
+static void bitset(), bitclr();
+    
 #define	DEFAULT		-1
 #define	TEXT_BUF_SIZE	256
 #define TRACKTIMESEC	4L
 #define TRACKTIMEUSEC	0L
+#define BELLSUPPRESSMSEC 200
 
-#define XtNalwaysHighlight	"alwaysHighlight"
-#define	XtNboldFont		"boldFont"
-#define	XtNc132			"c132"
-#define XtNcharClass		"charClass"
-#define	XtNcurses		"curses"
-#define	XtNcursorColor		"cursorColor"
-#define XtNcutNewline		"cutNewline"
-#define XtNcutToBeginningOfLine	"cutToBeginningOfLine"
-#define XtNeightBitInput	"eightBitInput"
-#define XtNgeometry		"geometry"
-#define XtNtekGeometry		"tekGeometry"
-#define	XtNinternalBorder	"internalBorder"
-#define	XtNjumpScroll		"jumpScroll"
-#define	XtNlogFile		"logFile"
-#define	XtNlogging		"logging"
-#define	XtNlogInhibit		"logInhibit"
-#define	XtNloginShell		"loginShell"
-#define	XtNmarginBell		"marginBell"
-#define	XtNpointerColor		"pointerColor"
+#define XtNalwaysHighlight "alwaysHighlight"
+#define XtNappcursorDefault "appcursorDefault"
+#define XtNappkeypadDefault "appkeypadDefault"
+#define XtNbellSuppressTime "bellSuppressTime"
+#define XtNboldFont "boldFont"
+#define XtNc132 "c132"
+#define XtNcharClass "charClass"
+#define XtNcurses "curses"
+#define XtNcursorColor "cursorColor"
+#define XtNcutNewline "cutNewline"
+#define XtNcutToBeginningOfLine "cutToBeginningOfLine"
+#define XtNeightBitInput "eightBitInput"
+#define XtNeightBitOutput "eightBitOutput"
+#define XtNgeometry "geometry"
+#define XtNtekGeometry "tekGeometry"
+#define XtNinternalBorder "internalBorder"
+#define XtNjumpScroll "jumpScroll"
+#ifdef ALLOWLOGGING
+#define XtNlogFile "logFile"
+#define XtNlogging "logging"
+#define XtNlogInhibit "logInhibit"
+#endif
+#define XtNloginShell "loginShell"
+#define XtNmarginBell "marginBell"
+#define XtNpointerColor "pointerColor"
 #define XtNpointerColorBackground "pointerColorBackground"
-#define	XtNpointerShape		"pointerShape"
-#define XtNmultiClickTime	"multiClickTime"
-#define	XtNmultiScroll		"multiScroll"
-#define	XtNnMarginBell		"nMarginBell"
-#define	XtNreverseWrap		"reverseWrap"
-#define	XtNsaveLines		"saveLines"
-#define	XtNscrollBar		"scrollBar"
-#define XtNscrollTtyOutput	"scrollTtyOutput"
-#define	XtNscrollKey		"scrollKey"
-#define XtNscrollLines		"scrollLines"
-#define XtNscrollPos    	"scrollPos"
-#define	XtNsignalInhibit	"signalInhibit"
-#define	XtNtekInhibit		"tekInhibit"
-#define XtNtekSmall		"tekSmall"
-#define	XtNtekStartup		"tekStartup"
-#define XtNtiteInhibit		"titeInhibit"
-#define	XtNvisualBell		"visualBell"
-#define XtNallowSendEvents	"allowSendEvents"
+#define XtNpointerShape "pointerShape"
+#define XtNmultiClickTime "multiClickTime"
+#define XtNmultiScroll "multiScroll"
+#define XtNnMarginBell "nMarginBell"
+#define XtNresizeGravity "resizeGravity"
+#define XtNreverseWrap "reverseWrap"
+#define XtNautoWrap "autoWrap"
+#define XtNsaveLines "saveLines"
+#define XtNscrollBar "scrollBar"
+#define XtNscrollTtyOutput "scrollTtyOutput"
+#define XtNscrollKey "scrollKey"
+#define XtNscrollLines "scrollLines"
+#define XtNscrollPos "scrollPos"
+#define XtNsignalInhibit "signalInhibit"
+#define XtNtekInhibit "tekInhibit"
+#define XtNtekSmall "tekSmall"
+#define XtNtekStartup "tekStartup"
+#define XtNtiteInhibit "titeInhibit"
+#define XtNvisualBell "visualBell"
+#define XtNallowSendEvents "allowSendEvents"
 
-#define XtCAlwaysHighlight	"AlwaysHighlight"
-#define	XtCC132			"C132"
-#define XtCCharClass		"CharClass"
-#define	XtCCurses		"Curses"
-#define XtCCutNewline		"CutNewline"
-#define XtCCutToBeginningOfLine	"CutToBeginningOfLine"
-#define XtCEightBitInput	"EightBitInput"
-#define XtCGeometry		"Geometry"
-#define	XtCJumpScroll		"JumpScroll"
-#define	XtCLogfile		"Logfile"
-#define	XtCLogging		"Logging"
-#define	XtCLogInhibit		"LogInhibit"
-#define	XtCLoginShell		"LoginShell"
-#define	XtCMarginBell		"MarginBell"
-#define XtCMultiClickTime	"MultiClickTime"
-#define	XtCMultiScroll		"MultiScroll"
-#define	XtCColumn		"Column"
-#define	XtCReverseWrap		"ReverseWrap"
-#define XtCSaveLines		"SaveLines"
-#define	XtCScrollBar		"ScrollBar"
-#define XtCScrollLines		"ScrollLines"
-#define XtCScrollPos     	"ScrollPos"
-#define	XtCScrollCond		"ScrollCond"
-#define	XtCSignalInhibit	"SignalInhibit"
-#define	XtCTekInhibit		"TekInhibit"
-#define XtCTekSmall		"TekSmall"
-#define	XtCTekStartup		"TekStartup"
-#define XtCTiteInhibit		"TiteInhibit"
-#define	XtCVisualBell		"VisualBell"
-#define XtCAllowSendEvents	"AllowSendEvents"
+#define XtCAlwaysHighlight "AlwaysHighlight"
+#define XtCAppcursorDefault "AppcursorDefault"
+#define XtCAppkeypadDefault "AppkeypadDefault"
+#define XtCBellSuppressTime "BellSuppressTime"
+#define XtCBoldFont "BoldFont"
+#define XtCC132 "C132"
+#define XtCCharClass "CharClass"
+#define XtCCurses "Curses"
+#define XtCCutNewline "CutNewline"
+#define XtCCutToBeginningOfLine "CutToBeginningOfLine"
+#define XtCEightBitInput "EightBitInput"
+#define XtCEightBitOutput "EightBitOutput"
+#define XtCGeometry "Geometry"
+#define XtCJumpScroll "JumpScroll"
+#ifdef ALLOWLOGGING
+#define XtCLogfile "Logfile"
+#define XtCLogging "Logging"
+#define XtCLogInhibit "LogInhibit"
+#endif
+#define XtCLoginShell "LoginShell"
+#define XtCMarginBell "MarginBell"
+#define XtCMultiClickTime "MultiClickTime"
+#define XtCMultiScroll "MultiScroll"
+#define XtCColumn "Column"
+#define XtCResizeGravity "ResizeGravity"
+#define XtCReverseWrap "ReverseWrap"
+#define XtCAutoWrap "AutoWrap"
+#define XtCSaveLines "SaveLines"
+#define XtCScrollBar "ScrollBar"
+#define XtCScrollLines "ScrollLines"
+#define XtCScrollPos "ScrollPos"
+#define XtCScrollCond "ScrollCond"
+#define XtCSignalInhibit "SignalInhibit"
+#define XtCTekInhibit "TekInhibit"
+#define XtCTekSmall "TekSmall"
+#define XtCTekStartup "TekStartup"
+#define XtCTiteInhibit "TiteInhibit"
+#define XtCVisualBell "VisualBell"
+#define XtCAllowSendEvents "AllowSendEvents"
 
 #define	doinput()		(bcnt-- > 0 ? *bptr++ : in_put())
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: charproc.c,v 1.121 89/12/15 19:07:43 jim Exp $";
-#endif	/* lint */
 
 static int nparam;
 static ANSI reply;
@@ -176,14 +195,16 @@ extern void HandleKeyPressed(), HandleEightBitKeyPressed();
 extern void HandleStringEvent();
 extern void HandleEnterWindow();
 extern void HandleLeaveWindow();
+extern void HandleBellPropertyChange();
 extern void HandleFocusChange();
 static void HandleKeymapChange();
 extern void HandleInsertSelection();
 extern void HandleSelectStart(), HandleKeyboardSelectStart();
-extern void HandleSelectExtend();
+extern void HandleSelectExtend(), HandleSelectSet();
 extern void HandleSelectEnd(), HandleKeyboardSelectEnd();
 extern void HandleStartExtend(), HandleKeyboardStartExtend();
 static void HandleBell();
+static void HandleVisualBell();
 static void HandleIgnore();
 extern void HandleSecure();
 extern void HandleScrollForward();
@@ -191,6 +212,9 @@ extern void HandleScrollBack();
 extern void HandleCreateMenu(), HandlePopupMenu();
 extern void HandleSetFont();
 extern void SetVTFont();
+
+extern Boolean SendMousePosition();
+extern void ScrnSetAttributes();
 
 /*
  * NOTE: VTInitialize zeros out the entire ".screen" component of the 
@@ -207,6 +231,7 @@ static  int	defaultSaveLines   = SAVELINES;
 static	int	defaultScrollLines = SCROLLLINES;
 static  int	defaultNMarginBell = N_MARGINBELL;
 static  int	defaultMultiClickTime = MULTICLICKTIME;
+static  int	defaultBellSuppressTime = BELLSUPPRESSMSEC;
 static	char *	_Font_Selected_ = "yes";  /* string is arbitrary */
 
 /*
@@ -217,23 +242,26 @@ static	char *	_Font_Selected_ = "yes";  /* string is arbitrary */
  */
 static char defaultTranslations[] =
 "\
-  Shift <KeyPress> Prior:	scroll-back(1,halfpage) \n\
-  Shift <KeyPress> Next:	scroll-forw(1,halfpage) \n\
-  Shift <KeyPress> Select:	select-cursor-start() select-cursor-end(PRIMARY, CUT_BUFFER0) \n\
-  Shift <KeyPress> Insert:	insert-selection(PRIMARY, CUT_BUFFER0) \n\
-       ~Meta<KeyPress>: 	insert-seven-bit()	\n\
-        Meta<KeyPress>: 	insert-eight-bit()	\n\
- Ctrl ~Meta<Btn1Down>:          popup-menu(mainMenu) \n\
-      ~Meta <Btn1Down>:		select-start()	\n\
-      ~Meta <Btn1Motion>:	select-extend() \n\
- Ctrl ~Meta <Btn2Down>:         popup-menu(vtMenu) \n\
-~Ctrl ~Meta <Btn2Down>:		ignore()	\n\
-~Ctrl ~Meta <Btn2Up>:		insert-selection(PRIMARY, CUT_BUFFER0) \n\
- Ctrl ~Meta <Btn3Down>:         popup-menu(fontMenu) \n\
-~Ctrl ~Meta <Btn3Down>:		start-extend()	\n\
-      ~Meta <Btn3Motion>:	select-extend()	\n\
-~Ctrl ~Meta <BtnUp>:		select-end(PRIMARY, CUT_BUFFER0) \n\
-	    <BtnDown>:		bell(0)		\
+ Shift <KeyPress> Prior:scroll-back(1,halfpage) \n\
+  Shift <KeyPress> Next:scroll-forw(1,halfpage) \n\
+Shift <KeyPress> Select:select-cursor-start() select-cursor-end(PRIMARY, CUT_BUFFER0) \n\
+Shift <KeyPress> Insert:insert-selection(PRIMARY, CUT_BUFFER0) \n\
+       ~Meta <KeyPress>:insert-seven-bit() \n\
+        Meta <KeyPress>:insert-eight-bit() \n\
+       !Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
+  !Lock Ctrl <Btn1Down>:popup-menu(mainMenu) \n\
+       ~Meta <Btn1Down>:select-start() \n\
+     ~Meta <Btn1Motion>:select-extend() \n\
+       !Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
+  !Lock Ctrl <Btn2Down>:popup-menu(vtMenu) \n\
+ ~Ctrl ~Meta <Btn2Down>:ignore() \n\
+   ~Ctrl ~Meta <Btn2Up>:insert-selection(PRIMARY, CUT_BUFFER0) \n\
+       !Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
+  !Lock Ctrl <Btn3Down>:popup-menu(fontMenu) \n\
+ ~Ctrl ~Meta <Btn3Down>:start-extend() \n\
+     ~Meta <Btn3Motion>:select-extend()	\n\
+                <BtnUp>:select-end(PRIMARY, CUT_BUFFER0) \n\
+	      <BtnDown>:bell(0) \
 ";
 
 static XtActionsRec actionsList[] = { 
@@ -250,6 +278,7 @@ static XtActionsRec actionsList[] = {
     { "select-start",	  HandleSelectStart },
     { "select-extend",	  HandleSelectExtend },
     { "select-end",	  HandleSelectEnd },
+    { "select-set",	  HandleSelectSet },
     { "select-cursor-start",	  HandleKeyboardSelectStart },
     { "select-cursor-end",	  HandleKeyboardSelectEnd },
     { "set-vt-font",	  HandleSetFont },
@@ -260,8 +289,10 @@ static XtActionsRec actionsList[] = {
     { "scroll-back",	  HandleScrollBack },
     /* menu actions */
     { "allow-send-events",	HandleAllowSends },
-    { "set-visual-bell",	HandleVisualBell },
+    { "set-visual-bell",	HandleSetVisualBell },
+#ifdef ALLOWLOGGING
     { "set-logging",		HandleLogging },
+#endif
     { "redraw",			HandleRedraw },
     { "send-signal",		HandleSendSignal },
     { "quit",			HandleQuit },
@@ -281,163 +312,195 @@ static XtActionsRec actionsList[] = {
     { "set-altscreen",		HandleAltScreen },
     { "soft-reset",		HandleSoftReset },
     { "hard-reset",		HandleHardReset },
+    { "clear-saved-lines",	HandleClearSavedLines },
     { "set-terminal-type",	HandleSetTerminalType },
     { "set-visibility",		HandleVisibility },
     { "set-tek-text",		HandleSetTekText },
     { "tek-page",		HandleTekPage },
     { "tek-reset",		HandleTekReset },
     { "tek-copy",		HandleTekCopy },
+    { "visual-bell",		HandleVisualBell },
 };
 
 static XtResource resources[] = {
 {XtNfont, XtCFont, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, misc.f_n), XtRString,
+	XtOffsetOf(XtermWidgetRec, misc.f_n), XtRString,
 	DEFFONT},
-{XtNboldFont, XtCFont, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, misc.f_b), XtRString,
+{XtNboldFont, XtCBoldFont, XtRString, sizeof(char *),
+	XtOffsetOf(XtermWidgetRec, misc.f_b), XtRString,
 	DEFBOLDFONT},
 {XtNc132, XtCC132, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.c132),
+	XtOffsetOf(XtermWidgetRec, screen.c132),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNcharClass, XtCCharClass, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, screen.charClass),
+	XtOffsetOf(XtermWidgetRec, screen.charClass),
 	XtRString, (caddr_t) NULL},
 {XtNcurses, XtCCurses, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.curses),
+	XtOffsetOf(XtermWidgetRec, screen.curses),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNcutNewline, XtCCutNewline, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.cutNewline),
+	XtOffsetOf(XtermWidgetRec, screen.cutNewline),
 	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNcutToBeginningOfLine, XtCCutToBeginningOfLine, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.cutToBeginningOfLine),
+	XtOffsetOf(XtermWidgetRec, screen.cutToBeginningOfLine),
 	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNbackground, XtCBackground, XtRPixel, sizeof(Pixel),
-	XtOffset(XtermWidget, core.background_pixel),
+	XtOffsetOf(XtermWidgetRec, core.background_pixel),
 	XtRString, "XtDefaultBackground"},
 {XtNforeground, XtCForeground, XtRPixel, sizeof(Pixel),
-	XtOffset(XtermWidget, screen.foreground),
+	XtOffsetOf(XtermWidgetRec, screen.foreground),
 	XtRString, "XtDefaultForeground"},
 {XtNcursorColor, XtCForeground, XtRPixel, sizeof(Pixel),
-	XtOffset(XtermWidget, screen.cursorcolor),
+	XtOffsetOf(XtermWidgetRec, screen.cursorcolor),
 	XtRString, "XtDefaultForeground"},
 {XtNeightBitInput, XtCEightBitInput, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.eight_bits), 
+	XtOffsetOf(XtermWidgetRec, screen.input_eight_bits), 
+	XtRBoolean, (caddr_t) &defaultTRUE},
+{XtNeightBitOutput, XtCEightBitOutput, XtRBoolean, sizeof(Boolean),
+	XtOffsetOf(XtermWidgetRec, screen.output_eight_bits), 
 	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNgeometry,XtCGeometry, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, misc.geo_metry),
+	XtOffsetOf(XtermWidgetRec, misc.geo_metry),
 	XtRString, (caddr_t) NULL},
 {XtNalwaysHighlight,XtCAlwaysHighlight,XtRBoolean,
-        sizeof(Boolean),XtOffset(XtermWidget, screen.always_highlight),
+        sizeof(Boolean),XtOffsetOf(XtermWidgetRec, screen.always_highlight),
         XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNappcursorDefault,XtCAppcursorDefault,XtRBoolean,
+        sizeof(Boolean),XtOffsetOf(XtermWidgetRec, misc.appcursorDefault),
+        XtRBoolean, (XtPointer) &defaultFALSE},
+{XtNappkeypadDefault,XtCAppkeypadDefault,XtRBoolean,
+        sizeof(Boolean),XtOffsetOf(XtermWidgetRec, misc.appkeypadDefault),
+        XtRBoolean, (XtPointer) &defaultFALSE},
+{XtNbellSuppressTime, XtCBellSuppressTime, XtRInt, sizeof(int),
+        XtOffsetOf(XtermWidgetRec, screen.bellSuppressTime),
+        XtRInt, (XtPointer) &defaultBellSuppressTime},
 {XtNtekGeometry,XtCGeometry, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, misc.T_geometry),
+	XtOffsetOf(XtermWidgetRec, misc.T_geometry),
 	XtRString, (caddr_t) NULL},
 {XtNinternalBorder,XtCBorderWidth,XtRInt, sizeof(int),
-	XtOffset(XtermWidget, screen.border),
+	XtOffsetOf(XtermWidgetRec, screen.border),
 	XtRInt, (caddr_t) &defaultIntBorder},
 {XtNjumpScroll, XtCJumpScroll, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.jumpscroll),
+	XtOffsetOf(XtermWidgetRec, screen.jumpscroll),
 	XtRBoolean, (caddr_t) &defaultTRUE},
+#ifdef ALLOWLOGGING
 {XtNlogFile, XtCLogfile, XtRString, sizeof(char *),
-	XtOffset(XtermWidget, screen.logfile),
+	XtOffsetOf(XtermWidgetRec, screen.logfile),
 	XtRString, (caddr_t) NULL},
 {XtNlogging, XtCLogging, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.log_on),
+	XtOffsetOf(XtermWidgetRec, misc.log_on),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNlogInhibit, XtCLogInhibit, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.logInhibit),
+	XtOffsetOf(XtermWidgetRec, misc.logInhibit),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+#endif
 {XtNloginShell, XtCLoginShell, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.login_shell),
+	XtOffsetOf(XtermWidgetRec, misc.login_shell),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNmarginBell, XtCMarginBell, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.marginbell),
+	XtOffsetOf(XtermWidgetRec, screen.marginbell),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNpointerColor, XtCForeground, XtRPixel, sizeof(Pixel),
-	XtOffset(XtermWidget, screen.mousecolor),
+	XtOffsetOf(XtermWidgetRec, screen.mousecolor),
 	XtRString, "XtDefaultForeground"},
 {XtNpointerColorBackground, XtCBackground, XtRPixel, sizeof(Pixel),
-	XtOffset(XtermWidget, screen.mousecolorback),
+	XtOffsetOf(XtermWidgetRec, screen.mousecolorback),
 	XtRString, "XtDefaultBackground"},
 {XtNpointerShape,XtCCursor, XtRCursor, sizeof(Cursor),
-	XtOffset(XtermWidget, screen.pointer_cursor),
+	XtOffsetOf(XtermWidgetRec, screen.pointer_cursor),
 	XtRString, (caddr_t) "xterm"},
 {XtNmultiClickTime,XtCMultiClickTime, XtRInt, sizeof(int),
-	XtOffset(XtermWidget, screen.multiClickTime),
+	XtOffsetOf(XtermWidgetRec, screen.multiClickTime),
 	XtRInt, (caddr_t) &defaultMultiClickTime},
 {XtNmultiScroll,XtCMultiScroll, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.multiscroll),
+	XtOffsetOf(XtermWidgetRec, screen.multiscroll),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNnMarginBell,XtCColumn, XtRInt, sizeof(int),
-	XtOffset(XtermWidget, screen.nmarginbell),
+	XtOffsetOf(XtermWidgetRec, screen.nmarginbell),
 	XtRInt, (caddr_t) &defaultNMarginBell},
 {XtNreverseVideo,XtCReverseVideo,XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.re_verse),
+	XtOffsetOf(XtermWidgetRec, misc.re_verse),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNresizeGravity, XtCResizeGravity, XtRGravity, sizeof(XtGravity),
+	XtOffsetOf(XtermWidgetRec, misc.resizeGravity),
+	XtRImmediate, (XtPointer) SouthWestGravity},
 {XtNreverseWrap,XtCReverseWrap, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.reverseWrap),
+	XtOffsetOf(XtermWidgetRec, misc.reverseWrap),
 	XtRBoolean, (caddr_t) &defaultFALSE},
+{XtNautoWrap,XtCAutoWrap, XtRBoolean, sizeof(Boolean),
+	XtOffsetOf(XtermWidgetRec, misc.autoWrap),
+	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNsaveLines, XtCSaveLines, XtRInt, sizeof(int),
-	XtOffset(XtermWidget, screen.savelines),
+	XtOffsetOf(XtermWidgetRec, screen.savelines),
 	XtRInt, (caddr_t) &defaultSaveLines},
 {XtNscrollBar, XtCScrollBar, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.scrollbar),
+	XtOffsetOf(XtermWidgetRec, misc.scrollbar),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNscrollTtyOutput,XtCScrollCond, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.scrollttyoutput),
+	XtOffsetOf(XtermWidgetRec, screen.scrollttyoutput),
 	XtRBoolean, (caddr_t) &defaultTRUE},
 {XtNscrollKey, XtCScrollCond, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.scrollkey),
+	XtOffsetOf(XtermWidgetRec, screen.scrollkey),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNscrollLines, XtCScrollLines, XtRInt, sizeof(int),
-	XtOffset(XtermWidget, screen.scrolllines),
+	XtOffsetOf(XtermWidgetRec, screen.scrolllines),
 	XtRInt, (caddr_t) &defaultScrollLines},
 {XtNsignalInhibit,XtCSignalInhibit,XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.signalInhibit),
+	XtOffsetOf(XtermWidgetRec, misc.signalInhibit),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNtekInhibit, XtCTekInhibit, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.tekInhibit),
+	XtOffsetOf(XtermWidgetRec, misc.tekInhibit),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNtekSmall, XtCTekSmall, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.tekSmall),
+	XtOffsetOf(XtermWidgetRec, misc.tekSmall),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNtekStartup, XtCTekStartup, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.TekEmu),
+	XtOffsetOf(XtermWidgetRec, screen.TekEmu),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNtiteInhibit, XtCTiteInhibit, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, misc.titeInhibit),
+	XtOffsetOf(XtermWidgetRec, misc.titeInhibit),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNvisualBell, XtCVisualBell, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.visualbell),
+	XtOffsetOf(XtermWidgetRec, screen.visualbell),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {XtNallowSendEvents, XtCAllowSendEvents, XtRBoolean, sizeof(Boolean),
-	XtOffset(XtermWidget, screen.allowSendEvents),
+	XtOffsetOf(XtermWidgetRec, screen.allowSendEvents),
 	XtRBoolean, (caddr_t) &defaultFALSE},
 {"font1", "Font1", XtRString, sizeof(String),
-	XtOffset(XtermWidget, screen.menu_font_names[fontMenu_font1]),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font1]),
 	XtRString, (caddr_t) NULL},
 {"font2", "Font2", XtRString, sizeof(String),
-	XtOffset(XtermWidget, screen.menu_font_names[fontMenu_font2]),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font2]),
 	XtRString, (caddr_t) NULL},
 {"font3", "Font3", XtRString, sizeof(String),
-	XtOffset(XtermWidget, screen.menu_font_names[fontMenu_font3]),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font3]),
 	XtRString, (caddr_t) NULL},
 {"font4", "Font4", XtRString, sizeof(String),
-	XtOffset(XtermWidget, screen.menu_font_names[fontMenu_font4]),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font4]),
+	XtRString, (caddr_t) NULL},
+{"font5", "Font5", XtRString, sizeof(String),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font5]),
+	XtRString, (caddr_t) NULL},
+{"font6", "Font6", XtRString, sizeof(String),
+	XtOffsetOf(XtermWidgetRec, screen.menu_font_names[fontMenu_font6]),
 	XtRString, (caddr_t) NULL},
 };
 
-
-static void VTInitialize(), VTRealize(), VTExpose(), VTResize();
+static void VTClassInit();
+static void VTInitialize();
+static void VTRealize();
+static void VTExpose();
+static void VTResize();
 static void VTDestroy();
+static Boolean VTSetValues();
 
-WidgetClassRec xtermClassRec = {
+static WidgetClassRec xtermClassRec = {
   {
 /* core_class fields */	
     /* superclass	  */	(WidgetClass) &widgetClassRec,
     /* class_name	  */	"VT100",
     /* widget_size	  */	sizeof(XtermWidgetRec),
-    /* class_initialize   */    NULL,
+    /* class_initialize   */    VTClassInit,
     /* class_part_initialize */ NULL,
     /* class_inited       */	FALSE,
     /* initialize	  */	VTInitialize,
@@ -455,7 +518,7 @@ WidgetClassRec xtermClassRec = {
     /* destroy		  */	VTDestroy,
     /* resize		  */	VTResize,
     /* expose		  */	VTExpose,
-    /* set_values	  */	NULL,
+    /* set_values	  */	VTSetValues,
     /* set_values_hook    */    NULL,
     /* set_values_almost  */    NULL,
     /* get_values_hook    */    NULL,
@@ -471,14 +534,14 @@ WidgetClassRec xtermClassRec = {
 
 WidgetClass xtermWidgetClass = (WidgetClass)&xtermClassRec;
 
-VTparse()
+static void VTparse()
 {
 	register TScreen *screen = &term->screen;
 	register int *parsestate = groundtable;
 	register unsigned int c;
 	register unsigned char *cp;
 	register int row, col, top, bot, scstype;
-	extern int bitset(), bitclr(), finput(), TrackMouse();
+	extern int TrackMouse();
 
 	if(setjmp(vtjmpbuf))
 		parsestate = groundtable;
@@ -538,6 +601,7 @@ VTparse()
 		 case CASE_CR:
 			/* carriage return */
 			CarriageReturn(screen);
+			parsestate = groundtable;
 			break;
 
 		 case CASE_ESC:
@@ -552,9 +616,10 @@ VTparse()
 			Index(screen, 1);
 			if (term->flags & LINEFEED)
 				CarriageReturn(screen);
-			if (screen->display->qlen > 0 ||
-			    GetBytesAvailable (screen->display->fd) > 0)
+			if (QLength(screen->display) > 0 ||
+			    GetBytesAvailable (ConnectionNumber(screen->display)) > 0)
 			  xevents();
+			parsestate = groundtable;
 			break;
 
 		 case CASE_TAB:
@@ -769,13 +834,13 @@ VTparse()
 
 		 case CASE_SET:
 			/* SET */
-			modes(term, bitset);
+			ansi_modes(term, bitset);
 			parsestate = groundtable;
 			break;
 
 		 case CASE_RST:
 			/* RST */
-			modes(term, bitclr);
+			ansi_modes(term, bitclr);
 			parsestate = groundtable;
 			break;
 
@@ -825,7 +890,7 @@ VTparse()
 			break;
 
 		 case CASE_DECSTBM:
-			/* DECSTBM */
+			/* DECSTBM - set scrolling region */
 			if((top = param[0]) < 1)
 				top = 1;
 			if(nparam < 2 || (bot = param[1]) == DEFAULT
@@ -927,8 +992,8 @@ VTparse()
 		 case CASE_IND:
 			/* IND */
 			Index(screen, 1);
-			if (screen->display->qlen > 0 ||
-			    GetBytesAvailable (screen->display->fd) > 0)
+			if (QLength(screen->display) > 0 ||
+			    GetBytesAvailable (ConnectionNumber(screen->display)) > 0)
 			  xevents();
 			parsestate = groundtable;
 			break;
@@ -938,8 +1003,8 @@ VTparse()
 			Index(screen, 1);
 			CarriageReturn(screen);
 			
-			if (screen->display->qlen > 0 ||
-			    GetBytesAvailable (screen->display->fd) > 0)
+			if (QLength(screen->display) > 0 ||
+			    GetBytesAvailable (ConnectionNumber(screen->display)) > 0)
 			  xevents();
 			parsestate = groundtable;
 			break;
@@ -976,7 +1041,7 @@ VTparse()
 			break;
 
 		 case CASE_OSC:
-			/* do osc escapes */
+			/* Operating System Command: ESC ] */
 			do_osc(finput);
 			parsestate = groundtable;
 			break;
@@ -1030,199 +1095,266 @@ VTparse()
 	}
 }
 
-finput()
+static finput()
 {
 	return(doinput());
 }
 
-static int select_mask;
-static int write_mask;
 
-static char v_buffer[4096];
-static char *v_bufstr;
-static char *v_bufptr;
-static char *v_bufend;
+static char *v_buffer;		/* pointer to physical buffer */
+static char *v_bufstr = NULL;	/* beginning of area to write */
+static char *v_bufptr;		/* end of area to write */
+static char *v_bufend;		/* end of physical buffer */
 #define	ptymask()	(v_bufptr > v_bufstr ? pty_mask : 0)
 
-v_write(f, d, l)
-int f;
-char *d;
-int l;
-{
-	int r;
-	int c = l;
+/* Write data to the pty as typed by the user, pasted with the mouse,
+   or generated by us in response to a query ESC sequence. */
 
-	if (!v_bufstr) {
+v_write(f, d, len)
+    int f;
+    char *d;
+    int len;
+{
+	int riten;
+	int c = len;
+
+	if (v_bufstr == NULL  &&  len > 0) {
+	        v_buffer = XtMalloc(len);
 		v_bufstr = v_buffer;
 		v_bufptr = v_buffer;
-		v_bufend = &v_buffer[4096];
+		v_bufend = v_buffer + len;
 	}
-
+#ifdef DEBUG
+	fprintf(stderr, "v_write called with %d bytes (%d left over)",
+		len, v_bufptr - v_bufstr);
+	if (len > 1  &&  len < 10) fprintf(stderr, " \"%.*s\"", len, d);
+	fprintf(stderr, "\n");
+#endif
 
 	if ((1 << f) != pty_mask)
-		return(write(f, d, l));
+		return(write(f, d, len));
+
+	/*
+	 * Append to the block we already have.
+	 * Always doing this simplifies the code, and
+	 * isn't too bad, either.  If this is a short
+	 * block, it isn't too expensive, and if this is
+	 * a long block, we won't be able to write it all
+	 * anyway.
+	 */
+
+	if (len > 0) {
+	    if (v_bufend < v_bufptr + len) { /* we've run out of room */
+		if (v_bufstr != v_buffer) {
+		    /* there is unused space, move everything down */
+		    /* possibly overlapping bcopy here */
+#ifdef DEBUG
+		    fprintf(stderr, "moving data down %d\n",
+			    v_bufstr - v_buffer);
+#endif
+		    bcopy(v_bufstr, v_buffer, v_bufptr - v_bufstr);
+		    v_bufptr -= v_bufstr - v_buffer;
+		    v_bufstr = v_buffer;
+		}
+		if (v_bufend < v_bufptr + len) {
+		    /* still won't fit: get more space */
+		    /* Don't use XtRealloc because an error is not fatal. */
+		    int size = v_bufptr - v_buffer; /* save across realloc */
+		    v_buffer = realloc(v_buffer, size + len);
+		    if (v_buffer) {
+#ifdef DEBUG
+			fprintf(stderr, "expanded buffer to %d\n",
+				size + len);
+#endif
+			v_bufstr = v_buffer;
+			v_bufptr = v_buffer + size;
+			v_bufend = v_bufptr + len;
+		    } else {
+			/* no memory: ignore entire write request */
+			fprintf(stderr, "%s: cannot allocate buffer space\n",
+				xterm_name);
+			v_buffer = v_bufstr; /* restore clobbered pointer */
+			c = 0;
+		    }
+		}
+	    }
+	    if (v_bufend >= v_bufptr + len) {
+		/* new stuff will fit */
+		bcopy(d, v_bufptr, len);
+		v_bufptr += len;
+	    }
+	}
+
+	/*
+	 * Write out as much of the buffer as we can.
+	 * Be careful not to overflow the pty's input silo.
+	 * We are conservative here and only write
+	 * a small amount at a time.
+	 *
+	 * If we can't push all the data into the pty yet, we expect write
+	 * to return a non-negative number less than the length requested
+	 * (if some data written) or -1 and set errno to EAGAIN,
+	 * EWOULDBLOCK, or EINTR (if no data written).
+	 *
+	 * (Not all systems do this, sigh, so the code is actually
+	 * a little more forgiving.)
+	 */
+
+#define MAX_PTY_WRITE 128	/* 1/2 POSIX minimum MAX_INPUT */
 
 	if (v_bufptr > v_bufstr) {
-		if (l) {
-			if (v_bufend > v_bufptr + l) {
-				bcopy(d, v_bufptr, l);
-				v_bufptr += l;
-			} else {
-				if (v_bufstr != v_buffer) {
-					bcopy(v_bufstr, v_buffer,
-					      v_bufptr - v_bufstr);
-					v_bufptr -= v_bufstr - v_buffer;
-					v_bufstr = v_buffer;
-				}
-				if (v_bufend > v_bufptr + l) {
-					bcopy(d, v_bufptr, l);
-					v_bufptr += l;
-				} else if (v_bufptr < v_bufend) {
-					fprintf(stderr, "Out of buffer space\n");
-					c = v_bufend - v_bufptr;
-					bcopy(d, v_bufptr, c);
-					v_bufptr = v_bufend;
-				} else {
-					fprintf(stderr, "Out of buffer space\n");
-					c = 0;
-				}
-			}
-		}
-		if (v_bufptr > v_bufstr) {
-			if ((r = write(f, v_bufstr, v_bufptr - v_bufstr)) <= 0)
-				return(r);
-			if ((v_bufstr += r) >= v_bufptr)
-				v_bufstr = v_bufptr = v_buffer;
-		}
-	} else if (l) {
-		if ((r = write(f, d, l)) < 0) {
-			if (errno == EWOULDBLOCK)
-				r = 0;
-			else if (errno == EINTR)
-				r = 0;
-			else
-				return(r);
-		}
-		if (l - r) {
-			if (l - r > v_bufend - v_buffer) {
-				fprintf(stderr, "Truncating to %d\n",
-						v_bufend - v_buffer);
-				l = (v_bufend - v_buffer) + r;
-			}
-			bcopy(d + r, v_buffer, l - r);
-			v_bufstr = v_buffer;
-			v_bufptr = v_buffer + (l - r);
-		}
+	    riten = write(f, v_bufstr, v_bufptr - v_bufstr <= MAX_PTY_WRITE ?
+			  	       v_bufptr - v_bufstr : MAX_PTY_WRITE);
+	    if (riten < 0) {
+#ifdef DEBUG
+		perror("write");
+#endif
+		riten = 0;
+	    }
+#ifdef DEBUG
+	    fprintf(stderr, "write called with %d, wrote %d\n",
+		    v_bufptr - v_bufstr <= MAX_PTY_WRITE ?
+		    v_bufptr - v_bufstr : MAX_PTY_WRITE,
+		    riten);
+#endif
+	    v_bufstr += riten;
+	    if (v_bufstr >= v_bufptr) /* we wrote it all */
+		v_bufstr = v_bufptr = v_buffer;
+	}
+
+	/*
+	 * If we have lots of unused memory allocated, return it
+	 */
+	if (v_bufend - v_bufptr > 1024) { /* arbitrary hysteresis */
+	    /* save pointers across realloc */
+	    int start = v_bufstr - v_buffer;
+	    int size = v_bufptr - v_buffer;
+	    int allocsize = size ? size : 1;
+	    
+	    v_buffer = realloc(v_buffer, allocsize);
+	    if (v_buffer) {
+		v_bufstr = v_buffer + start;
+		v_bufptr = v_buffer + size;
+		v_bufend = v_buffer + allocsize;
+#ifdef DEBUG
+		fprintf(stderr, "shrunk buffer to %d\n", allocsize);
+#endif
+	    } else {
+		/* should we print a warning if couldn't return memory? */
+		v_buffer = v_bufstr - start; /* restore clobbered pointer */
+	    }
 	}
 	return(c);
 }
 
+static int select_mask;
+static int write_mask;
+static int pty_read_bytes;
+
 in_put()
 {
-	register TScreen *screen = &term->screen;
-	register int i;
-	static struct timeval trackTimeOut;
+    register TScreen *screen = &term->screen;
+    register int i;
+    static struct timeval select_timeout;
 
-	select_mask = pty_mask;	/* force initial read */
-	for( ; ; ) {
-#ifdef        CRAY
-		trackTimeOut.tv_sec = 0;
-		trackTimeOut.tv_usec = 0;
-		(void) select(max_plus1, &select_mask, (int *) NULL,
-		    (int *)NULL, &trackTimeOut);
-#endif        /* CRAY */
+    for( ; ; ) {
+	if (select_mask & pty_mask && eventMode == NORMAL) {
+#ifdef ALLOWLOGGING
+	    if (screen->logging)
+		FlushLog(screen);
+#endif
+	    bcnt = read(screen->respond, (char *)(bptr = buffer), BUF_SIZE);
+	    if (bcnt < 0) {
+		if (errno == EIO)
+		    Cleanup (0);
+		else if (!E_TEST(errno))
+		    Panic(
+			  "input: read returned unexpected error (%d)\n",
+			  errno);
+	    } else if (bcnt == 0)
+		Panic("input: read returned zero\n", 0);
+	    else {
+		/* read from pty was successful */
+		if (!screen->output_eight_bits) {
+		    register int bc = bcnt;
+		    register Char *b = bptr;
 
-		if((select_mask & pty_mask) && (eventMode == NORMAL)) {
-			if(screen->logging)
-				FlushLog(screen);
-			if((bcnt = read(screen->respond, bptr = buffer,
-			 BUF_SIZE)) < 0) {
-				if(errno == EIO)
-					Cleanup (0);
-				else if(errno != EWOULDBLOCK)
-					Panic(
-				 "input: read returned unexpected error (%d)\n",
-					 errno);
-			} else if(bcnt == 0)
-				Panic("input: read returned zero\n", 0);
-			else {
-				if(screen->scrollWidget && screen->scrollttyoutput &&
-				 screen->topline < 0)
-					/* Scroll to bottom */
-					WindowScroll(screen, 0);
-				break;
-			}
+		    for (; bc > 0; bc--, b++) {
+			*b &= (Char) 0x7f;
+		    }
 		}
-		if(screen->scroll_amt)
-			FlushScroll(screen);
-		if(screen->cursor_set && (screen->cursor_col != screen->cur_col
-		 || screen->cursor_row != screen->cur_row)) {
-			if(screen->cursor_state)
-				HideCursor();
-			ShowCursor();
-		} else if(screen->cursor_set != screen->cursor_state) {
-			if(screen->cursor_set)
-				ShowCursor();
-			else
-				HideCursor();
+		if ( screen->scrollWidget && screen->scrollttyoutput &&
+		     screen->topline < 0)
+		    WindowScroll(screen, 0);  /* Scroll to bottom */
+		pty_read_bytes += bcnt;
+		/* stop speed reading at some point to look for X stuff */
+		/* (4096 is just a random large number.) */
+		if (pty_read_bytes > 4096) {
+		    select_mask &= ~pty_mask;
 		}
-		
-	if (waitingForTrackInfo) {
-			trackTimeOut.tv_sec = TRACKTIMESEC;
-			trackTimeOut.tv_usec = TRACKTIMEUSEC;
-			select_mask = pty_mask;
-			if ((i = select(max_plus1, &select_mask, (int *)NULL, (int *)NULL,
-			 &trackTimeOut)) < 0) {
-			 	if (errno != EINTR)
-					SysError(ERROR_SELECT);
-				continue;
-			} else if (i == 0) {
-				/* emacs just isn't replying, go on */
-				waitingForTrackInfo = 0;
-				Bell();
-				select_mask = Select_mask;
-			}
-		} else if (QLength(screen->display))
-			select_mask = X_mask;
-		else {
-			write_mask = ptymask();
-			XFlush(screen->display);
-			select_mask = Select_mask;
-			if (eventMode != NORMAL)
-				select_mask = X_mask;
-			if(select(max_plus1, &select_mask, &write_mask, 
-				(int *)NULL, (struct timeval *) NULL) < 0){
-				if (errno != EINTR)
-					SysError(ERROR_SELECT);
-				continue;
-			} 
-		}
-		if (write_mask & ptymask())
-			v_write(screen->respond, 0, 0);	/* flush buffer */
-		if(select_mask & X_mask) {
-			if (bcnt <= 0) {
-				bcnt = 0;
-				bptr = buffer;
-			}
-			xevents();
-			if (bcnt > 0)
-				break;
-		}
+		break;
+	    }
 	}
-	bcnt--;
-	return(*bptr++);
+	pty_read_bytes = 0;
+	/* update the screen */
+	if (screen->scroll_amt)
+	    FlushScroll(screen);
+	if (screen->cursor_set && (screen->cursor_col != screen->cur_col
+				   || screen->cursor_row != screen->cur_row)) {
+	    if (screen->cursor_state)
+		HideCursor();
+	    ShowCursor();
+	} else if (screen->cursor_set != screen->cursor_state) {
+	    if (screen->cursor_set)
+		ShowCursor();
+	    else
+		HideCursor();
+	}
+
+	XFlush(screen->display); /* always flush writes before waiting */
+
+	/* Update the masks and, unless X events are already in the queue,
+	   wait for I/O to be possible. */
+	select_mask = Select_mask;
+	write_mask = ptymask();
+	select_timeout.tv_sec = 0;
+	select_timeout.tv_usec = 0;
+	i = select(max_plus1, &select_mask, &write_mask, (int *)NULL,
+		   QLength(screen->display) ? &select_timeout
+		   : (struct timeval *) NULL);
+	if (i < 0) {
+	    if (errno != EINTR)
+		SysError(ERROR_SELECT);
+	    continue;
+	} 
+
+	/* if there is room to write more data to the pty, go write more */
+	if (write_mask & ptymask()) {
+	    v_write(screen->respond, 0, 0); /* flush buffer */
+	}
+
+	/* if there are X events already in our queue, it
+	   counts as being readable */
+	if (QLength(screen->display) || (select_mask & X_mask)) {
+	    xevents();
+	}
+
+    }
+    bcnt--;
+    return(*bptr++);
 }
 
 /*
  * process a string of characters according to the character set indicated
  * by charset.  worry about end of line conditions (wraparound if selected).
  */
+static void
 dotext(screen, flags, charset, buf, ptr)
-register TScreen	*screen;
-unsigned	flags;
-char		charset;
-char	*buf;
-char	*ptr;
+    register TScreen	*screen;
+    unsigned	flags;
+    char	charset;
+    char	*buf;		/* start of characters to process */
+    char	*ptr;		/* end */
 {
 	register char	*s;
 	register int	len;
@@ -1252,15 +1384,18 @@ char	*ptr;
 	len = ptr - buf; 
 	ptr = buf;
 	while (len > 0) {
-		n = screen->max_col-screen->cur_col+1;
+		n = screen->max_col - screen->cur_col +1;
 		if (n <= 1) {
 			if (screen->do_wrap && (flags&WRAPAROUND)) {
-				Index(screen, 1);
-				screen->cur_col = 0;
-				screen->do_wrap = 0;
-				n = screen->max_col+1;
+			    /* mark that we had to wrap this line */
+			    ScrnSetAttributes(screen, screen->cur_row, 0,
+					      LINEWRAPPED, LINEWRAPPED, 1);
+			    Index(screen, 1);
+			    screen->cur_col = 0;
+			    screen->do_wrap = 0;
+			    n = screen->max_col+1;
 			} else
-				n = 1;
+			    n = 1;
 		}
 		if (len < n)
 			n = len;
@@ -1281,11 +1416,12 @@ char	*ptr;
  * write a string str of length len onto the screen at
  * the current cursor position.  update cursor position.
  */
+static void
 WriteText(screen, str, len, flags)
-register TScreen	*screen;
-register char	*str;
-register int	len;
-unsigned	flags;
+    register TScreen	*screen;
+    register char	*str;
+    register int	len;
+    unsigned		flags;
 {
 	register int cx, cy;
 	register unsigned fgs = flags;
@@ -1348,20 +1484,20 @@ unsigned	flags;
 /*
  * process ANSI modes set, reset
  */
-modes(term, func)
-XtermWidget	term;
-int		(*func)();
+ansi_modes(termw, func)
+    XtermWidget	termw;
+    int		(*func)();
 {
 	register int	i;
 
 	for (i=0; i<nparam; ++i) {
 		switch (param[i]) {
 		case 4:			/* IRM				*/
-			(*func)(&term->flags, INSERT);
+			(*func)(&termw->flags, INSERT);
 			break;
 
 		case 20:		/* LNM				*/
-			(*func)(&term->flags, LINEFEED);
+			(*func)(&termw->flags, LINEFEED);
 			update_autolinefeed();
 			break;
 		}
@@ -1371,18 +1507,18 @@ int		(*func)();
 /*
  * process DEC private modes set, reset
  */
-dpmodes(term, func)
-XtermWidget	term;
-int		(*func)();
+dpmodes(termw, func)
+    XtermWidget	termw;
+    void (*func)();
 {
-	register TScreen	*screen	= &term->screen;
+	register TScreen	*screen	= &termw->screen;
 	register int	i, j;
-	extern int bitset();
 
 	for (i=0; i<nparam; ++i) {
 		switch (param[i]) {
 		case 1:			/* DECCKM			*/
-			(*func)(&term->keyboard.flags, CURSOR_APL);
+			(*func)(&termw->keyboard.flags, CURSOR_APL);
+			update_appcursor();
 			break;
 		case 2:			/* ANSI/VT52 mode		*/
 			if (func == bitset) {
@@ -1397,15 +1533,15 @@ int		(*func)();
 		case 3:			/* DECCOLM			*/
 			if(screen->c132) {
 				ClearScreen(screen);
-				CursorSet(screen, 0, 0, term->flags);
+				CursorSet(screen, 0, 0, termw->flags);
 				if((j = func == bitset ? 132 : 80) !=
-				 ((term->flags & IN132COLUMNS) ? 132 : 80) ||
+				 ((termw->flags & IN132COLUMNS) ? 132 : 80) ||
 				 j != screen->max_col + 1) {
 				        Dimension replyWidth, replyHeight;
 					XtGeometryResult status;
 
 					status = XtMakeResizeRequest (
-					    (Widget) term, 
+					    (Widget) termw, 
 					    (Dimension) FontWidth(screen) * j
 					        + 2*screen->border
 						+ screen->scrollbar,
@@ -1416,13 +1552,13 @@ int		(*func)();
 
 					if (status == XtGeometryYes ||
 					    status == XtGeometryDone) {
-					    ScreenResize (&term->screen,
+					    ScreenResize (&termw->screen,
 							  replyWidth,
 							  replyHeight,
-							  &term->flags);
+							  &termw->flags);
 					}
 				}
-				(*func)(&term->flags, IN132COLUMNS);
+				(*func)(&termw->flags, IN132COLUMNS);
 			}
 			break;
 		case 4:			/* DECSCLM (slow scroll)	*/
@@ -1432,24 +1568,24 @@ int		(*func)();
 					FlushScroll(screen);
 			} else
 				screen->jumpscroll = 1;
-			(*func)(&term->flags, SMOOTHSCROLL);
+			(*func)(&termw->flags, SMOOTHSCROLL);
 			update_jumpscroll();
 			break;
 		case 5:			/* DECSCNM			*/
-			j = term->flags;
-			(*func)(&term->flags, REVERSE_VIDEO);
-			if ((term->flags ^ j) & REVERSE_VIDEO)
-				ReverseVideo(term);
+			j = termw->flags;
+			(*func)(&termw->flags, REVERSE_VIDEO);
+			if ((termw->flags ^ j) & REVERSE_VIDEO)
+				ReverseVideo(termw);
 			/* update_reversevideo done in RevVid */
 			break;
 
 		case 6:			/* DECOM			*/
-			(*func)(&term->flags, ORIGIN);
-			CursorSet(screen, 0, 0, term->flags);
+			(*func)(&termw->flags, ORIGIN);
+			CursorSet(screen, 0, 0, termw->flags);
 			break;
 
 		case 7:			/* DECAWM			*/
-			(*func)(&term->flags, WRAPAROUND);
+			(*func)(&termw->flags, WRAPAROUND);
 			update_autowrap();
 			break;
 		case 8:			/* DECARM			*/
@@ -1462,11 +1598,13 @@ int		(*func)();
 				screen->send_mouse_pos = 0;
 			break;
 		case 38:		/* DECTEK			*/
-			if(func == bitset & !(screen->inhibit & I_TEK)) {
+			if(func == bitset && !(screen->inhibit & I_TEK)) {
+#ifdef ALLOWLOGGING
 				if(screen->logging) {
 					FlushLog(screen);
 					screen->logstart = Tbuffer;
 				}
+#endif
 				screen->TekEmu = TRUE;
 			}
 			break;
@@ -1485,28 +1623,41 @@ int		(*func)();
 			update_marginbell();
 			break;
 		case 45:		/* reverse wraparound	*/
-			(*func)(&term->flags, REVERSEWRAP);
+			(*func)(&termw->flags, REVERSEWRAP);
 			update_reversewrap();
 			break;
+#ifdef ALLOWLOGGING
 		case 46:		/* logging		*/
+#ifdef ALLOWLOGFILEONOFF
+			/*
+			 * if this feature is enabled, logging may be 
+			 * enabled and disabled via escape sequences.
+			 */
 			if(func == bitset)
 				StartLog(screen);
 			else
 				CloseLog(screen);
+#else
+			Bell();
+			Bell();
+#endif /* ALLOWLOGFILEONOFF */
 			break;
-		case 47:		/* alternate buffer		*/
-			if(func == bitset)
+#endif
+		case 47:		/* alternate buffer */
+			if (!termw->misc.titeInhibit) {
+			    if(func == bitset)
 				ToAlternate(screen);
-			else
+			    else
 				FromAlternate(screen);
+			}
 			break;
-		case 1000:		/* xtem bogus sequence		*/
+		case 1000:		/* xterm bogus sequence		*/
 			if(func == bitset)
 				screen->send_mouse_pos = 2;
 			else
 				screen->send_mouse_pos = 0;
 			break;
-		case 1001:		/* xtem sequence w/hilite tracking */
+		case 1001:		/* xterm sequence w/hilite tracking */
 			if(func == bitset)
 				screen->send_mouse_pos = 3;
 			else
@@ -1519,35 +1670,34 @@ int		(*func)();
 /*
  * process xterm private modes save
  */
-savemodes(term)
-XtermWidget term;
+savemodes(termw)
+    XtermWidget termw;
 {
-	register TScreen	*screen	= &term->screen;
+	register TScreen	*screen	= &termw->screen;
 	register int i;
 
 	for (i = 0; i < nparam; i++) {
 		switch (param[i]) {
 		case 1:			/* DECCKM			*/
-			screen->save_modes[0] = term->keyboard.flags &
+			screen->save_modes[0] = termw->keyboard.flags &
 			 CURSOR_APL;
 			break;
 		case 3:			/* DECCOLM			*/
 			if(screen->c132)
-				screen->save_modes[1] = term->flags &
-				 IN132COLUMNS;
+			    screen->save_modes[1] = termw->flags & IN132COLUMNS;
 			break;
 		case 4:			/* DECSCLM (slow scroll)	*/
-			screen->save_modes[2] = term->flags & SMOOTHSCROLL;
+			screen->save_modes[2] = termw->flags & SMOOTHSCROLL;
 			break;
 		case 5:			/* DECSCNM			*/
-			screen->save_modes[3] = term->flags & REVERSE_VIDEO;
+			screen->save_modes[3] = termw->flags & REVERSE_VIDEO;
 			break;
 		case 6:			/* DECOM			*/
-			screen->save_modes[4] = term->flags & ORIGIN;
+			screen->save_modes[4] = termw->flags & ORIGIN;
 			break;
 
 		case 7:			/* DECAWM			*/
-			screen->save_modes[5] = term->flags & WRAPAROUND;
+			screen->save_modes[5] = termw->flags & WRAPAROUND;
 			break;
 		case 8:			/* DECARM			*/
 			/* ignore autorepeat */
@@ -1565,11 +1715,13 @@ XtermWidget term;
 			screen->save_modes[12] = screen->marginbell;
 			break;
 		case 45:		/* reverse wraparound	*/
-			screen->save_modes[13] = term->flags & REVERSEWRAP;
+			screen->save_modes[13] = termw->flags & REVERSEWRAP;
 			break;
+#ifdef ALLOWLOGGING
 		case 46:		/* logging		*/
 			screen->save_modes[14] = screen->logging;
 			break;
+#endif
 		case 47:		/* alternate buffer		*/
 			screen->save_modes[15] = screen->alternate;
 			break;
@@ -1584,31 +1736,31 @@ XtermWidget term;
 /*
  * process xterm private modes restore
  */
-restoremodes(term)
-XtermWidget term;
+restoremodes(termw)
+    XtermWidget termw;
 {
-	register TScreen	*screen	= &term->screen;
+	register TScreen	*screen	= &termw->screen;
 	register int i, j;
 
 	for (i = 0; i < nparam; i++) {
 		switch (param[i]) {
 		case 1:			/* DECCKM			*/
-			term->keyboard.flags &= ~CURSOR_APL;
-			term->keyboard.flags |= screen->save_modes[0] &
+			termw->keyboard.flags &= ~CURSOR_APL;
+			termw->keyboard.flags |= screen->save_modes[0] &
 			 CURSOR_APL;
 			update_appcursor();
 			break;
 		case 3:			/* DECCOLM			*/
 			if(screen->c132) {
 				ClearScreen(screen);
-				CursorSet(screen, 0, 0, term->flags);
+				CursorSet(screen, 0, 0, termw->flags);
 				if((j = (screen->save_modes[1] & IN132COLUMNS)
-				 ? 132 : 80) != ((term->flags & IN132COLUMNS)
+				 ? 132 : 80) != ((termw->flags & IN132COLUMNS)
 				 ? 132 : 80) || j != screen->max_col + 1) {
 				        Dimension replyWidth, replyHeight;
 					XtGeometryResult status;
 					status = XtMakeResizeRequest (
-					    (Widget) term,
+					    (Widget) termw,
 					    (Dimension) FontWidth(screen) * j 
 						+ 2*screen->border
 						+ screen->scrollbar,
@@ -1619,14 +1771,14 @@ XtermWidget term;
 
 					if (status == XtGeometryYes ||
 					    status == XtGeometryDone) {
-					    ScreenResize (&term->screen,
+					    ScreenResize (&termw->screen,
 							  replyWidth,
 							  replyHeight,
-							  &term->flags);
+							  &termw->flags);
 					}
 				}
-				term->flags &= ~IN132COLUMNS;
-				term->flags |= screen->save_modes[1] &
+				termw->flags &= ~IN132COLUMNS;
+				termw->flags |= screen->save_modes[1] &
 				 IN132COLUMNS;
 			}
 			break;
@@ -1637,29 +1789,27 @@ XtermWidget term;
 					FlushScroll(screen);
 			} else
 				screen->jumpscroll = 1;
-			term->flags &= ~SMOOTHSCROLL;
-			term->flags |= screen->save_modes[2] & SMOOTHSCROLL;
+			termw->flags &= ~SMOOTHSCROLL;
+			termw->flags |= screen->save_modes[2] & SMOOTHSCROLL;
 			update_jumpscroll();
 			break;
 		case 5:			/* DECSCNM			*/
-			if((screen->save_modes[3] ^ term->flags) &
-			 REVERSE_VIDEO) {
-				term->flags &= ~REVERSE_VIDEO;
-				term->flags |= screen->save_modes[3] &
-				 REVERSE_VIDEO;
-				ReverseVideo(term);
+			if((screen->save_modes[3] ^ termw->flags) & REVERSE_VIDEO) {
+				termw->flags &= ~REVERSE_VIDEO;
+				termw->flags |= screen->save_modes[3] & REVERSE_VIDEO;
+				ReverseVideo(termw);
 				/* update_reversevideo done in RevVid */
 			}
 			break;
 		case 6:			/* DECOM			*/
-			term->flags &= ~ORIGIN;
-			term->flags |= screen->save_modes[4] & ORIGIN;
-			CursorSet(screen, 0, 0, term->flags);
+			termw->flags &= ~ORIGIN;
+			termw->flags |= screen->save_modes[4] & ORIGIN;
+			CursorSet(screen, 0, 0, termw->flags);
 			break;
 
 		case 7:			/* DECAWM			*/
-			term->flags &= ~WRAPAROUND;
-			term->flags |= screen->save_modes[5] & WRAPAROUND;
+			termw->flags &= ~WRAPAROUND;
+			termw->flags |= screen->save_modes[5] & WRAPAROUND;
 			update_autowrap();
 			break;
 		case 8:			/* DECARM			*/
@@ -1679,26 +1829,32 @@ XtermWidget term;
 		case 44:		/* margin bell			*/
 			if(!(screen->marginbell = screen->save_modes[12]))
 				screen->bellarmed = -1;
-			update_visualbell();
+			update_marginbell();
 			break;
 		case 45:		/* reverse wraparound	*/
-			term->flags &= ~REVERSEWRAP;
-			term->flags |= screen->save_modes[13] & REVERSEWRAP;
+			termw->flags &= ~REVERSEWRAP;
+			termw->flags |= screen->save_modes[13] & REVERSEWRAP;
 			update_reversewrap();
 			break;
+#ifdef ALLOWLOGGING
 		case 46:		/* logging		*/
+#ifdef ALLOWLOGFILEONOFF
 			if(screen->save_modes[14])
 				StartLog(screen);
 			else
 				CloseLog(screen);
+#endif /* ALLOWLOGFILEONOFF */
 			/* update_logging done by StartLog and CloseLog */
 			break;
-		case 47:		/* alternate buffer		*/
-			if(screen->save_modes[15])
+#endif
+		case 47:		/* alternate buffer */
+			if (!termw->misc.titeInhibit) {
+			    if(screen->save_modes[15])
 				ToAlternate(screen);
-			else
+			    else
 				FromAlternate(screen);
-			/* update_altscreen done by ToAlt and FromAlt */
+			    /* update_altscreen done by ToAlt and FromAlt */
+			}
 			break;
 		case 1000:		/* mouse bogus sequence		*/
 		case 1001:
@@ -1711,8 +1867,9 @@ XtermWidget term;
 /*
  * set a bit in a word given a pointer to the word and a mask.
  */
-bitset(p, mask)
-int	*p;
+static void bitset(p, mask)
+    unsigned *p;
+    int mask;
 {
 	*p |= mask;
 }
@@ -1720,14 +1877,16 @@ int	*p;
 /*
  * clear a bit in a word given a pointer to the word and a mask.
  */
-bitclr(p, mask)
-int	*p;
+static void bitclr(p, mask)
+    unsigned *p;
+    int mask;
 {
 	*p &= ~mask;
 }
 
 unparseseq(ap, fd)
-register ANSI	*ap;
+    register ANSI *ap;
+    int fd;
 {
 	register int	c;
 	register int	i;
@@ -1782,8 +1941,7 @@ int fd;
 		buf[1] = '\n';
 		i++;
 	}
-	if (write(fd, buf, i) != i)
-		Panic("unparseputc: error writing character\n", 0);
+	v_write(fd, buf, i);
 }
 
 unparsefputs (s, fd)
@@ -1795,6 +1953,7 @@ unparsefputs (s, fd)
     }
 }
 
+static void SwitchBufs();
 
 ToAlternate(screen)
 register TScreen *screen;
@@ -1821,20 +1980,17 @@ register TScreen *screen;
 	update_altscreen();
 }
 
+static void
 SwitchBufs(screen)
-register TScreen *screen;
+    register TScreen *screen;
 {
 	register int rows, top;
-	char *save [2 * MAX_ROWS];
 
 	if(screen->cursor_state)
 		HideCursor();
 	rows = screen->max_row + 1;
-	bcopy((char *)screen->buf, (char *)save, 2 * sizeof(char *) * rows);
-	bcopy((char *)screen->altbuf, (char *)screen->buf, 2 * sizeof(char *) *
-	 rows);
-	bcopy((char *)save, (char *)screen->altbuf, 2 * sizeof(char *) * rows);
-
+	SwitchBufPtrs(screen);
+	TrackText(0, 0, 0, 0);	/* remove any highlighting */
 	if((top = -screen->topline) <= screen->max_row) {
 		if(screen->scroll_amt)
 			FlushScroll(screen);
@@ -1854,13 +2010,26 @@ register TScreen *screen;
 	ScrnRefresh(screen, 0, 0, rows, screen->max_col + 1, False);
 }
 
+/* swap buffer line pointers between alt and regular screens */
+
+SwitchBufPtrs(screen)
+    register TScreen *screen;
+{
+    register int rows = screen->max_row + 1;
+    char *save [2 * MAX_ROWS];
+
+    bcopy((char *)screen->buf, (char *)save, 2 * sizeof(char *) * rows);
+    bcopy((char *)screen->altbuf, (char *)screen->buf,
+	  2 * sizeof(char *) * rows);
+    bcopy((char *)save, (char *)screen->altbuf, 2 * sizeof(char *) * rows);
+}
+
 VTRun()
 {
 	register TScreen *screen = &term->screen;
 	register int i;
 	
 	if (!screen->Vshow) {
-	    XtRealizeWidget (term->core.parent);
 	    set_vt_visibility (TRUE);
 	} 
 	update_vttekmode();
@@ -1891,9 +2060,9 @@ VTRun()
 
 /*ARGSUSED*/
 static void VTExpose(w, event, region)
-Widget w;
-XEvent *event;
-Region region;
+    Widget w;
+    XEvent *event;
+    Region region;
 {
 	register TScreen *screen = &term->screen;
 
@@ -1902,12 +2071,12 @@ Region region;
 		fputs("Expose\n", stderr);
 #endif	/* DEBUG */
 	if (event->type == Expose)
-		HandleExposure (screen, (XExposeEvent *)event);
+		HandleExposure (screen, event);
 }
 
 static void VTGraphicsOrNoExpose (event)
-XEvent *event;
-    {
+    XEvent *event;
+{
 	register TScreen *screen = &term->screen;
 	if (screen->incopy <= 0) {
 		screen->incopy = 1;
@@ -1915,7 +2084,7 @@ XEvent *event;
 			screen->scrolls--;
 	}
 	if (event->type == GraphicsExpose)
-	  if (HandleExposure (screen, (XExposeEvent *)event))
+	  if (HandleExposure (screen, event))
 		screen->cursor_state = OFF;
 	if ((event->type == NoExpose) || ((XGraphicsExposeEvent *)event)->count == 0) {
 		if (screen->incopy <= 0 && screen->scrolls > 0)
@@ -1928,21 +2097,19 @@ XEvent *event;
 }
 
 /*ARGSUSED*/
-static void VTNonMaskableEvent (w, closure, event)
-Widget w;
-caddr_t closure;
+static void VTNonMaskableEvent (w, closure, event, cont)
+Widget w;			/* unused */
+XtPointer closure;		/* unused */
 XEvent *event;
-    {
+Boolean *cont;			/* unused */
+{
     switch (event->type) {
-       case MappingNotify:
-	  XRefreshKeyboardMapping (&event->xmapping);
-	  break;
        case GraphicsExpose:
        case NoExpose:
 	  VTGraphicsOrNoExpose (event);
 	  break;
-	  }
-    }
+      }
+}
 
 
 
@@ -1955,12 +2122,23 @@ static void VTResize(w)
 		    &term->flags);
 }
 
+				
+extern Atom wm_delete_window;	/* for ICCCM delete window */
+
+static String xterm_trans =
+    "<ClientMessage>WM_PROTOCOLS: DeleteWindow()\n\
+     <MappingNotify>: KeyboardMapping()\n";
 
 int VTInit ()
 {
     register TScreen *screen = &term->screen;
+    Widget vtparent = term->core.parent;
 
-    XtRealizeWidget (term->core.parent);
+    XtRealizeWidget (vtparent);
+    XtOverrideTranslations(vtparent, XtParseTranslationTable(xterm_trans));
+    (void) XSetWMProtocols (XtDisplay(vtparent), XtWindow(vtparent),
+			    &wm_delete_window, 1);
+
     if (screen->allbuf == NULL) VTallocbuf ();
     return (1);
 }
@@ -1983,10 +2161,23 @@ static void VTallocbuf ()
     return;
 }
 
-static void VTInitialize (request, new)
-   XtermWidget request, new;
+static void VTClassInit ()
 {
+    XtAddConverter(XtRString, XtRGravity, XmuCvtStringToGravity,
+		   (XtConvertArgList) NULL, (Cardinal) 0);
+}
+
+
+/* ARGSUSED */
+static void VTInitialize (wrequest, wnew, args, num_args)
+   Widget wrequest, wnew;
+   ArgList args;
+   Cardinal *num_args;
+{
+   XtermWidget request = (XtermWidget) wrequest;
+   XtermWidget new     = (XtermWidget) wnew;
    int i;
+
    /* Zero out the entire "screen" component of "new" widget,
       then do field-by-field assigment of "screen" fields
       that are named in the resource list. */
@@ -1998,7 +2189,9 @@ static void VTInitialize (request, new)
    new->screen.cursorcolor = request->screen.cursorcolor;
    new->screen.border = request->screen.border;
    new->screen.jumpscroll = request->screen.jumpscroll;
+#ifdef ALLOWLOGGING
    new->screen.logfile = request->screen.logfile;
+#endif
    new->screen.marginbell = request->screen.marginbell;
    new->screen.mousecolor = request->screen.mousecolor;
    new->screen.mousecolorback = request->screen.mousecolorback;
@@ -2012,15 +2205,17 @@ static void VTInitialize (request, new)
    new->screen.TekEmu = request->screen.TekEmu;
    new->misc.re_verse = request->misc.re_verse;
    new->screen.multiClickTime = request->screen.multiClickTime;
+   new->screen.bellSuppressTime = request->screen.bellSuppressTime;
    new->screen.charClass = request->screen.charClass;
    new->screen.cutNewline = request->screen.cutNewline;
    new->screen.cutToBeginningOfLine = request->screen.cutToBeginningOfLine;
    new->screen.always_highlight = request->screen.always_highlight;
    new->screen.pointer_cursor = request->screen.pointer_cursor;
-   new->screen.eight_bits = request->screen.eight_bits;
+   new->screen.input_eight_bits = request->screen.input_eight_bits;
+   new->screen.output_eight_bits = request->screen.output_eight_bits;
    new->screen.allowSendEvents = request->screen.allowSendEvents;
    new->misc.titeInhibit = request->misc.titeInhibit;
-   for (i = 0; i < NMENUFONTS; i++) {
+   for (i = fontMenu_font1; i <= fontMenu_lastBuiltin; i++) {
        new->screen.menu_font_names[i] = request->screen.menu_font_names[i];
    }
    /* set default in realize proc */
@@ -2052,13 +2247,29 @@ static void VTInitialize (request, new)
 		HandleLeaveWindow, (Opaque)NULL);
    XtAddEventHandler(XtParent(new), FocusChangeMask, FALSE,
 		HandleFocusChange, (Opaque)NULL);
-   XtAddEventHandler(new, 0L, TRUE,
+   XtAddEventHandler((Widget)new, 0L, TRUE,
 		VTNonMaskableEvent, (Opaque)NULL);
+   XtAddEventHandler((Widget)new, PropertyChangeMask, FALSE,
+		     HandleBellPropertyChange, (Opaque)NULL);
+   new->screen.bellInProgress = FALSE;
 
    set_character_class (new->screen.charClass);
 
    /* create it, but don't realize it */
    ScrollBarOn (new, TRUE, FALSE);
+
+   /* make sure that the resize gravity acceptable */
+   if ( new->misc.resizeGravity != NorthWestGravity &&
+        new->misc.resizeGravity != SouthWestGravity) {
+       extern XtAppContext app_con;
+       Cardinal nparams = 1;
+
+       XtAppWarningMsg(app_con, "rangeError", "resizeGravity", "XTermError",
+		       "unsupported resizeGravity resource value (%d)",
+		       (String *) &(new->misc.resizeGravity), &nparams);
+       new->misc.resizeGravity = SouthWestGravity;
+   }
+
    return;
 }
 
@@ -2071,16 +2282,14 @@ Widget w;
 
 /*ARGSUSED*/
 static void VTRealize (w, valuemask, values)
-Widget w;
-XtValueMask *valuemask;
-XSetWindowAttributes *values;
+    Widget w;
+    XtValueMask *valuemask;
+    XSetWindowAttributes *values;
 {
 	unsigned int width, height;
 	register TScreen *screen = &term->screen;
 	int xpos, ypos, pr;
-	extern char *malloc();
 	XSizeHints		sizehints;
-	extern int		VTgcFontMask;
 	int scrollbar_width;
 
 	TabReset (term->tabs);
@@ -2114,8 +2323,8 @@ XSetWindowAttributes *values;
 			  screen->mousecolor, screen->mousecolorback);
 
 	scrollbar_width = (term->misc.scrollbar ?
-			   screen->scrollWidget->core.width : 0);
-
+			   screen->scrollWidget->core.width /* +
+			   screen->scrollWidget->core.border_width */ : 0);
 
 	/* set defaults */
 	xpos = 1; ypos = 1; width = 80; height = 24;
@@ -2186,8 +2395,12 @@ XSetWindowAttributes *values;
 
 	XSetWMNormalHints (XtDisplay(term), term->core.parent->core.window,
 			   &sizehints);
+	XFlush (XtDisplay(term));	/* get it out to window manager */
 
-	values->bit_gravity = NorthWestGravity;
+	/* use ForgetGravity instead of SouthWestGravity because translating
+	   the Expose events for ConfigureNotifys is too hard */
+	values->bit_gravity = term->misc.resizeGravity == NorthWestGravity ?
+	    NorthWestGravity : ForgetGravity;
 	term->screen.fullVwin.window = term->core.window =
 	  XCreateWindow(XtDisplay(term), XtWindow(term->core.parent),
 		term->core.x, term->core.y,
@@ -2216,7 +2429,7 @@ XSetWindowAttributes *values;
 	screen->bot_marg = screen->max_row = Height(screen) /
 				screen->fullVwin.f_height - 1;
 
-	screen->sc.row = screen->sc.col = screen->sc.flags = NULL;
+	screen->sc.row = screen->sc.col = screen->sc.flags = 0;
 
 	/* Mark screen buffer as unallocated.  We wait until the run loop so
 	   that the child process does not fork and exec with all the dynamic
@@ -2225,7 +2438,7 @@ XSetWindowAttributes *values;
 	if (!tekWidget)			/* if not called after fork */
 	  screen->buf = screen->allbuf = NULL;
 
-	screen->do_wrap = NULL;
+	screen->do_wrap = 0;
 	screen->scrolls = screen->incopy = 0;
 	set_vt_box (screen);
 
@@ -2237,6 +2450,64 @@ XSetWindowAttributes *values;
 	}
 	CursorSave (term, &screen->sc);
 	return;
+}
+
+static Boolean VTSetValues (cur, request, new, args, num_args)
+    Widget cur, request, new;
+    ArgList args;
+    Cardinal *num_args;
+{
+    XtermWidget curvt = (XtermWidget) cur;
+    XtermWidget newvt = (XtermWidget) new; 
+    Boolean refresh_needed = FALSE;
+    Boolean fonts_redone = FALSE;
+
+    if(curvt->core.background_pixel != newvt->core.background_pixel
+       || curvt->screen.foreground != newvt->screen.foreground
+       || curvt->screen.menu_font_names[curvt->screen.menu_font_number]
+          != newvt->screen.menu_font_names[newvt->screen.menu_font_number]
+       || curvt->misc.f_n != newvt->misc.f_n) {
+	if(curvt->misc.f_n != newvt->misc.f_n)
+	    newvt->screen.menu_font_names[fontMenu_fontdefault] = newvt->misc.f_n;
+	if (LoadNewFont(&newvt->screen,
+			newvt->screen.menu_font_names[curvt->screen.menu_font_number],
+			newvt->screen.menu_font_names[curvt->screen.menu_font_number],
+			TRUE, newvt->screen.menu_font_number)) {
+	    /* resizing does the redisplay, so don't ask for it here */
+	    refresh_needed = TRUE;
+	    fonts_redone = TRUE;
+	} else
+	    if(curvt->misc.f_n != newvt->misc.f_n)
+		newvt->screen.menu_font_names[fontMenu_fontdefault] = curvt->misc.f_n;
+    }
+    if(!fonts_redone
+       && curvt->screen.cursorcolor != newvt->screen.cursorcolor) {
+	set_cursor_gcs(&newvt->screen);
+	refresh_needed = TRUE;
+    }
+    if(curvt->misc.re_verse != newvt->misc.re_verse) {
+	newvt->flags ^= REVERSE_VIDEO;
+	ReverseVideo(newvt);
+	newvt->misc.re_verse = !newvt->misc.re_verse; /* ReverseVideo toggles */
+	refresh_needed = TRUE;
+    }
+    if(curvt->screen.mousecolor != newvt->screen.mousecolor
+       || curvt->screen.mousecolorback != newvt->screen.mousecolorback) {
+	recolor_cursor (newvt->screen.pointer_cursor, 
+			newvt->screen.mousecolor,
+			newvt->screen.mousecolorback);
+	refresh_needed = TRUE;
+    }
+    if (curvt->misc.scrollbar != newvt->misc.scrollbar) {
+	if (newvt->misc.scrollbar) {
+	    ScrollBarOn (newvt, FALSE, FALSE);
+	} else {
+	    ScrollBarOff (&newvt->screen);
+	}
+	update_scrollbar();
+    }
+
+    return refresh_needed;
 }
 
 /*
@@ -2387,7 +2658,7 @@ HideCursor()
 }
 
 VTReset(full)
-int full;
+    Boolean full;
 {
 	register TScreen *screen = &term->screen;
 
@@ -2397,7 +2668,9 @@ int full;
 	term->flags &= ~ORIGIN;
 	if(full) {
 		TabReset (term->tabs);
-		term->keyboard.flags = NULL;
+		term->keyboard.flags = 0;
+		update_appcursor();
+		update_appkeypad();
 		screen->gsets[0] = 'B';
 		screen->gsets[1] = 'B';
 		screen->gsets[2] = 'B';
@@ -2405,12 +2678,19 @@ int full;
 		screen->curgl = 0;
 		screen->curgr = 2;
 		screen->curss = 0;
+		FromAlternate(screen);
 		ClearScreen(screen);
 		screen->cursor_state = OFF;
 		if (term->flags & REVERSE_VIDEO)
 			ReverseVideo(term);
 
 		term->flags = term->initflags;
+		update_reversevideo();
+		update_autowrap();
+		update_reversewrap();
+		update_autolinefeed();
+		screen->jumpscroll = !(term->flags & SMOOTHSCROLL);
+		update_jumpscroll();
 		if(screen->c132 && (term->flags & IN132COLUMNS)) {
 		        Dimension junk;
 			XtMakeResizeRequest(
@@ -2543,7 +2823,7 @@ static void HandleKeymapChange(w, event, params, param_count)
     Cardinal *param_count;
 {
     static XtTranslations keymap, original;
-    static XtResource resources[] = {
+    static XtResource key_resources[] = {
 	{ XtNtranslations, XtCTranslations, XtRTranslationTable,
 	      sizeof(XtTranslations), 0, XtRTranslationTable, (caddr_t)NULL}
     };
@@ -2561,8 +2841,8 @@ static void HandleKeymapChange(w, event, params, param_count)
     (void) sprintf( mapName, "%sKeymap", params[0] );
     (void) strcpy( mapClass, mapName );
     if (islower(mapClass[0])) mapClass[0] = toupper(mapClass[0]);
-    XtGetSubresources( w, &keymap, mapName, mapClass,
-		       resources, (Cardinal)1, NULL, (Cardinal)0 );
+    XtGetSubresources( w, (XtPointer)&keymap, mapName, mapClass,
+		       key_resources, (Cardinal)1, NULL, (Cardinal)0 );
     if (keymap != NULL)
 	XtOverrideTranslations(w, keymap);
 }
@@ -2582,6 +2862,17 @@ static void HandleBell(w, event, params, param_count)
 
 
 /* ARGSUSED */
+static void HandleVisualBell(w, event, params, param_count)
+    Widget w;
+    XEvent *event;		/* unused */
+    String *params;		/* unused */
+    Cardinal *param_count;	/* unused */
+{
+    VisualBell();
+}
+
+
+/* ARGSUSED */
 static void HandleIgnore(w, event, params, param_count)
     Widget w;
     XEvent *event;		/* unused */
@@ -2594,7 +2885,8 @@ static void HandleIgnore(w, event, params, param_count)
 
 
 /* ARGSUSED */
-void DoSetSelectedFont(w, client_data, selection, type, value, length, format)
+static void
+DoSetSelectedFont(w, client_data, selection, type, value, length, format)
     Widget w;
     XtPointer client_data;
     Atom *selection, *type;
@@ -2602,14 +2894,23 @@ void DoSetSelectedFont(w, client_data, selection, type, value, length, format)
     unsigned long *length;
     int *format;
 {
+    char *val = (char *)value;
     int len;
-    if (*type != XA_STRING || *format != 8) { Bell(); return; }
-    len = strlen(value);
+    if (*type != XA_STRING  ||  *format != 8) {
+	Bell();
+	return;
+    }
+    len = strlen(val);
     if (len > 0) {
-	if (value[len-1] == '\n') value[len-1] = '\0';
-	if (!LoadNewFont (&term->screen, value, NULL, True, 
-			  fontMenu_fontescape))
-	  Bell();
+	if (val[len-1] == '\n') val[len-1] = '\0';
+	/* Do some sanity checking to avoid sending a long selection
+	   back to the server in an OpenFont that is unlikely to succeed.
+	   XLFD allows up to 255 characters and no control characters;
+	   we are a little more liberal here. */
+	if (len > 1000  ||  strchr(val, '\n'))
+	    return;
+	if (!LoadNewFont (&term->screen, val, NULL, True, fontMenu_fontsel))
+	    Bell();
     }
 }
 
@@ -2629,7 +2930,8 @@ void FindFontSelection (atom_name, justprobe)
 	if (strcmp(atom_name, XmuNameOfAtom(*pAtom)) == 0) break;
     }
     if (!a) {
-	atoms = (AtomPtr*) XtRealloc (atoms, sizeof(AtomPtr)*(atomCount+1));
+	atoms = (AtomPtr*) XtRealloc ((char *)atoms,
+				      sizeof(AtomPtr)*(atomCount+1));
 	*(pAtom = &atoms[atomCount++]) = XmuMakeAtom(atom_name);
     }
 
@@ -2638,7 +2940,7 @@ void FindFontSelection (atom_name, justprobe)
 	term->screen.menu_font_names[fontMenu_fontsel] = 
 	  XGetSelectionOwner(XtDisplay(term), target) ? _Font_Selected_ : NULL;
     } else {
-	XtGetSelectionValue(term, target, XA_STRING,
+	XtGetSelectionValue((Widget)term, target, XA_STRING,
 			    DoSetSelectedFont, NULL,
 			    XtLastTimestampProcessed(XtDisplay(term)));
     }
@@ -2672,6 +2974,10 @@ void HandleSetFont(w, event, params, param_count)
 	    fontnum = fontMenu_font3; break;
 	  case '4':
 	    fontnum = fontMenu_font4; break;
+	  case '5':
+	    fontnum = fontMenu_font5; break;
+	  case '6':
+	    fontnum = fontMenu_font6; break;
 	  case 'e': case 'E':
 	    fontnum = fontMenu_fontescape; maxparams = 3; break;
 	  case 's': case 'S':
@@ -2783,19 +3089,18 @@ int LoadNewFont (screen, nfontname, bfontname, doresize, fontnum)
 	if (!new_reverseboldGC) goto bad;
     }
 
-    XtReleaseGC ((Widget) term, screen->normalGC);
     if (screen->normalGC != screen->normalboldGC)
-      XtReleaseGC ((Widget) term, screen->normalboldGC);
-    XtReleaseGC ((Widget) term, screen->reverseGC);
+	XtReleaseGC ((Widget) term, screen->normalboldGC);
+    XtReleaseGC ((Widget) term, screen->normalGC);
     if (screen->reverseGC != screen->reverseboldGC)
-      XtReleaseGC ((Widget) term, screen->reverseboldGC);
+	XtReleaseGC ((Widget) term, screen->reverseboldGC);
+    XtReleaseGC ((Widget) term, screen->reverseGC);
     screen->normalGC = new_normalGC;
     screen->normalboldGC = new_normalboldGC;
     screen->reverseGC = new_reverseGC;
     screen->reverseboldGC = new_reverseboldGC;
     screen->fnt_norm = nfs;
     screen->fnt_bold = bfs;
-    screen->fnt_bold = screen->fnt_norm;
     screen->enbolden = (nfs == bfs);
     set_menu_font (False);
     screen->menu_font_number = fontnum;
@@ -2840,7 +3145,8 @@ update_font_info (screen, doresize)
     screen->fullVwin.f_height = (screen->fnt_norm->ascent +
 				 screen->fnt_norm->descent);
     scrollbar_width = (term->misc.scrollbar ? 
-		       screen->scrollWidget->core.width : 0);
+		       screen->scrollWidget->core.width +
+		       screen->scrollWidget->core.border_width : 0);
     i = 2 * screen->border + scrollbar_width;
     j = 2 * screen->border;
     width = (screen->max_col + 1) * screen->fullVwin.f_width + i;
@@ -2934,9 +3240,11 @@ set_cursor_gcs (screen)
 	new_reversecursorGC = (GC) 0;
 	new_cursoroutlineGC = (GC) 0;
     }
-    if (screen->cursorGC) XtReleaseGC (term, screen->cursorGC);
-    if (screen->reversecursorGC) XtReleaseGC (term, screen->reversecursorGC);
-    if (screen->cursoroutlineGC) XtReleaseGC (term, screen->cursoroutlineGC);
+    if (screen->cursorGC) XtReleaseGC ((Widget)term, screen->cursorGC);
+    if (screen->reversecursorGC)
+	XtReleaseGC ((Widget)term, screen->reversecursorGC);
+    if (screen->cursoroutlineGC)
+	XtReleaseGC ((Widget)term, screen->cursoroutlineGC);
     screen->cursorGC = new_cursorGC;
     screen->reversecursorGC = new_reversecursorGC;
     screen->cursoroutlineGC = new_cursoroutlineGC;

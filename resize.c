@@ -1,12 +1,6 @@
 /*
- *	$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $
+ *	$XConsortium: resize.c,v 1.27 91/07/23 11:11:19 rws Exp $
  */
-
-#ifndef lint
-static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $";
-#endif	/* lint */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -37,11 +31,18 @@ static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 j
 #include <X11/Xos.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <sys/ioctl.h>
 
-#ifdef att
-#include <sys/stream.h>
-#include <sys/ptem.h>
+#if defined(att) || (defined(SYSV) && defined(SYSV386))
+#define ATT
+#endif
+
+#ifdef SVR4
+#define SYSV
+#define ATT
+#endif
+
+#ifdef ATT
+#define USE_USG_PTYS
 #endif
 
 #ifdef APOLLO_SR9
@@ -60,28 +61,41 @@ static char *rcsid_resize_c = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 j
 #define USE_TERMCAP
 #endif /* SYSV */
 
+#include <sys/ioctl.h>
 #ifdef USE_SYSV_TERMIO
 #include <sys/termio.h>
 #else /* else not USE_SYSV_TERMIO */
 #include <sgtty.h>
 #endif	/* USE_SYSV_TERMIO */
 
+#ifdef USE_USG_PTYS
+#include <sys/stream.h>
+#include <sys/ptem.h>
+#endif
+
 #include <signal.h>
 #include <pwd.h>
 
+#ifdef SIGNALRETURNSINT
+#define SIGNAL_T int
+#else
+#define SIGNAL_T void
+#endif
+
+#ifndef X_NOT_STDC_ENV
+#include <stdlib.h>
+#else
+char *getenv();
+#endif
+
 #ifdef USE_SYSV_TERMIO
-extern struct passwd *getpwent();
-extern struct passwd *getpwuid();
-extern struct passwd *getpwnam();
-extern void setpwent();
-extern void endpwent();
-extern struct passwd *fgetpwent();
+#ifdef X_NOT_POSIX
+#ifndef SYSV386
+extern struct passwd *getpwuid(); 	/* does ANYBODY need this? */
+#endif /* SYSV386 */
+#endif /* X_NOT_POSIX */
 #define	bzero(s, n)	memset(s, 0, n)
 #endif	/* USE_SYSV_TERMIO */
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: resize.c,v 1.11 89/12/09 17:24:12 jim Exp $";
-#endif
 
 #define	EMULATIONS	2
 #define	SUN		1
@@ -97,12 +111,13 @@ struct {
 } shell_list[] = {
 	"csh",		SHELL_C,	/* vanilla cshell */
 	"tcsh",		SHELL_C,
+	"jcsh",		SHELL_C,
 	"sh",		SHELL_BOURNE,	/* vanilla Bourne shell */
 	"ksh",		SHELL_BOURNE,	/* Korn shell (from AT&T toolchest) */
 	"ksh-i",	SHELL_BOURNE,	/* other name for latest Korn shell */
-	(char *) 0,	SHELL_BOURNE,	/* last effort default (same as
-					 * xterm's)
-					 */
+	"bash",		SHELL_BOURNE,	/* GNU Bourne again shell */
+	"jsh",		SHELL_BOURNE,
+	NULL,		SHELL_BOURNE	/* default (same as xterm's) */
 };
 
 char *emuname[EMULATIONS] = {
@@ -117,7 +132,7 @@ char *getsize[EMULATIONS] = {
 };
 #ifndef sun
 #ifdef TIOCSWINSZ
-char *getwsize[EMULATIONS] = {
+char *getwsize[EMULATIONS] = {	/* size in pixels */
 	0,
 	"\033[14t",
 };
@@ -153,13 +168,16 @@ char *wsize[EMULATIONS] = {
 #endif	/* TIOCSWINSZ */
 #endif	/* sun */
 
-char *strindex (), *index (), *rindex();
+char *strindex ();
 
-main (argc, argv)
-char **argv;
+SIGNAL_T onintr();
+
 /*
    resets termcap string to reflect current screen size
  */
+main (argc, argv)
+    int argc;
+    char **argv;
 {
 	register char *ptr, *env;
 	register int emu = VT100;
@@ -186,14 +204,13 @@ char **argv;
 	struct winsize ws;
 #endif	/* TIOCSWINSZ */
 #endif	/* sun */
-	char *getenv();
-	int onintr();
 	char *name_of_tty;
 #ifdef CANT_OPEN_DEV_TTY
 	extern char *ttyname();
 #endif
 
-	if(ptr = rindex(myname = argv[0], '/'))
+	ptr = rindex(myname = argv[0], '/');
+	if(ptr)
 		myname = ptr + 1;
 	if(strcmp(myname, sunname) == 0)
 		emu = SUN;
@@ -225,7 +242,8 @@ char **argv;
 			/* this is the same default that xterm uses */
 			ptr = "/bin/sh";
 
-		if (shell = rindex(ptr, '/'))
+		shell = rindex(ptr, '/');
+		if(shell)
 			shell++;
 		else
 			shell = ptr;
@@ -261,20 +279,17 @@ char **argv;
 	}
 	tty = fileno(ttyfp);
 #ifdef USE_TERMCAP
-	if((env = getenv("TERMCAP")) && *env)
-		strcpy(termcap, env);
-	else {
-		if(!(env = getenv("TERM")) || !*env) {
-			env = "xterm";
-			if(SHELL_BOURNE == shell_type)
-				setname = "TERM=xterm;\nexport TERM;\n";
-			else	setname = "setenv TERM xterm;\n";
-		}
-		if(tgetent (termcap, env) <= 0) {
-			fprintf(stderr, "%s: Can't get entry \"%s\"\n",
-			 myname, env);
-			exit(1);
-		}
+	if(!(env = getenv("TERM")) || !*env) {
+	    env = "xterm";
+	    if(SHELL_BOURNE == shell_type)
+		setname = "TERM=xterm;\nexport TERM;\n";
+	    else
+		setname = "setenv TERM xterm;\n";
+	}
+	if(tgetent (termcap, env) <= 0) {
+	    fprintf(stderr, "%s: Can't get entry \"%s\"\n",
+		    myname, env);
+	    exit(1);
 	}
 #else /* else not USE_TERMCAP */
 	if(!(env = getenv("TERM")) || !*env) {
@@ -316,7 +331,7 @@ char **argv;
 	readstring(ttyfp, buf, size[emu]);
 	if(sscanf (buf, size[emu], &rows, &cols) != 2) {
 		fprintf(stderr, "%s: Can't get rows and columns\r\n", myname);
-		onintr();
+		onintr(0);
 	}
 	if(restore[emu])
 		write(tty, restore[emu], strlen(restore[emu]));
@@ -338,7 +353,7 @@ char **argv;
 	    readstring(ttyfp, buf, wsize[emu]);
 	    if(sscanf (buf, wsize[emu], &ws.ws_xpixel, &ws.ws_ypixel) != 2) {
 		fprintf(stderr, "%s: Can't get window size\r\n", myname);
-		onintr();
+		onintr(0);
 	    }
 	    ws.ws_row = rows;
 	    ws.ws_col = cols;
@@ -395,22 +410,30 @@ char **argv;
 	strcat (termcap, ptr);
 #endif /* USE_TERMCAP */
 
-	if(SHELL_BOURNE == shell_type)
+	if(SHELL_BOURNE == shell_type) {
+
 #ifdef USE_TERMCAP
 		printf ("%sTERMCAP='%s'\n",
 		 setname, termcap);
 #else /* else not USE_TERMCAP */
+#ifndef SVR4
 		printf ("%sCOLUMNS=%d;\nLINES=%d;\nexport COLUMNS LINES;\n",
-		 setname, cols, rows);
+			setname, cols, rows);
+#endif /* !SVR4 */
 #endif	/* USE_SYSV_TERMCAP */
-	else
+
+	} else {		/* not Bourne shell */
+
 #ifdef USE_TERMCAP
 		printf ("set noglob;\n%ssetenv TERMCAP '%s';\nunset noglob;\n",
 		 setname, termcap);
 #else /* else not USE_TERMCAP */
+#ifndef SVR4
 		printf ("set noglob;\n%ssetenv COLUMNS '%d';\nsetenv LINES '%d';\nunset noglob;\n",
-		 setname, cols, rows);
+			setname, cols, rows);
+#endif /* !SVR4 */
 #endif	/* USE_TERMCAP */
+	}
 	exit(0);
 }
 
@@ -444,12 +467,12 @@ register char *str;
 }
 
 readstring(fp, buf, str)
-register FILE *fp;
-register char *buf;
-char *str;
+    register FILE *fp;
+    register char *buf;
+    char *str;
 {
-	register int i, last;
-	int timeout();
+	register int last, c;
+	SIGNAL_T timeout();
 #ifndef USG
 	struct itimerval it;
 #endif
@@ -462,12 +485,18 @@ char *str;
 	it.it_value.tv_sec = TIMEOUT;
 	setitimer(ITIMER_REAL, &it, (struct itimerval *)NULL);
 #endif
-	if((*buf++ = getc(fp)) != *str) {
+	if ((c = getc(fp)) == 0233) {	/* meta-escape, CSI */
+		*buf++ = c = '\033';
+		*buf++ = '[';
+	} else
+		*buf++ = c;
+	if(c != *str) {
 		fprintf(stderr, "%s: unknown character, exiting.\r\n", myname);
-		onintr();
+		onintr(0);
 	}
-	last = str[i = strlen(str) - 1];
-	while((*buf++ = getc(fp)) != last);
+	last = str[strlen(str) - 1];
+	while((*buf++ = getc(fp)) != last)
+	    ;
 #ifdef USG
 	alarm (0);
 #else
@@ -485,13 +514,18 @@ Usage()
 	exit(1);
 }
 
-timeout()
+SIGNAL_T
+timeout(sig)
+    int sig;
 {
 	fprintf(stderr, "%s: Time out occurred\r\n", myname);
-	onintr();
+	onintr(sig);
 }
 
-onintr()
+/* ARGSUSED */
+SIGNAL_T
+onintr(sig)
+    int sig;
 {
 #ifdef USE_SYSV_TERMIO
 	ioctl (tty, TCSETAW, &tioorig);

@@ -1,9 +1,6 @@
 /*
- *	$XConsortium: VTparse.h,v 1.4 89/01/04 13:37:49 jim Exp $
+ *	$XConsortium: VTparse.h,v 1.5 91/01/06 12:47:08 rws Exp $
  */
-
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.

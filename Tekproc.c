@@ -1,11 +1,9 @@
 /*
- * $XConsortium: Tekproc.c,v 1.77 89/12/22 11:37:41 jim Exp $
+ * $XConsortium: Tekproc.c,v 1.112 93/02/25 17:17:40 gildea Exp $
  *
  * Warning, there be crufty dragons here.
  */
 
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1988 Massachusetts Institute of Technology
@@ -33,43 +31,51 @@
 
 /* Tekproc.c */
 
-#include <X11/Xos.h>
 #include "ptyx.h"
+#include "Tekparse.h"
+#include "data.h"
+#include "error.h"
+#include "menu.h"
+#include <X11/Xos.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/StringDefs.h>
 #include <X11/Shell.h>
 #include <X11/Xmu/CharSet.h>
-#include "Tekparse.h"
 #include <stdio.h>
-#ifdef umips
-# ifndef SYSTYPE_SYSV
-# include <sgtty.h>
-# endif /* not SYSTYPE_SYSV */
-#else
-# ifndef CRAY
-#  include <sgtty.h>
-# endif
-#endif /* umips */
-#include <ctype.h>
 #include <errno.h>
 #include <setjmp.h>
-#include <pwd.h>
-#include "data.h"
-#include "error.h"
-#include "menu.h"
+#include <signal.h>
 
-#if !defined(EWOULDBLOCK) && defined(EAGAIN)
-#define EWOULDBLOCK EAGAIN
+/*
+ * Check for both EAGAIN and EWOULDBLOCK, because some supposedly POSIX
+ * systems are broken and return EWOULDBLOCK when they should return EAGAIN.
+ * Note that this macro may evaluate its argument more than once.
+ */
+#if defined(EAGAIN) && defined(EWOULDBLOCK)
+#define E_TEST(err) ((err) == EAGAIN || (err) == EWOULDBLOCK)
+#else
+#ifdef EAGAIN
+#define E_TEST(err) ((err) == EAGAIN)
+#else
+#define E_TEST(err) ((err) == EWOULDBLOCK)
+#endif
 #endif
 
+extern jmp_buf Tekend;
+
+#ifndef X_NOT_STDC_ENV
+#include <stdlib.h>
+#else
+extern char *malloc();
 extern void exit();
-extern long time();
+extern long time();		/* included in <time.h> by Xos.h */
+#endif
 
 #define TekColormap DefaultColormap( screen->display, \
 				    DefaultScreen(screen->display) )
-#define DefaultGCID DefaultGC(screen->display, DefaultScreen(screen->display))->gid
+#define DefaultGCID XGContextFromGC(DefaultGC(screen->display, DefaultScreen(screen->display)))
 
 /* Tek defines */
 
@@ -109,18 +115,8 @@ extern long time();
 #define	input()		Tinput()
 #define	unput(c)	*Tpushback++ = c
 
-#ifndef lint
-static char rcs_id[] = "$XConsortium: Tekproc.c,v 1.77 89/12/22 11:37:41 jim Exp $";
-#endif	/* lint */
-
 extern Widget toplevel;
 
-static XPoint *T_box[TEKNUMFONTS] = {
-	T_boxlarge,
-	T_box2,
-	T_box3,
-	T_boxsmall,
-};
 static struct Tek_Char {
 	int hsize;	/* in Tek units */
 	int vsize;	/* in Tek units */
@@ -153,12 +149,15 @@ extern int Tspttable[];
 static int *curstate = Talptable;
 static int *Tparsestate = Talptable;
 
+static void TekEnq();
+
 /* event handlers */
 extern void HandleKeyPressed(), HandleEightBitKeyPressed();
 extern void HandleStringEvent();
 extern void HandleEnterWindow();
 extern void HandleLeaveWindow();
 extern void HandleFocusChange();
+extern void HandleBellPropertyChange();
 extern void HandleSecure();
 extern void HandleGINInput();
 extern void HandleCreateMenu(), HandlePopupMenu();
@@ -166,8 +165,10 @@ extern void HandleCreateMenu(), HandlePopupMenu();
 static char defaultTranslations[] = "\
        ~Meta<KeyPress>: 	insert-seven-bit()	\n\
         Meta<KeyPress>: 	insert-eight-bit()\n\
- Ctrl ~Meta<Btn1Down>:          popup-menu(mainMenu) \n\
- Ctrl ~Meta <Btn2Down>:         popup-menu(tekMenu) \n\
+      !Ctrl <Btn1Down>:         popup-menu(mainMenu) \n\
+ !Lock Ctrl <Btn1Down>:         popup-menu(mainMenu) \n\
+      !Ctrl <Btn2Down>:         popup-menu(tekMenu) \n\
+ !Lock Ctrl <Btn2Down>:         popup-menu(tekMenu) \n\
  Shift ~Meta<Btn1Down>:         gin-press(L) \n\
        ~Meta<Btn1Down>:         gin-press(l) \n\
  Shift ~Meta<Btn2Down>:         gin-press(M) \n\
@@ -187,8 +188,10 @@ static XtActionsRec actionsList[] = {
     { "popup-menu",		HandlePopupMenu },
     /* menu actions */
     { "allow-send-events",	HandleAllowSends },
-    { "set-visual-bell",	HandleVisualBell },
+    { "set-visual-bell",	HandleSetVisualBell },
+#ifdef ALLOWLOGGING
     { "set-logging",		HandleLogging },
+#endif
     { "redraw",			HandleRedraw },
     { "send-signal",		HandleSendSignal },
     { "quit",			HandleQuit },
@@ -218,32 +221,47 @@ static XtActionsRec actionsList[] = {
 
 static Dimension defOne = 1;
 
+#define GIN_TERM_NONE_STR	"none"
+#define GIN_TERM_CR_STR		"CRonly"
+#define GIN_TERM_EOT_STR	"CR&EOT"
+
+#define GIN_TERM_NONE	0
+#define GIN_TERM_CR	1
+#define GIN_TERM_EOT	2
+
 static XtResource resources[] = {
     {XtNwidth, XtCWidth, XtRDimension, sizeof(Dimension),
-	 XtOffset(Widget, core.width), XtRDimension, (caddr_t)&defOne},
+	 XtOffsetOf(CoreRec, core.width), XtRDimension, (caddr_t)&defOne},
     {XtNheight, XtCHeight, XtRDimension, sizeof(Dimension),
-	 XtOffset(Widget, core.height), XtRDimension, (caddr_t)&defOne},
+	 XtOffsetOf(CoreRec, core.height), XtRDimension, (caddr_t)&defOne},
     {"fontLarge", XtCFont, XtRFontStruct, sizeof(XFontStruct *),
-       XtOffset(TekWidget, tek.Tfont[TEK_FONT_LARGE]),
+       XtOffsetOf(TekWidgetRec, tek.Tfont[TEK_FONT_LARGE]),
        XtRString, "9x15"},
     {"font2", XtCFont, XtRFontStruct, sizeof(XFontStruct *),
-       XtOffset(TekWidget, tek.Tfont[TEK_FONT_2]),
+       XtOffsetOf(TekWidgetRec, tek.Tfont[TEK_FONT_2]),
        XtRString, "6x13"},
     {"font3", XtCFont, XtRFontStruct, sizeof(XFontStruct *),
-       XtOffset(TekWidget, tek.Tfont[TEK_FONT_3]),
+       XtOffsetOf(TekWidgetRec, tek.Tfont[TEK_FONT_3]),
        XtRString, "8x13"},
     {"fontSmall", XtCFont, XtRFontStruct, sizeof(XFontStruct *),
-       XtOffset(TekWidget, tek.Tfont[TEK_FONT_SMALL]),
+       XtOffsetOf(TekWidgetRec, tek.Tfont[TEK_FONT_SMALL]),
        XtRString, "6x10"},
     {"initialFont", "InitialFont", XtRString, sizeof(char *),
-       XtOffset(TekWidget, tek.initial_font),
+       XtOffsetOf(TekWidgetRec, tek.initial_font),
        XtRString, "large"},
+    {"ginTerminator", "GinTerminator", XtRString, sizeof(char *),
+       XtOffsetOf(TekWidgetRec, tek.gin_terminator_str),
+       XtRString, GIN_TERM_NONE_STR},
 };
 
 static void TekInitialize(), TekRealize(), TekConfigure();
-void TekExpose();
+static int getpoint();
+static int Tinput();
 
-WidgetClassRec tekClassRec = {
+void TekExpose();
+void TekSetFontSize();
+
+static WidgetClassRec tekClassRec = {
   {
 /* core_class fields */	
     /* superclass	  */	(WidgetClass) &widgetClassRec,
@@ -284,9 +302,10 @@ WidgetClassRec tekClassRec = {
 
 static Boolean Tfailed = FALSE;
 
-TekWidget CreateTekWidget ()
+static Widget tekshellwidget;
+
+static TekWidget CreateTekWidget ()
 {
-    Widget tekshellwidget;
     extern Arg ourTopLevelShellArgs[];
     extern int number_ourTopLevelShellArgs;
 
@@ -298,6 +317,7 @@ TekWidget CreateTekWidget ()
     /* this causes the Realize method to be called */
     tekWidget = (TekWidget) XtCreateManagedWidget ("tek4014", tekWidgetClass,
 						   tekshellwidget, NULL, 0);
+
     return (tekWidget);
 }
 
@@ -312,15 +332,15 @@ int TekInit ()
     return (0);
 }
 
-Tekparse()
+static void Tekparse()
 {
 	register TScreen *screen = &term->screen;
 	register int c, x, y;
 	char ch;
-	int Tinput();
 
-	for( ; ; )
-		switch(Tparsestate[c = input()]) {
+	for( ; ; ) {
+	    c = input();
+	    switch(Tparsestate[c]) {
 		 case CASE_REPORT:
 			/* report address */
 			if(screen->TekGIN) {
@@ -340,10 +360,12 @@ Tekparse()
 			/* special return to vt102 mode */
 			Tparsestate = curstate;
 			TekRecord->ptr[-1] = NAK; /* remove from recording */
+#ifdef ALLOWLOGGING
 			if(screen->logging) {
 				FlushLog(screen);
 				screen->logstart = buffer;
 			}
+#endif
 			return;
 
 		 case CASE_SPT_STATE:
@@ -479,7 +501,7 @@ Tekparse()
 
 		 case CASE_CHAR_SIZE: 
 			/* character size selector */
-		        TekSetGCFont (screen->cur.fontsize = (c & 03));
+		        TekSetFontSize (c & 03);
 			Tparsestate = curstate;
 			break;
 
@@ -488,8 +510,9 @@ Tekparse()
 			/* only line types */
 			if((c &= LINEMASK) != screen->cur.linetype) {
 				if(nplot > 0)
-					TekFlush();
-				screen->cur.linetype = c;
+				    TekFlush();
+				if (c <= TEKNUMLINES)
+				    screen->cur.linetype = c;
 			}
 			Tparsestate = curstate;
 			break;
@@ -577,8 +600,9 @@ Tekparse()
 			if(screen->TekGIN)
 				TekGINoff();
 			TCursorDown();
-			if (!TekRefresh && (screen->display->qlen > 0 ||
-					    GetBytesAvailable (screen->display->fd) > 0))
+			if (!TekRefresh &&
+			    (QLength(screen->display) > 0 ||
+			     GetBytesAvailable (ConnectionNumber(screen->display)) > 0))
 			  xevents();
 			break;
 
@@ -608,33 +632,18 @@ Tekparse()
 			Tparsestate = curstate;
 			break;
 		}
+	}
 }			
-
-TekSetGCFont (size)
-    int size;  /* TEK_FONT_{LARGE,2,3,SMALL} */
-    {
-    register TScreen *screen = &term->screen;
-    Font fid = tekWidget->tek.Tfont[size]->fid;
-    if (fid == DefaultGCID) 
-       /* we didn't succeed in opening a real font
-	  for this size.  Instead, use server default. */
-       XCopyGC (screen->display,
-	  DefaultGC(screen->display, DefaultScreen(screen->display)),
-	  GCFont, screen->TnormalGC);
-   else
-       XSetFont (screen->display, screen->TnormalGC, fid);
-    }
 
 static int rcnt;
 static char *rptr;
 static int Tselect_mask;
 
-Tinput()
+static int Tinput()
 {
 	register TScreen *screen = &term->screen;
 	register int i;
 	register TekLink *tek;
-	extern char *malloc();
 
 	if(Tpushback > Tpushb)
 		return(*--Tpushback);
@@ -643,8 +652,9 @@ Tinput()
 			return(*rptr++);
 		if(tek = TekRefresh->next) {
 			TekRefresh = tek;
-			rcnt = tek->count - 1;
 			rptr = tek->data;
+			rcnt = tek->count - 1;
+			TekSetFontSize(tek->fontsize);
 			return(*rptr++);
 		}
 		TekRefresh = (TekLink *)0;
@@ -664,19 +674,29 @@ again:
 				       (int *) NULL, &crocktimeout);
 #endif
 			if(Tselect_mask & pty_mask) {
+#ifdef ALLOWLOGGING
 				if(screen->logging)
 					FlushLog(screen);
-				if((Tbcnt = read(screen->respond,
-				 Tbptr = Tbuffer, BUF_SIZE)) < 0) {
+#endif
+				Tbcnt = read(screen->respond, (char *)(Tbptr = Tbuffer), BUF_SIZE);
+				if(Tbcnt < 0) {
 					if(errno == EIO)
 						Cleanup (0);
-					else if(errno != EWOULDBLOCK)
+					else if(!E_TEST(errno))
 						Panic(
 				 "Tinput:read returned unexpected error (%d)\n",
 						 errno);
 				} else if(Tbcnt == 0)
 					Panic("input: read returned zero\n", 0);
 				else {
+				    if (!screen->output_eight_bits) {
+					register int bc = Tbcnt;
+					register Char *b = Tbptr;
+
+					for (; bc > 0; bc--, b++) {
+					    *b &= (Char) 0x7f;
+					}
+				    }
 					break;
 				}
 			}
@@ -709,12 +729,15 @@ again:
 			Ttoggled = TRUE;
 		}
 	}
-	if((tek = TekRecord)->count >= TEK_LINK_BLOCK_SIZE) {
+	tek = TekRecord;
+	if(tek->count >= TEK_LINK_BLOCK_SIZE
+	   || tek->fontsize != screen->cur.fontsize) {
 		if((TekRecord = tek->next = (TekLink *)malloc(sizeof(TekLink)))
 		 == (TekLink *)0)
 			Panic("Tinput: malloc error (%d)\n", errno);
 		tek = tek->next;
 		tek->next = (TekLink *)0;
+		tek->fontsize = screen->cur.fontsize;
 		tek->count = 0;
 		tek->ptr = tek->data;
 	}
@@ -741,16 +764,14 @@ static void TekConfigure(w)
     TFullHeight(screen) = w->core.height;
 }
 
-/* this should become the Tek Widget's Expose proc */
-/* need to use compress_events = TRUE so you don't need to 
-   look at the "count" in the exposure event ! */
 /*ARGSUSED*/
 void TekExpose(w, event, region)
-Widget w;
-XExposeEvent *event;
-Region region;
+    Widget w;
+    XEvent *event;
+    Region region;
 {
 	register TScreen *screen = &term->screen;
+	extern Bool waiting_for_initial_map;
 
 #ifdef lint
 	region = region;
@@ -761,8 +782,8 @@ Region region;
 	Tpushback = Tpushb;
 	screen->cur_X = 0;
 	screen->cur_Y = TEKHOME;
+	TekSetFontSize(screen->page.fontsize);
 	screen->cur = screen->page;
-        TekSetGCFont (screen->cur.fontsize);
 	screen->margin = MARGIN1;
 	if(screen->TekGIN) {
 		screen->TekGIN = NULL;
@@ -772,6 +793,8 @@ Region region;
 	rptr = TekRefresh->data;
 	rcnt = TekRefresh->count;
 	Tparsestate = curstate = Talptable;
+	if (waiting_for_initial_map)
+	    first_map_occurred ();
 	if(!screen->waitrefresh)
 		dorefresh();
 }
@@ -795,7 +818,7 @@ dorefresh()
 TekPage()
 {
 	register TScreen *screen = &term->screen;
-	register TekLink *tek, *tek2;
+	register TekLink *tek;
 
 	XClearWindow(screen->display, TWindow(screen));
 	screen->cur_X = 0;
@@ -805,13 +828,17 @@ TekPage()
 	if(screen->TekGIN)
 		TekGINoff();
 	tek = TekRecord = &Tek0;
+	tek->fontsize = screen->cur.fontsize;
 	tek->count = 0;
 	tek->ptr = tek->data;
-	if(tek = tek->next)
+	tek = tek->next;
+	if(tek)
 		do {
-			tek2 = tek->next;
+			TekLink *tek2 = tek->next;
+
 			free((char *)tek);
-		} while(tek = tek2);
+			tek = tek2;
+		} while(tek);
 	TekRecord->next = (TekLink *)0;
 	TekRefresh = (TekLink *)0;
 	Ttoggled = TRUE;
@@ -826,6 +853,7 @@ TekPage()
 #define	SHIFTLO		2
 #define	TWOBITS		03
 
+static int
 getpoint()
 {
 	register int c, x, y, e, lo_y = 0;
@@ -949,27 +977,9 @@ TCursorDown()
 	screen->cur_Y = l * t->vsize;
 }
 
-TekDraw (x, y)
-int x, y;
-{
-	register TScreen *screen = &term->screen;
-
-	if(nplot == 0 || T_lastx != screen->cur_X || T_lasty != screen->cur_Y) {
-		/*
-		 * We flush on each unconnected line segment if the line
-		 * type is not solid.  This solves a bug in X when drawing
-		 * points while the line type is not solid.
-		 */
-		if(nplot > 0 && screen->cur.linetype != SOLIDLINE)
-			TekFlush();
-	}
-	AddToDraw(screen->cur_X, screen->cur_Y, x, y);
-	T_lastx = screen->cur_X = x;
-	T_lasty = screen->cur_Y = y;
-}
-
+static void
 AddToDraw(x1, y1, x2, y2)
-int x1, y1, x2, y2;
+    int x1, y1, x2, y2;
 {
 	register TScreen *screen = &term->screen;
 	register XSegment *lp;
@@ -985,6 +995,25 @@ int x1, y1, x2, y2;
 	lp->y2 = y2 = (TEKHEIGHT + TEKTOPPAD - y2) * TekScale(screen) +
 	 screen->border;
 	nplot++;
+}
+
+TekDraw (x, y)
+    int x, y;
+{
+	register TScreen *screen = &term->screen;
+
+	if(nplot == 0 || T_lastx != screen->cur_X || T_lasty != screen->cur_Y) {
+		/*
+		 * We flush on each unconnected line segment if the line
+		 * type is not solid.  This solves a bug in X when drawing
+		 * points while the line type is not solid.
+		 */
+		if(nplot > 0 && screen->cur.linetype != SOLIDLINE)
+			TekFlush();
+	}
+	AddToDraw(screen->cur_X, screen->cur_Y, x, y);
+	T_lastx = screen->cur_X = x;
+	T_lasty = screen->cur_Y = y;
 }
 
 TekFlush ()
@@ -1013,7 +1042,7 @@ TekGINoff()
 }
 
 TekEnqMouse(c)
-int c;
+    int c;			/* character pressed */
 {
 	register TScreen *screen = &term->screen;
 	int mousex, mousey, rootx, rooty;
@@ -1038,23 +1067,31 @@ int c;
 	TekEnq(c, mousex, mousey);
 }
 
-TekEnq (status, x, y)
-int status;
-register int x, y;
+static void TekEnq (status, x, y)
+    int status;
+    register int x, y;
 {
-	register TScreen *screen = &term->screen;
-	int pty = screen->respond;
-	char cplot [5];
+    register TScreen *screen = &term->screen;
+    int pty = screen->respond;
+    char cplot [7];
+    int len = 5;
 
-	/* Translate x and y to Tektronix code */
-	cplot[1] = 040 | ((x >> SHIFTHI) & FIVEBITS);
-	cplot[2] = 040 | ((x >> SHIFTLO) & FIVEBITS);
-	cplot[3] = 040 | ((y >> SHIFTHI) & FIVEBITS);
-	cplot[4] = 040 | ((y >> SHIFTLO) & FIVEBITS);
-	if(cplot[0] = status)
-		write (pty, cplot, 5);
-	else
-		write (pty, &cplot[1], 4);
+    cplot[0] = status;
+    /* Translate x and y to Tektronix code */
+    cplot[1] = 040 | ((x >> SHIFTHI) & FIVEBITS);
+    cplot[2] = 040 | ((x >> SHIFTLO) & FIVEBITS);
+    cplot[3] = 040 | ((y >> SHIFTHI) & FIVEBITS);
+    cplot[4] = 040 | ((y >> SHIFTLO) & FIVEBITS);
+
+    if (screen->gin_terminator != GIN_TERM_NONE)
+	cplot[len++] = '\r';
+    if (screen->gin_terminator == GIN_TERM_EOT)
+	cplot[len++] = '\004';
+
+    if(cplot[0])
+	v_write(pty, cplot, len);
+    else
+	v_write(pty, cplot+1, len-1);
 }
 
 TekRun()
@@ -1070,7 +1107,6 @@ TekRun()
 		Exit(ERROR_TINIT);
 	}
 	if(!screen->Tshow) {
-	    XtRealizeWidget (tekWidget->core.parent);
 	    set_tek_visibility (TRUE);
 	} 
 	update_vttekmode();
@@ -1123,18 +1159,22 @@ static unsigned char *dashes[TEKNUMLINES] = {
  * The following is called the create the tekWidget
  */
 
-static void TekInitialize(request, new)
+static void TekInitialize(request, new, args, num_args)
     Widget request, new;
+    ArgList args;
+    Cardinal *num_args;
 {
-   /* look for focus related events on the shell, because we need
-    * to care about the shell's border being part of our focus.
-    */
+    /* look for focus related events on the shell, because we need
+     * to care about the shell's border being part of our focus.
+     */
     XtAddEventHandler(XtParent(new), EnterWindowMask, FALSE,
 		      HandleEnterWindow, (caddr_t)NULL);
     XtAddEventHandler(XtParent(new), LeaveWindowMask, FALSE,
 		      HandleLeaveWindow, (caddr_t)NULL);
     XtAddEventHandler(XtParent(new), FocusChangeMask, FALSE,
 		      HandleFocusChange, (caddr_t)NULL);
+    XtAddEventHandler((Widget)new, PropertyChangeMask, FALSE,
+		      HandleBellPropertyChange, (Opaque)NULL);
 }
 
 
@@ -1154,7 +1194,6 @@ static void TekRealize (gw, valuemaskp, values)
     int winX, winY, width, height;
     XSizeHints sizehints;
     char Tdefault[32];
-    extern char *malloc();
 
     tw->core.border_pixel = term->core.border_pixel;
 
@@ -1168,14 +1207,17 @@ static void TekRealize (gw, valuemaskp, values)
        (Tpushb = (Char *)malloc(10)) == NULL ||
        (Tline = (XSegment *)malloc(MAX_VTX * sizeof(XSegment))) == NULL) {
 	fprintf (stderr, "%s: Not enough core for Tek mode\n", xterm_name);
-	goto mallocfailed;
+	if(Tpushb) free((char *)Tpushb);
+	if(Tbuffer) free((char *)Tbuffer);
+	Tfailed = TRUE;
+	return;
     }
 
     screen->xorplane = 1;
 
     screen->Tbackground = term->core.background_pixel;
     screen->Tforeground = screen->foreground;
-    screen->Tcursorcolor = screen->foreground;
+    screen->Tcursorcolor = screen->cursorcolor;
 
     if (term->misc.T_geometry == NULL) {
 	int defwidth, defheight;
@@ -1251,11 +1293,12 @@ static void TekRealize (gw, valuemaskp, values)
 
     XSetWMNormalHints (XtDisplay(tw), tw->core.parent->core.window,
 		       &sizehints);
+    XFlush (XtDisplay(tw));	/* get it out to window manager */
 
     values->win_gravity = NorthWestGravity;
     values->background_pixel = screen->Tbackground;
 
-    if((tw->core.window = TWindow(screen) = 
+    tw->core.window = TWindow(screen) = 
 	XCreateWindow (screen->display,
 		       tw->core.parent->core.window,
 		       tw->core.x, tw->core.y,
@@ -1263,17 +1306,7 @@ static void TekRealize (gw, valuemaskp, values)
 		       (int) tw->core.depth,
 		       InputOutput, CopyFromParent,
 		       ((*valuemaskp)|CWBackPixel|CWWinGravity),
-		       values)) == NULL) {
-	fprintf(stderr, "%s: Can't create Tek window\n", xterm_name);
-	free((char *)Tline);
-      mallocfailed:
-	if(Tpushb) free((char *)Tpushb);
-	if(Tbuffer) free((char *)Tbuffer);
-	Tfailed = TRUE;
-	return;
-    }
-
-    screen->Tbox = T_box;
+		       values);
 
     TFullWidth(screen) = width;
     TFullHeight(screen) = height;
@@ -1289,16 +1322,27 @@ static void TekRealize (gw, valuemaskp, values)
     if (tw->tek.initial_font) {
 	char *s = tw->tek.initial_font;
 
-	XmuCopyISOLatin1Lowered (s, s);
-	if (strcmp (s, "large") == 0)
+	if (XmuCompareISOLatin1 (s, "large") == 0)
 	  screen->cur.fontsize = TEK_FONT_LARGE;
-	else if (strcmp (s, "2") == 0 || strcmp (s, "two") == 0)
+	else if (XmuCompareISOLatin1 (s, "2") == 0 || 
+		 XmuCompareISOLatin1 (s, "two") == 0)
 	  screen->cur.fontsize = TEK_FONT_2;
-	else if (strcmp (s, "3") == 0 || strcmp (s, "three") == 0)
+	else if (XmuCompareISOLatin1 (s, "3") == 0 || 
+		 XmuCompareISOLatin1 (s, "three") == 0)
 	  screen->cur.fontsize = TEK_FONT_3;
-	else if (strcmp (s, "small") == 0)
+	else if (XmuCompareISOLatin1 (s, "small") == 0)
 	  screen->cur.fontsize = TEK_FONT_SMALL;
     }
+
+    if(XmuCompareISOLatin1(tw->tek.gin_terminator_str, GIN_TERM_NONE_STR) == 0)
+	screen->gin_terminator = GIN_TERM_NONE;
+    else if(XmuCompareISOLatin1(tw->tek.gin_terminator_str, GIN_TERM_CR_STR) == 0)
+	screen->gin_terminator = GIN_TERM_CR;
+    else if(XmuCompareISOLatin1(tw->tek.gin_terminator_str, GIN_TERM_EOT_STR) == 0)
+	screen->gin_terminator = GIN_TERM_EOT;
+    else
+	fprintf(stderr, "%s: illegal GIN terminator setting \"%s\"\n",
+		xterm_name, tw->tek.gin_terminator_str);
 
     gcv.graphics_exposures = TRUE;	/* default */
     gcv.font = tw->tek.Tfont[screen->cur.fontsize]->fid;
@@ -1316,11 +1360,14 @@ static void TekRealize (gw, valuemaskp, values)
     gcv.function = GXinvert;
     gcv.plane_mask = screen->xorplane = (screen->Tbackground ^
 					 screen->Tcursorcolor);
+    gcv.join_style = JoinMiter;	/* default */
+    gcv.line_width = 1;
     screen->TcursorGC = XCreateGC (screen->display, TWindow(screen), 
 				   (GCFunction|GCPlaneMask), &gcv);
 
     gcv.foreground = screen->Tforeground;
     gcv.line_style = LineOnOffDash;
+    gcv.line_width = 0;
     for(i = 0 ; i < TEKNUMLINES ; i++) {
 	screen->linepat[i] = XCreateGC (screen->display, TWindow(screen),
 					(GCForeground|GCLineStyle), &gcv); 
@@ -1338,8 +1385,8 @@ static void TekRealize (gw, valuemaskp, values)
 
     {	/* there's gotta be a better way... */
 	static Arg args[] = {
-	    {XtNtitle, NULL},
-	    {XtNiconName, NULL},
+	    {XtNtitle, (XtArgVal)NULL},
+	    {XtNiconName, (XtArgVal)NULL},
 	};
 	char *icon_name, *title, *tek_icon_name, *tek_title;
 
@@ -1361,6 +1408,7 @@ static void TekRealize (gw, valuemaskp, values)
 
     tek = TekRecord = &Tek0;
     tek->next = (TekLink *)0;
+    tek->fontsize = screen->cur.fontsize;
     tek->count = 0;
     tek->ptr = tek->data;
     Tpushback = Tpushb;
@@ -1373,18 +1421,29 @@ static void TekRealize (gw, valuemaskp, values)
     return;
 }
 
-void TekSetFontSize (gw, newitem)
-    Widget gw;
+void TekSetFontSize (newitem)
     int newitem;
 {
     register TScreen *screen = &term->screen;
     int oldsize = screen->cur.fontsize;
     int newsize = MI2FS(newitem);
+    Font fid;
     
-    if (oldsize == newsize) return;
+    if (!tekWidget  ||  oldsize == newsize)
+	return;
     if (!Ttoggled) TCursorToggle(TOGGLE);
     set_tekfont_menu_item (oldsize, FALSE);
-    TekSetGCFont (newsize);
+
+    fid = tekWidget->tek.Tfont[newsize]->fid;
+    if (fid == DefaultGCID) 
+       /* we didn't succeed in opening a real font
+	  for this size.  Instead, use server default. */
+       XCopyGC (screen->display,
+		DefaultGC(screen->display, DefaultScreen(screen->display)),
+		GCFont, screen->TnormalGC);
+    else
+       XSetFont (screen->display, screen->TnormalGC, fid);
+
     screen->cur.fontsize = newsize;
     set_tekfont_menu_item (newsize, TRUE);
     if (!Ttoggled) TCursorToggle(TOGGLE);
@@ -1443,7 +1502,7 @@ register TScreen *screen;
  * Toggles cursor on or off at cursor position in screen.
  */
 TCursorToggle(toggle)
-int toggle;
+    int toggle;			/* TOGGLE or CLEAR */
 {
 	register TScreen *screen = &term->screen;
 	register int c, x, y;
@@ -1458,30 +1517,27 @@ int toggle;
 
 	x = (screen->cur_X * TekScale(screen)) + screen->border;
 	y = ((TEKHEIGHT + TEKTOPPAD - screen->cur_Y) * TekScale(screen)) +
-	 screen->border - tekWidget->tek.tobaseline[c];
-	if (toggle) {
+	    screen->border - tekWidget->tek.tobaseline[c];
+
+	if (toggle == TOGGLE) {
 	   if (screen->select || screen->always_highlight) 
-		XFillRectangle(
-		    screen->display, TWindow(screen), screen->TcursorGC,
-		    x, y, cellwidth, cellheight);
-	  else { /* fix to use different GC! */
-		  screen->Tbox[c]->x = x;
-		  screen->Tbox[c]->y = y ;
-		  XDrawLines(screen->display, TWindow(screen), 
-		    screen->TcursorGC,
-		    screen->Tbox[c], NBOX, CoordModePrevious);
+	       XFillRectangle(screen->display, TWindow(screen),
+			      screen->TcursorGC, x, y,
+			      cellwidth, cellheight);
+	   else { /* fix to use different GC! */
+	       XDrawRectangle(screen->display, TWindow(screen),
+			      screen->TcursorGC, x, y,
+			      cellwidth-1, cellheight-1);
 	   }
 	} else {
-	   if (screen->select || screen->always_highlight) 
-		XClearArea(screen->display, TWindow(screen), x, y,
-			   cellwidth, cellheight, FALSE);
-	   else { 
-		  screen->Tbox[c]->x = x;
-		  screen->Tbox[c]->y = y ;
-		  XDrawLines(screen->display, TWindow(screen), 
-		    screen->TcursorGC,
-		    screen->Tbox[c], NBOX, CoordModePrevious);
-	   }
+	    /* Clear the entire rectangle, even though we may only
+	     * have drawn an outline.  This fits with our refresh
+	     * scheme of redrawing the entire window on any expose
+	     * event and is easier than trying to figure out exactly
+	     * which part of the cursor needs to be erased.
+	     */
+	    XClearArea(screen->display, TWindow(screen), x, y,
+		       cellwidth, cellheight, FALSE);
 	}
 }
 
@@ -1490,6 +1546,8 @@ void TekSimulatePageButton (reset)
 {
     register TScreen *screen = &term->screen;
 
+    if (!tekWidget)
+	return;
     if (reset) {
 /*      bzero ((char *)&curmodes, sizeof(Tmodes));             */
 	bzero ((char *) &screen->cur, sizeof screen->cur);
@@ -1502,19 +1560,30 @@ void TekSimulatePageButton (reset)
 }
 
 
+#ifndef X_NOT_POSIX
+#define HAS_WAITPID
+#endif
+
+/* write copy of screen to a file */
+
 TekCopy()
 {
-	register TekLink *Tp;
-	register int fd;
 	register TScreen *screen = &term->screen;
 	register struct tm *tp;
 	long l;
 	char buf[32];
+	int waited;
+	int pid;
+#ifndef HAS_WAITPID
+	int (*chldfunc)();
+
+	chldfunc = signal(SIGCHLD, SIG_DFL);
+#endif
 
 	time(&l);
 	tp = localtime(&l);
 	sprintf(buf, "COPY%02d-%02d-%02d.%02d:%02d:%02d", tp->tm_year,
-	 tp->tm_mon, tp->tm_mday, tp->tm_hour, tp->tm_min, tp->tm_sec);
+	 tp->tm_mon + 1, tp->tm_mday, tp->tm_hour, tp->tm_min, tp->tm_sec);
 	if(access(buf, F_OK) >= 0) {	/* file exists */
 		if(access(buf, W_OK) < 0) {
 			Bell();
@@ -1524,20 +1593,53 @@ TekCopy()
 		Bell();
 		return;
 	}
-	if((fd = open(buf, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0) {
-		Bell();
-		return;
+
+	/* Write the file in an unprivileged child process because
+	   using access before the open still leaves a small window
+	   of opportunity. */
+	pid = fork();
+	switch (pid)
+	{
+	case 0:			/* child */
+	{
+	    register int tekcopyfd;
+	    char initbuf[5];
+	    register TekLink *Tp;
+
+	    setgid(screen->gid);
+	    setuid(screen->uid);
+	    tekcopyfd = open(buf, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	    if (tekcopyfd < 0)
+		_exit(1);
+	    sprintf(initbuf, "\033%c\033%c", screen->page.fontsize + '8',
+		    screen->page.linetype + '`');
+	    write(tekcopyfd, initbuf, 4);
+	    Tp = &Tek0; 
+	    do {
+		write(tekcopyfd, (char *)Tp->data, Tp->count);
+		Tp = Tp->next;
+	    } while(Tp);
+	    close(tekcopyfd);
+	    _exit(0);
 	}
-	chown(buf, screen->uid, screen->gid);
-	sprintf(buf, "\033%c\033%c", screen->page.fontsize + '8',
-	 screen->page.linetype + '`');
-	write(fd, buf, 4);
-	Tp = &Tek0; 
-	do
-		write(fd, (char *)Tp->data, Tp->count);
-	while(Tp = Tp->next);
-	close(fd);
+	case -1:		/* error */
+	    Bell();
+	    return;
+	default:		/* parent */
+#ifdef HAS_WAITPID
+	    waitpid(pid, NULL, 0);
+#else
+	    waited = wait(NULL);
+	    signal(SIGCHLD, chldfunc);
+	    /*
+	      Since we had the signal handler uninstalled for a while,
+	      we might have missed the termination of our screen child.
+	      If we can check for this possibility without hanging, do so.
+	      */
+	    do
+		if (waited == term->screen.pid)
+		    Cleanup(0);
+	    while ( (waited=nonblocking_wait()) > 0);
+#endif
+	}
 }
-
-
-

@@ -1,9 +1,6 @@
 /*
- *	$XConsortium: misc.c,v 1.62 89/12/10 20:44:41 jim Exp $
+ *	$XConsortium: misc.c,v 1.95.1.1 93/11/04 08:56:48 gildea Exp $
  */
-
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -30,11 +27,13 @@
 
 #include "ptyx.h"		/* X headers included here. */
 
-#include <stdio.h>
 #include <X11/Xos.h>
+#include <stdio.h>
 #include <setjmp.h>
+#include <signal.h>
 #include <ctype.h>
 #include <pwd.h>
+#include <errno.h>
 
 #include <X11/Xatom.h>
 #include <X11/cursorfont.h>
@@ -48,27 +47,33 @@
 #include "error.h"
 #include "menu.h"
 
+extern jmp_buf Tekend;
+extern jmp_buf VTend;
+
+#ifndef X_NOT_STDC_ENV
+#include <stdlib.h>
+#else
 extern char *malloc();
-extern char *mktemp();
-extern void exit();
-extern void perror();
-extern void abort();
+extern char *getenv();
+#endif
+#if defined(macII) && !defined(__STDC__)  /* stdlib.h fails to define these */
+char *malloc();
+#endif /* macII */
 
 static void DoSpecialEnterNotify();
 static void DoSpecialLeaveNotify();
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: misc.c,v 1.62 89/12/10 20:44:41 jim Exp $";
-#endif	/* lint */
 
 xevents()
 {
 	XEvent event;
 	register TScreen *screen = &term->screen;
+	extern XtAppContext app_con;
 
 	if(screen->scroll_amt)
 		FlushScroll(screen);
-	XPending (screen->display);
+	if (!XPending (screen->display))
+	    /* protect against events/errors being swallowed by us or Xlib */
+	    return;
 	do {
 		if (waitingForTrackInfo)
 			return;
@@ -79,17 +84,17 @@ xevents()
 		 * looking at the event ourselves we make sure that we can
 		 * do the right thing.
 		 */
-		if (event.type == EnterNotify &&
-		    (event.xcrossing.window == XtWindow(XtParent(term))) ||
+		if(event.type == EnterNotify &&
+		   (event.xcrossing.window == XtWindow(XtParent(term)) ||
 		    (tekWidget &&
-		     event.xcrossing.window == XtWindow(XtParent(tekWidget))))
-		  DoSpecialEnterNotify (&event);
+		     event.xcrossing.window == XtWindow(XtParent(tekWidget)))))
+		  DoSpecialEnterNotify (&event.xcrossing);
 		else 
-		if (event.type == LeaveNotify &&
-		    (event.xcrossing.window == XtWindow(XtParent(term))) ||
+		if(event.type == LeaveNotify &&
+		   (event.xcrossing.window == XtWindow(XtParent(term)) ||
 		    (tekWidget &&
-		     event.xcrossing.window == XtWindow(XtParent(tekWidget))))
-		  DoSpecialLeaveNotify (&event);
+		     event.xcrossing.window == XtWindow(XtParent(tekWidget)))))
+		  DoSpecialLeaveNotify (&event.xcrossing);
 
 		if (!event.xany.send_event ||
 		    screen->allowSendEvents ||
@@ -129,7 +134,7 @@ void HandleKeyPressed(w, event, params, nparams)
 #ifdef ACTIVEWINDOWINPUTONLY
     if (w == (screen->TekEmu ? (Widget)tekWidget : (Widget)term))
 #endif
-	Input (&term->keyboard, screen, event, False);
+	Input (&term->keyboard, screen, &event->xkey, False);
 }
 /* ARGSUSED */
 void HandleEightBitKeyPressed(w, event, params, nparams)
@@ -143,7 +148,7 @@ void HandleEightBitKeyPressed(w, event, params, nparams)
 #ifdef ACTIVEWINDOWINPUTONLY
     if (w == (screen->TekEmu ? (Widget)tekWidget : (Widget)term))
 #endif
-	Input (&term->keyboard, screen, event, True);
+	Input (&term->keyboard, screen, &event->xkey, True);
 }
 
 /* ARGSUSED */
@@ -174,10 +179,10 @@ void HandleStringEvent(w, event, params, nparams)
 	    else break;
 	}
 	if (c == '\0')
-	    StringInput (screen, hexval);
+	    StringInput (screen, hexval, 1);
     }
     else {
-	StringInput (screen, *params);
+	StringInput (screen, *params, strlen(*params));
     }
 }
 
@@ -249,9 +254,10 @@ caddr_t eventdata;
 			       (event->detail == NotifyPointer) ? INWINDOW :
 								  FOCUS);
 		if (screen->grabbedKbd && (event->mode == NotifyUngrab)) {
-		    screen->grabbedKbd = FALSE;
-		    ReverseVideo(term);
 		    XBell(screen->display, 100);
+		    ReverseVideo(term);
+		    screen->grabbedKbd = FALSE;
+		    update_securekbd();
 		}
 	}
 }
@@ -302,54 +308,111 @@ register int flag;
     }
 }
 
+static long lastBellTime;	/* in milliseconds */
 
 Bell()
 {
-	extern XtermWidget term;
-	register TScreen *screen = &term->screen;
-	register Pixel xorPixel = screen->foreground ^ term->core.background_pixel;
-	XGCValues gcval;
-	GC visualGC;
+    extern XtermWidget term;
+    register TScreen *screen = &term->screen;
+    struct timeval curtime;
+    long now_msecs;
 
-	if(screen->visualbell) {
-		gcval.function = GXxor;
-		gcval.foreground = xorPixel;
-		visualGC = XtGetGC((Widget)term, GCFunction+GCForeground, &gcval);
-		if(screen->TekEmu) {
-			XFillRectangle(
-			    screen->display,
-			    TWindow(screen), 
-			    visualGC,
-			    0, 0,
-			    (unsigned) TFullWidth(screen),
-			    (unsigned) TFullHeight(screen));
-			XFlush(screen->display);
-			XFillRectangle(
-			    screen->display,
-			    TWindow(screen), 
-			    visualGC,
-			    0, 0,
-			    (unsigned) TFullWidth(screen),
-			    (unsigned) TFullHeight(screen));
-		} else {
-			XFillRectangle(
-			    screen->display,
-			    VWindow(screen), 
-			    visualGC,
-			    0, 0,
-			    (unsigned) FullWidth(screen),
-			    (unsigned) FullHeight(screen));
-			XFlush(screen->display);
-			XFillRectangle(
-			    screen->display,
-			    VWindow(screen), 
-			    visualGC,
-			    0, 0,
-			    (unsigned) FullWidth(screen),
-			    (unsigned) FullHeight(screen));
-		}
-	} else
-		XBell(screen->display, 0);
+    /* has enough time gone by that we are allowed to ring
+       the bell again? */
+    if(screen->bellSuppressTime) {
+	if(screen->bellInProgress) {
+	    if (QLength(screen->display) > 0 ||
+		GetBytesAvailable (ConnectionNumber(screen->display)) > 0)
+		xevents();
+	    if(screen->bellInProgress) { /* even after new events? */
+		return;
+	    }
+	}
+	gettimeofday(&curtime, NULL);
+	now_msecs = 1000*curtime.tv_sec + curtime.tv_usec/1000;
+	if(lastBellTime != 0  &&  now_msecs - lastBellTime >= 0  &&
+	   now_msecs - lastBellTime < screen->bellSuppressTime) {
+	    return;
+	}
+	lastBellTime = now_msecs;
+    }
+
+    if (screen->visualbell)
+	VisualBell();
+    else
+	XBell(screen->display, 0);
+
+    if(screen->bellSuppressTime) {
+	/* now we change a property and wait for the notify event to come
+	   back.  If the server is suspending operations while the bell
+	   is being emitted (problematic for audio bell), this lets us
+	   know when the previous bell has finished */
+	Widget w = screen->TekEmu ? (Widget) tekWidget : (Widget) term;
+	XChangeProperty(XtDisplay(w), XtWindow(w),
+			XA_NOTICE, XA_NOTICE, 8, PropModeAppend, NULL, 0);
+	screen->bellInProgress = TRUE;
+    }
+}
+
+
+VisualBell()
+{
+    extern XtermWidget term;
+    register TScreen *screen = &term->screen;
+    register Pixel xorPixel = screen->foreground ^ term->core.background_pixel;
+    XGCValues gcval;
+    GC visualGC;
+
+    gcval.function = GXxor;
+    gcval.foreground = xorPixel;
+    visualGC = XtGetGC((Widget)term, GCFunction+GCForeground, &gcval);
+    if(screen->TekEmu) {
+	XFillRectangle(
+		       screen->display,
+		       TWindow(screen), 
+		       visualGC,
+		       0, 0,
+		       (unsigned) TFullWidth(screen),
+		       (unsigned) TFullHeight(screen));
+	XFlush(screen->display);
+	XFillRectangle(
+		       screen->display,
+		       TWindow(screen), 
+		       visualGC,
+		       0, 0,
+		       (unsigned) TFullWidth(screen),
+		       (unsigned) TFullHeight(screen));
+    } else {
+	XFillRectangle(
+		       screen->display,
+		       VWindow(screen), 
+		       visualGC,
+		       0, 0,
+		       (unsigned) FullWidth(screen),
+		       (unsigned) FullHeight(screen));
+	XFlush(screen->display);
+	XFillRectangle(
+		       screen->display,
+		       VWindow(screen), 
+		       visualGC,
+		       0, 0,
+		       (unsigned) FullWidth(screen),
+		       (unsigned) FullHeight(screen));
+    }
+}
+
+/* ARGSUSED */
+void HandleBellPropertyChange(w, data, ev, more)
+    Widget w;
+    XtPointer data;
+    XEvent *ev;
+    Boolean *more;
+{
+    register TScreen *screen = &term->screen;
+
+    if (ev->xproperty.atom == XA_NOTICE) {
+	screen->bellInProgress = FALSE;
+    }
 }
 
 Redraw()
@@ -368,9 +431,9 @@ Redraw()
 	        event.window = VWindow(screen);
 		event.width = term->core.width;
 		event.height = term->core.height;
-		(*term->core.widget_class->core_class.expose)(term, &event, NULL);
+		(*term->core.widget_class->core_class.expose)((Widget)term, (XEvent *)&event, NULL);
 		if(screen->scrollbar) 
-			(*screen->scrollWidget->core.widget_class->core_class.expose)(screen->scrollWidget, &event, NULL);
+			(*screen->scrollWidget->core.widget_class->core_class.expose)(screen->scrollWidget, (XEvent *)&event, NULL);
 		}
 
 	if(TWindow(screen) && screen->Tshow) {
@@ -381,13 +444,82 @@ Redraw()
 	}
 }
 
+#if defined(ALLOWLOGGING) || defined(DEBUG)
+
+#ifndef X_NOT_POSIX
+#define HAS_WAITPID
+#endif
+
+/*
+ * create a file only if we could with the permissions of the real user id.
+ * We could emulate this with careful use of access() and following
+ * symbolic links, but that is messy and has race conditions.
+ * Forking is messy, too, but we can't count on setreuid() or saved set-uids
+ * being available.
+ */
+void
+creat_as(uid, gid, pathname, mode)
+    int uid;
+    int gid;
+    char *pathname;
+    int mode;
+{
+    int fd;
+    int waited;
+    int pid;
+#ifndef HAS_WAITPID
+    int (*chldfunc)();
+
+    chldfunc = signal(SIGCHLD, SIG_DFL);
+#endif
+    pid = fork();
+    switch (pid)
+    {
+    case 0:			/* child */
+	setgid(gid);
+	setuid(uid);
+	fd = open(pathname, O_WRONLY|O_CREAT|O_APPEND, mode);
+	if (fd >= 0) {
+	    close(fd);
+	    _exit(0);
+	} else
+	    _exit(1);
+    case -1:			/* error */
+	return;
+    default:			/* parent */
+#ifdef HAS_WAITPID
+	waitpid(pid, NULL, 0);
+#else
+	waited = wait(NULL);
+	signal(SIGCHLD, chldfunc);
+	/*
+	  Since we had the signal handler uninstalled for a while,
+	  we might have missed the termination of our screen child.
+	  If we can check for this possibility without hanging, do so.
+	*/
+	do
+	    if (waited == term->screen.pid)
+		Cleanup(0);
+	while ( (waited=nonblocking_wait()) > 0);
+#endif
+    }
+}
+#endif
+
+#ifdef ALLOWLOGGING
+/*
+ * logging is a security hole, since it allows a setuid program to
+ * write arbitrary data to an arbitrary file.  So it is disabled
+ * by default.
+ */ 
+
 StartLog(screen)
 register TScreen *screen;
 {
 	register char *cp;
 	register int i;
 	static char *log_default;
-	char *malloc(), *rindex();
+#ifdef ALLOWLOGFILEEXEC
 	void logpipe();
 #ifdef SYSV
 	/* SYSV has another pointer which should be part of the
@@ -395,6 +527,7 @@ register TScreen *screen;
 	*/
 	unsigned char *old_bufend;
 #endif	/* SYSV */
+#endif /* ALLOWLOGFILEEXEC */
 
 	if(screen->logging || (screen->inhibit & I_LOG))
 		return;
@@ -402,12 +535,19 @@ register TScreen *screen;
 		if(screen->logfile)
 			free(screen->logfile);
 		if(log_default == NULL)
-			mktemp(log_default = log_def_name);
+			log_default = log_def_name;
+			mktemp(log_default);
 		if((screen->logfile = malloc((unsigned)strlen(log_default) + 1)) == NULL)
 			return;
 		strcpy(screen->logfile, log_default);
 	}
 	if(*screen->logfile == '|') {	/* exec command */
+#ifdef ALLOWLOGFILEEXEC
+		/*
+		 * Warning, enabling this "feature" allows arbitrary programs
+		 * to be run.  If ALLOWLOGFILECHANGES is enabled, this can be
+		 * done through escape sequences....  You have been warned.
+		 */
 		int p[2];
 		static char *shell;
 
@@ -423,15 +563,14 @@ register TScreen *screen;
 			old_bufend = _bufend(stderr);
 #endif	/* SYSV */
 			close(fileno(stderr));
-			fileno(stderr) = 2;
+			stderr->_file = 2;
 #ifdef SYSV
 			_bufend(stderr) = old_bufend;
 #endif	/* SYSV */
-			close(screen->display->fd);
+			close(ConnectionNumber(screen->display));
 			close(screen->respond);
 			if(!shell) {
 				register struct passwd *pw;
-				char *getenv(), *malloc();
 				struct passwd *getpwuid();
 
 				if(((cp = getenv("SHELL")) == NULL || *cp == 0)
@@ -454,23 +593,26 @@ register TScreen *screen;
 		close(p[0]);
 		screen->logfd = p[1];
 		signal(SIGPIPE, logpipe);
+#else
+		Bell();
+		Bell();
+		return;
+#endif
 	} else {
-		if(access(screen->logfile, F_OK) == 0) {
-			if(access(screen->logfile, W_OK) < 0)
-				return;
-		} else if(cp = rindex(screen->logfile, '/')) {
-			*cp = 0;
-			i = access(screen->logfile, W_OK);
-			*cp = '/';
-			if(i < 0)
-				return;
-		} else if(access(".", W_OK) < 0)
+		if(access(screen->logfile, F_OK) != 0) {
+		    if (errno == ENOENT)
+			creat_as(screen->uid, screen->gid,
+				 screen->logfile, 0644);
+		    else
 			return;
-		if((screen->logfd = open(screen->logfile, O_WRONLY | O_APPEND |
-		 O_CREAT, 0644)) < 0)
-			return;
-		chown(screen->logfile, screen->uid, screen->gid);
+		}
 
+		if(access(screen->logfile, F_OK) != 0
+		   || access(screen->logfile, W_OK) != 0)
+		    return;
+		if((screen->logfd = open(screen->logfile, O_WRONLY | O_APPEND,
+					 0644)) < 0)
+			return;
 	}
 	screen->logstart = screen->TekEmu ? Tbptr : bptr;
 	screen->logging = TRUE;
@@ -496,10 +638,11 @@ register TScreen *screen;
 
 	cp = screen->TekEmu ? Tbptr : bptr;
 	if((i = cp - screen->logstart) > 0)
-		write(screen->logfd, screen->logstart, i);
+		write(screen->logfd, (char *)screen->logstart, i);
 	screen->logstart = screen->TekEmu ? Tbuffer : buffer;
 }
 
+#ifdef ALLOWLOGFILEEXEC
 void logpipe()
 {
 	register TScreen *screen = &term->screen;
@@ -510,15 +653,17 @@ void logpipe()
 	if(screen->logging)
 		CloseLog(screen);
 }
+#endif /* ALLOWLOGFILEEXEC */
+#endif /* ALLOWLOGGING */
+
 
 do_osc(func)
 int (*func)();
 {
-	register TScreen *screen = &term->screen;
 	register int mode, c;
 	register char *cp;
 	char buf[512];
-	extern char *malloc();
+	char *bufend = &buf[(sizeof buf) - 1];	/* leave room for null */
 	Bool okay = True;
 
 	/* 
@@ -531,7 +676,7 @@ int (*func)();
 		mode = 10 * mode + (c - '0');
 	if (c != ';') okay = False;
 	cp = buf;
-	while(isprint((c = (*func)()) & 0x7f))
+	while(isprint((c = (*func)()) & 0x7f) && cp < bufend)
 		*cp++ = c;
 	if (c != 7) okay = False;
 	*cp = 0;
@@ -549,14 +694,25 @@ int (*func)();
 		Changetitle(buf);
 		break;
 
+#ifdef ALLOWLOGGING
 	 case 46:	/* new log file */
+#ifdef ALLOWLOGFILECHANGES
+		/*
+		 * Warning, enabling this feature allows people to overwrite
+		 * arbitrary files accessible to the person running xterm.
+		 */
 		if((cp = malloc((unsigned)strlen(buf) + 1)) == NULL)
 			break;
 		strcpy(cp, buf);
-		if(screen->logfile)
-			free(screen->logfile);
-		screen->logfile = cp;
+		if(term->screen.logfile)
+			free(term->screen.logfile);
+		term->screen.logfile = cp;
+#else
+		Bell();
+		Bell();
+#endif
 		break;
+#endif /* ALLOWLOGGING */
 
 	case 50:
 		SetVTFont (fontMenu_fontescape, True, buf, NULL);
@@ -650,7 +806,7 @@ int code;
 
 	screen = &term->screen;
 	if (screen->pid > 1) {
-	    (void) killpg (screen->pid, SIGHUP);
+	    (void) kill_process_group (screen->pid, SIGHUP);
 	}
 	Exit (code);
 }
@@ -666,28 +822,28 @@ Setenv (var, value)
 register char *var, *value;
 {
 	extern char **environ;
-	register int index = 0;
+	register int envindex = 0;
 	register int len = strlen(var);
 
-	while (environ [index] != NULL) {
-	    if (strncmp (environ [index], var, len) == 0) {
+	while (environ [envindex] != NULL) {
+	    if (strncmp (environ [envindex], var, len) == 0) {
 		/* found it */
-		environ[index] = (char *)malloc ((unsigned)len + strlen (value) + 1);
-		strcpy (environ [index], var);
-		strcat (environ [index], value);
+		environ[envindex] = (char *)malloc ((unsigned)len + strlen (value) + 1);
+		strcpy (environ [envindex], var);
+		strcat (environ [envindex], value);
 		return;
 	    }
-	    index ++;
+	    envindex ++;
 	}
 
 #ifdef DEBUG
 	if (debug) fputs ("expanding env\n", stderr);
 #endif	/* DEBUG */
 
-	environ [index] = (char *) malloc ((unsigned)len + strlen (value) + 1);
-	(void) strcpy (environ [index], var);
-	strcat (environ [index], value);
-	environ [++index] = NULL;
+	environ [envindex] = (char *) malloc ((unsigned)len + strlen (value) + 1);
+	(void) strcpy (environ [envindex], var);
+	strcat (environ [envindex], value);
+	environ [++envindex] = NULL;
 }
 
 /*
@@ -698,7 +854,6 @@ char *strindex (s1, s2)
 register char	*s1, *s2;
 {
 	register char	*s3;
-	char		*index();
 	int s2len = strlen (s2);
 
 	while ((s3=index(s1, *s2)) != NULL) {
@@ -777,16 +932,24 @@ void set_vt_visibility (on)
     update_vtshow();
     return;
 }
+				
+extern Atom wm_delete_window;	/* for ICCCM delete window */
 
 void set_tek_visibility (on)
     Boolean on;
 {
     register TScreen *screen = &term->screen;
-
     if (on) {
 	if (!screen->Tshow && (tekWidget || TekInit())) {
-	    XtRealizeWidget (tekWidget->core.parent);
-	    XtMapWidget (tekWidget->core.parent);
+	    Widget tekParent = tekWidget->core.parent;
+	    XtRealizeWidget (tekParent);
+	    XtMapWidget (tekParent);
+	    XtOverrideTranslations(tekParent,
+				   XtParseTranslationTable
+				   ("<Message>WM_PROTOCOLS: DeleteWindow()"));
+	    (void) XSetWMProtocols (XtDisplay(tekParent), 
+				    XtWindow(tekParent),
+				    &wm_delete_window, 1);
 	    screen->Tshow = TRUE;
 	}
     } else {
@@ -810,10 +973,12 @@ void end_tek_mode ()
     register TScreen *screen = &term->screen;
 
     if (screen->TekEmu) {
+#ifdef ALLOWLOGGING
 	if (screen->logging) {
 	    FlushLog (screen);
 	    screen->logstart = buffer;
 	}
+#endif
 	longjmp(Tekend, 1);
     } 
     return;
@@ -824,12 +989,42 @@ void end_vt_mode ()
     register TScreen *screen = &term->screen;
 
     if (!screen->TekEmu) {
+#ifdef ALLOWLOGGING
 	if(screen->logging) {
 	    FlushLog(screen);
 	    screen->logstart = Tbuffer;
 	}
+#endif
 	screen->TekEmu = TRUE;
 	longjmp(VTend, 1);
     } 
     return;
+}
+
+void switch_modes (tovt)
+    Bool tovt;				/* if true, then become vt mode */
+{
+    if (tovt) {
+	if (TekRefresh) dorefresh();
+	end_tek_mode ();		/* WARNING: this does a longjmp... */
+    } else {
+	end_vt_mode ();			/* WARNING: this does a longjmp... */
+    }
+}
+
+void hide_vt_window ()
+{
+    register TScreen *screen = &term->screen;
+
+    set_vt_visibility (FALSE);
+    if (!screen->TekEmu) switch_modes (False);	/* switch to tek mode */
+}
+
+void hide_tek_window ()
+{
+    register TScreen *screen = &term->screen;
+
+    set_tek_visibility (FALSE);
+    TekRefresh = (TekLink *)0;
+    if (screen->TekEmu) switch_modes (True);	/* does longjmp to vt mode */
 }

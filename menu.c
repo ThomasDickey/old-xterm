@@ -1,30 +1,51 @@
-/* Copyright 1989 Massachusetts Institute of Technology */
+/* $XConsortium: menu.c,v 1.62 93/02/25 17:21:30 gildea Exp $ */
+/*
+Copyright 1989 Massachusetts Institute of Technology
 
-#include <stdio.h>
-#include <X11/Intrinsic.h>
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation, and that the name of M.I.T. not be used in advertising or
+publicity pertaining to distribution of the software without specific,
+written prior permission.  M.I.T. makes no representations about the
+suitability of this software for any purpose.  It is provided "as is"
+without express or implied warranty.
+*/
+
+#include "ptyx.h"
+#include "data.h"
+#include "menu.h"
 #include <X11/StringDefs.h>
 #include <X11/Shell.h>
+#include <X11/Xmu/CharSet.h>
 #include <X11/Xaw/SimpleMenu.h>
 #include <X11/Xaw/SmeBSB.h>
 #include <X11/Xaw/SmeLine.h>
-#include "ptyx.h"
-#include <setjmp.h>			/* for data.h */
-#include "data.h"
-#include "menu.h"
+#include <stdio.h>
+#include <signal.h>
+
+extern void FindFontSelection();
 
 Arg menuArgs[2] = {{ XtNleftBitmap, (XtArgVal) 0 },
 		   { XtNsensitive, (XtArgVal) 0 }};
 
-static void do_securekbd(), do_allowsends(), do_visualbell(), do_logging(),
-  do_redraw(), do_suspend(), do_continue(), do_interrupt(), do_hangup(),
-  do_terminate(), do_kill(), do_quit(), do_scrollbar(), do_jumpscroll(),
-  do_reversevideo(), do_autowrap(), do_reversewrap(), do_autolinefeed(),
-  do_appcursor(), do_appkeypad(), do_scrollkey(), do_scrollttyoutput(),
-  do_allow132(), do_cursesemul(), do_marginbell(), do_tekshow(), 
-  do_altscreen(), do_softreset(), do_hardreset(), do_tekmode(), do_vthide(), 
-  do_tektextlarge(), do_tektext2(), do_tektext3(), do_tektextsmall(), 
-  do_tekpage(), do_tekreset(), do_tekcopy(), do_vtshow(), do_vtmode(), 
-  do_tekhide(), do_vtfont();
+void do_hangup();
+
+static void do_securekbd(), do_allowsends(), do_visualbell(),
+#ifdef ALLOWLOGGING
+    do_logging(),
+#endif
+    do_redraw(), do_suspend(), do_continue(), do_interrupt(), 
+    do_terminate(), do_kill(), do_quit(), do_scrollbar(), do_jumpscroll(),
+    do_reversevideo(), do_autowrap(), do_reversewrap(), do_autolinefeed(),
+    do_appcursor(), do_appkeypad(), do_scrollkey(), do_scrollttyoutput(),
+    do_allow132(), do_cursesemul(), do_marginbell(), do_tekshow(), 
+    do_altscreen(), do_softreset(), do_hardreset(), do_clearsavedlines(),
+    do_tekmode(), do_vthide(), 
+    do_tektextlarge(), do_tektext2(), do_tektext3(), do_tektextsmall(), 
+    do_tekpage(), do_tekreset(), do_tekcopy(), do_vtshow(), do_vtmode(), 
+    do_tekhide(), do_vtfont();
 
 
 /*
@@ -33,7 +54,9 @@ static void do_securekbd(), do_allowsends(), do_visualbell(), do_logging(),
 MenuEntry mainMenuEntries[] = {
     { "securekbd",	do_securekbd, NULL },		/*  0 */
     { "allowsends",	do_allowsends, NULL },		/*  1 */
+#ifdef ALLOWLOGGING
     { "logging",	do_logging, NULL },		/*  2 */
+#endif
     { "redraw",		do_redraw, NULL },		/*  3 */
     { "line1",		NULL, NULL },			/*  4 */
     { "suspend",	do_suspend, NULL },		/*  5 */
@@ -55,7 +78,7 @@ MenuEntry vtMenuEntries[] = {
     { "appcursor",	do_appcursor, NULL },		/*  6 */
     { "appkeypad",	do_appkeypad, NULL },		/*  7 */
     { "scrollkey",	do_scrollkey, NULL },		/*  8 */
-    { "scrollttyoutput",	do_scrollttyoutput, NULL },	/*  9 */
+    { "scrollttyoutput",do_scrollttyoutput, NULL },	/*  9 */
     { "allow132",	do_allow132, NULL },		/* 10 */
     { "cursesemul",	do_cursesemul, NULL },		/* 11 */
     { "visualbell",	do_visualbell, NULL },		/* 12 */
@@ -64,10 +87,11 @@ MenuEntry vtMenuEntries[] = {
     { "line1",		NULL, NULL },			/* 15 */
     { "softreset",	do_softreset, NULL },		/* 16 */
     { "hardreset",	do_hardreset, NULL },		/* 17 */
-    { "line2",		NULL, NULL },			/* 18 */
-    { "tekshow",	do_tekshow, NULL },		/* 19 */
-    { "tekmode",	do_tekmode, NULL },		/* 20 */
-    { "vthide",		do_vthide, NULL }};		/* 21 */
+    { "clearsavedlines",do_clearsavedlines, NULL },	/* 18 */
+    { "line2",		NULL, NULL },			/* 19 */
+    { "tekshow",	do_tekshow, NULL },		/* 20 */
+    { "tekmode",	do_tekmode, NULL },		/* 21 */
+    { "vthide",		do_vthide, NULL }};		/* 22 */
 
 MenuEntry fontMenuEntries[] = {
     { "fontdefault",	do_vtfont, NULL },		/*  0 */
@@ -75,8 +99,10 @@ MenuEntry fontMenuEntries[] = {
     { "font2",		do_vtfont, NULL },		/*  2 */
     { "font3",		do_vtfont, NULL },		/*  3 */
     { "font4",		do_vtfont, NULL },		/*  4 */
-    { "fontescape",	do_vtfont, NULL },		/*  5 */
-    { "fontsel",	do_vtfont, NULL }};		/*  6 */
+    { "font5",		do_vtfont, NULL },		/*  5 */
+    { "font6",		do_vtfont, NULL },		/*  6 */
+    { "fontescape",	do_vtfont, NULL },		/*  7 */
+    { "fontsel",	do_vtfont, NULL }};		/*  8 */
     /* this should match NMENUFONTS in ptyx.h */
 
 MenuEntry tekMenuEntries[] = {
@@ -102,7 +128,7 @@ extern Widget toplevel;
  */
 #define check_width 9
 #define check_height 8
-static char check_bits[] = {
+static unsigned char check_bits[] = {
    0x00, 0x01, 0x80, 0x01, 0xc0, 0x00, 0x60, 0x00,
    0x31, 0x00, 0x1b, 0x00, 0x0e, 0x00, 0x04, 0x00
 };
@@ -112,6 +138,7 @@ static char check_bits[] = {
  * public interfaces
  */
 
+/* ARGSUSED */
 static Bool domenu (w, event, params, param_count)
     Widget w;
     XEvent *event;              /* unused */
@@ -133,8 +160,9 @@ static Bool domenu (w, event, params, param_count)
 					    XtNumber(mainMenuEntries));
 	    update_securekbd();
 	    update_allowsends();
-	    update_visualbell();
+#ifdef ALLOWLOGGING
 	    update_logging();
+#endif
 #ifndef SIGTSTP
 	    set_sensitivity (screen->mainMenu,
 			     mainMenuEntries[mainMenu_suspend].widget, FALSE);
@@ -165,6 +193,7 @@ static Bool domenu (w, event, params, param_count)
 	    update_scrollttyoutput();
 	    update_allow132();
 	    update_cursesemul();
+	    update_visualbell();
 	    update_marginbell();
 	}
 	break;
@@ -234,9 +263,9 @@ void HandlePopupMenu (w, event, params, param_count)
  * create_menu - create a popup shell and stuff the menu into it.
  */
 
-static Widget create_menu (xtw, toplevel, name, entries, nentries)
+static Widget create_menu (xtw, toplevelw, name, entries, nentries)
     XtermWidget xtw;
-    Widget toplevel;
+    Widget toplevelw;
     char *name;
     struct _MenuEntry *entries;
     int nentries;
@@ -250,10 +279,10 @@ static Widget create_menu (xtw, toplevel, name, entries, nentries)
 	screen->menu_item_bitmap =
 	  XCreateBitmapFromData (XtDisplay(xtw),
 				 RootWindowOfScreen(XtScreen(xtw)),
-				 check_bits, check_width, check_height);
+				 (char *)check_bits, check_width, check_height);
     }
 
-    m = XtCreatePopupShell (name, simpleMenuWidgetClass, toplevel, NULL, 0);
+    m = XtCreatePopupShell (name, simpleMenuWidgetClass, toplevelw, NULL, 0);
 
     for (; nentries > 0; nentries--, entries++) {
 	cb[0].callback = (XtCallbackProc) entries->function;
@@ -269,13 +298,14 @@ static Widget create_menu (xtw, toplevel, name, entries, nentries)
     return m;
 }
 
+/* ARGSUSED */
 static void handle_send_signal (gw, sig)
     Widget gw;
     int sig;
 {
     register TScreen *screen = &term->screen;
 
-    if (screen->pid > 1) killpg (screen->pid, sig);
+    if (screen->pid > 1) kill_process_group (screen->pid, sig);
 }
 
 
@@ -283,6 +313,7 @@ static void handle_send_signal (gw, sig)
  * action routines
  */
 
+/* ARGSUSED */
 void DoSecureKeyboard (time)
     Time time;
 {
@@ -301,7 +332,7 @@ static void do_securekbd (gw, closure, data)
 	ReverseVideo (term);
 	screen->grabbedKbd = FALSE;
     } else {
-	if (XGrabKeyboard (screen->display, term->core.parent->core.window,
+	if (XGrabKeyboard (screen->display, term->core.window,
 			   True, GrabModeAsync, GrabModeAsync, time)
 	    != GrabSuccess) {
 	    XBell (screen->display, 100);
@@ -324,7 +355,6 @@ static void do_allowsends (gw, closure, data)
     update_allowsends ();
 }
 
-
 static void do_visualbell (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -335,7 +365,7 @@ static void do_visualbell (gw, closure, data)
     update_visualbell();
 }
 
-
+#ifdef ALLOWLOGGING
 static void do_logging (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -349,7 +379,7 @@ static void do_logging (gw, closure, data)
     }
     /* update_logging done by CloseLog and StartLog */
 }
-
+#endif
 
 static void do_redraw (gw, closure, data)
     Widget gw;
@@ -365,6 +395,7 @@ static void do_redraw (gw, closure, data)
  */
 
 
+/* ARGSUSED */
 static void do_suspend (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -374,7 +405,7 @@ static void do_suspend (gw, closure, data)
 #endif
 }
 
-
+/* ARGSUSED */
 static void do_continue (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -384,7 +415,7 @@ static void do_continue (gw, closure, data)
 #endif
 }
 
-
+/* ARGSUSED */
 static void do_interrupt (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -392,15 +423,15 @@ static void do_interrupt (gw, closure, data)
     handle_send_signal (gw, SIGINT);
 }
 
-
-static void do_hangup (gw, closure, data)
+/* ARGSUSED */
+void do_hangup (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
     handle_send_signal (gw, SIGHUP);
 }
 
-
+/* ARGSUSED */
 static void do_terminate (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -408,14 +439,13 @@ static void do_terminate (gw, closure, data)
     handle_send_signal (gw, SIGTERM);
 }
 
-
+/* ARGSUSED */
 static void do_kill (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
     handle_send_signal (gw, SIGKILL);
 }
-
 
 static void do_quit (gw, closure, data)
     Widget gw;
@@ -587,7 +617,7 @@ static void handle_tekshow (gw, allowswitch)
       Bell();
 }
 
-
+/* ARGSUSED */
 static void do_tekshow (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -595,7 +625,7 @@ static void do_tekshow (gw, closure, data)
     handle_tekshow (gw, True);
 }
 
-
+/* ARGSUSED */
 static void do_tekonoff (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -603,7 +633,7 @@ static void do_tekonoff (gw, closure, data)
     handle_tekshow (gw, False);
 }
 
-
+/* ARGSUSED */
 static void do_altscreen (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
@@ -628,15 +658,15 @@ static void do_hardreset (gw, closure, data)
 }
 
 
-static void switch_modes (tovt)
-    Bool tovt;				/* if true, then become vt mode */
+static void do_clearsavedlines (gw, closure, data)
+    Widget gw;
+    caddr_t closure, data;
 {
-    if (tovt) {
-	if (TekRefresh) dorefresh();
-	end_tek_mode ();		/* WARNING: this does a longjmp... */
-    } else {
-	end_vt_mode ();			/* WARNING: this does a longjmp... */
-    }
+    register TScreen *screen = &term->screen;
+
+    screen->savedlines = 0;
+    ScrollBarDrawThumb(screen->scrollWidget);
+    VTReset (TRUE); 
 }
 
 
@@ -649,14 +679,12 @@ static void do_tekmode (gw, closure, data)
     switch_modes (screen->TekEmu);	/* switch to tek mode */
 }
 
+/* ARGSUSED */
 static void do_vthide (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
-    register TScreen *screen = &term->screen;
-
-    set_vt_visibility (FALSE);
-    if (!screen->TekEmu) switch_modes (False);	/* switch to tek mode */
+    hide_vt_window();
 }
 
 
@@ -689,7 +717,7 @@ static void do_tektextlarge (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
-    TekSetFontSize (gw, tekMenu_tektextlarge);
+    TekSetFontSize (tekMenu_tektextlarge);
 }
 
 
@@ -697,7 +725,7 @@ static void do_tektext2 (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
-    TekSetFontSize (gw, tekMenu_tektext2);
+    TekSetFontSize (tekMenu_tektext2);
 }
 
 
@@ -705,7 +733,7 @@ static void do_tektext3 (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
-    TekSetFontSize (gw, tekMenu_tektext3);
+    TekSetFontSize (tekMenu_tektext3);
 }
 
 
@@ -714,7 +742,7 @@ static void do_tektextsmall (gw, closure, data)
     caddr_t closure, data;
 {
 
-    TekSetFontSize (gw, tekMenu_tektextsmall);
+    TekSetFontSize (tekMenu_tektextsmall);
 }
 
 
@@ -782,15 +810,12 @@ static void do_vtmode (gw, closure, data)
 }
 
 
+/* ARGSUSED */
 static void do_tekhide (gw, closure, data)
     Widget gw;
     caddr_t closure, data;
 {
-    register TScreen *screen = &term->screen;
-
-    set_tek_visibility (FALSE);
-    TekRefresh = (TekLink *)0;
-    if (screen->TekEmu) switch_modes (True);	/* does longjmp to vt mode */
+    hide_tek_window();
 }
 
 
@@ -812,10 +837,12 @@ static void handle_toggle (proc, var, params, nparams, w, closure, data)
     switch (nparams) {
       case 0:
 	dir = -1;
+	break;
       case 1:
 	if (XmuCompareISOLatin1 (params[0], "on") == 0) dir = 1;
 	else if (XmuCompareISOLatin1 (params[0], "off") == 0) dir = 0;
 	else if (XmuCompareISOLatin1 (params[0], "toggle") == 0) dir = -1;
+	break;
     }
 
     switch (dir) {
@@ -850,7 +877,7 @@ void HandleAllowSends(w, event, params, param_count)
 		   params, *param_count, w, NULL, NULL);
 }
 
-void HandleVisualBell(w, event, params, param_count)
+void HandleSetVisualBell(w, event, params, param_count)
     Widget w;
     XEvent *event;
     String *params;
@@ -860,6 +887,7 @@ void HandleVisualBell(w, event, params, param_count)
 		   params, *param_count, w, NULL, NULL);
 }
 
+#ifdef ALLOWLOGGING
 void HandleLogging(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -869,7 +897,9 @@ void HandleLogging(w, event, params, param_count)
     handle_toggle (do_logging, (int) term->screen.logging,
 		   params, *param_count, w, NULL, NULL);
 }
+#endif
 
+/* ARGSUSED */
 void HandleRedraw(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -879,9 +909,10 @@ void HandleRedraw(w, event, params, param_count)
     do_redraw(w, NULL, NULL);
 }
 
+/* ARGSUSED */
 void HandleSendSignal(w, event, params, param_count)
     Widget w;
-    XEvent *event;
+    XEvent *event;		/* unused */
     String *params;
     Cardinal *param_count;
 {
@@ -898,6 +929,9 @@ void HandleSendSignal(w, event, params, param_count)
 #endif
 	{ "int",	SIGINT },
 	{ "hup",	SIGHUP },
+	{ "quit",	SIGQUIT },
+	{ "alrm",	SIGALRM },
+	{ "alarm",	SIGALRM },
 	{ "term",	SIGTERM },
 	{ "kill",	SIGKILL },
 	{ NULL, 0 },
@@ -918,6 +952,7 @@ void HandleSendSignal(w, event, params, param_count)
     Bell();
 }
 
+/* ARGSUSED */
 void HandleQuit(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1068,6 +1103,7 @@ void HandleAltScreen(w, event, params, param_count)
 		   params, *param_count, w, NULL, NULL);
 }
 
+/* ARGSUSED */
 void HandleSoftReset(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1077,6 +1113,7 @@ void HandleSoftReset(w, event, params, param_count)
     do_softreset(w, NULL, NULL);
 }
 
+/* ARGSUSED */
 void HandleHardReset(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1084,6 +1121,16 @@ void HandleHardReset(w, event, params, param_count)
     Cardinal *param_count;
 {
     do_hardreset(w, NULL, NULL);
+}
+
+/* ARGSUSED */
+void HandleClearSavedLines(w, event, params, param_count)
+    Widget w;
+    XEvent *event;
+    String *params;
+    Cardinal *param_count;
+{
+    do_clearsavedlines(w, NULL, NULL);
 }
 
 void HandleSetTerminalType(w, event, params, param_count)
@@ -1132,6 +1179,7 @@ void HandleVisibility(w, event, params, param_count)
     }
 }
 
+/* ARGSUSED */
 void HandleSetTekText(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1157,6 +1205,7 @@ void HandleSetTekText(w, event, params, param_count)
     else Bell();
 }
 
+/* ARGSUSED */
 void HandleTekPage(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1166,6 +1215,7 @@ void HandleTekPage(w, event, params, param_count)
     do_tekpage(w, NULL, NULL);
 }
 
+/* ARGSUSED */
 void HandleTekReset(w, event, params, param_count)
     Widget w;
     XEvent *event;
@@ -1175,6 +1225,7 @@ void HandleTekReset(w, event, params, param_count)
     do_tekreset(w, NULL, NULL);
 }
 
+/* ARGSUSED */
 void HandleTekCopy(w, event, params, param_count)
     Widget w;
     XEvent *event;

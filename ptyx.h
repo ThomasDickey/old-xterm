@@ -1,8 +1,6 @@
 /*
- *	$XConsortium: ptyx.h,v 1.40 89/12/14 18:49:38 jim Exp $
+ *	$XConsortium: ptyx.h,v 1.60.1.1 93/11/03 17:29:39 gildea Exp $
  */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -32,7 +30,8 @@
 
 #include <X11/IntrinsicP.h>
 #include <X11/Xmu/Misc.h>	/* For Max() and Min(). */
-#include <signal.h>		/* for SIGTSTP */
+#include <X11/Xfuncs.h>
+#include <X11/Xosdefs.h>
 
 /* Extra Xlib definitions */
 #define AllButtonsUp(detail, ignore)  (\
@@ -53,15 +52,13 @@
 */
 
 #ifdef SYSV
-
-#define	killpg(x,sig)	kill(-x,sig)
-
+#ifdef X_NOT_POSIX
 #ifndef CRAY
 #define	dup2(fd1,fd2)	((fd1 == fd2) ? fd1 : \
 				(close(fd2), fcntl(fd1, F_DUPFD, fd2)))
 #endif
-
-#endif	/* !SYSV */
+#endif
+#endif /* SYSV */
 
 /*
 ** allow for mobility of the pty master/slave directories
@@ -86,7 +83,7 @@
 #ifdef hpux
 #define PTYCHAR1	"zyxwvutsrqp"
 #else	/* !hpux */
-#define	PTYCHAR1	"pqrstuvwxyz"
+#define	PTYCHAR1	"pqrstuvwxyzPQRSTUVWXYZ"
 #endif	/* !hpux */
 #endif	/* !PTYCHAR1 */
 
@@ -135,7 +132,7 @@ typedef Char **ScrnBuf;
 #define	APC	0x9F
 #define	RDEL	0xFF
 
-#define NMENUFONTS 7			/* entries in fontMenu */
+#define NMENUFONTS 9			/* entries in fontMenu */
 
 #define	NBOX	5			/* Number of Points in box	*/
 #define	NPARAM	10			/* Max. parameters		*/
@@ -219,12 +216,14 @@ typedef struct {
 					/* and position information	*/
 	int		select;		/* xterm selected		*/
 	Boolean		visualbell;	/* visual bell mode		*/
-	int		logging;	/* logging mode			*/
 	Boolean		allowSendEvents;/* SendEvent mode		*/
 	Boolean		grabbedKbd;	/* keyboard is grabbed		*/
+#ifdef ALLOWLOGGING
+	int		logging;	/* logging mode			*/
 	int		logfd;		/* file descriptor of log	*/
 	char		*logfile;	/* log file name		*/
 	unsigned char	*logstart;	/* current start of log buffer	*/
+#endif
 	int		inhibit;	/* flags for inhibiting changes	*/
 
 /* VT window parameters */
@@ -265,25 +264,32 @@ typedef struct {
 	Boolean		scrollttyoutput; /* scroll to bottom on tty output */
 	Boolean		scrollkey;	/* scroll to bottom on key	*/
 	
-	ScrnBuf		buf;		/* screen buffer (main)		*/
+	ScrnBuf		buf;		/* ptr to visible screen buf (main) */
 	ScrnBuf		allbuf;		/* screen buffer (may include
-					   lines scrolled off top	*/
+					   lines scrolled off top)	*/
 	char		*sbuf_address;	/* main screen memory address   */
 	ScrnBuf		altbuf;		/* alternate screen buffer	*/
 	char		*abuf_address;	/* alternate screen memory address */
 	Boolean		alternate;	/* true if using alternate buf	*/
 	unsigned short	do_wrap;	/* true if cursor in last column
-					   and character just output    */
-	int		incopy;		/* 0 if no RasterCopy exposure
-					   event processed since last
-					   RasterCopy			*/
+					    and character just output    */
+	int		incopy;		/* 0 idle; 1 XCopyArea issued;
+					    -1 first GraphicsExpose seen,
+					    but last not seen		*/
+	int		copy_src_x;	/* params from last XCopyArea ... */
+	int		copy_src_y;
+	unsigned int	copy_width;
+	unsigned int	copy_height;
+	int		copy_dest_x;
+	int		copy_dest_y;
 	Boolean		c132;		/* allow change to 132 columns	*/
 	Boolean		curses;		/* cludge-ups for more and vi	*/
 	Boolean		marginbell;	/* true if margin bell on	*/
 	int		nmarginbell;	/* columns from right margin	*/
 	int		bellarmed;	/* cursor below bell margin	*/
 	Boolean 	multiscroll;	/* true if multi-scroll		*/
-	int		scrolls;	/* outstanding scroll count	*/
+	int		scrolls;	/* outstanding scroll count,
+					    used only with multiscroll	*/
 	SavedCursor	sc;		/* data for restore cursor	*/
 	int		save_modes[19];	/* save dec private modes	*/
 
@@ -315,7 +321,6 @@ typedef struct {
 		int	fullheight;	/* full height of window	*/
 		double	tekscale;	/* scale factor Tek -> vs100	*/
 	} fullTwin;
-	XPoint		**Tbox;		/* draw unselected cursor	*/
 	int		xorplane;	/* z plane for inverts		*/
 	GC		linepat[TEKNUMLINES]; /* line patterns		*/
 	Boolean		TekEmu;		/* true if Tektronix emulation	*/
@@ -326,7 +331,11 @@ typedef struct {
 	int		margin;		/* 0 -> margin 1, 1 -> margin 2	*/
 	int		pen;		/* current Tektronix pen 0=up, 1=dn */
 	char		*TekGIN;	/* nonzero if Tektronix GIN mode*/
+	int		gin_terminator; /* Tek strap option */
+
 	int		multiClickTime;	 /* time between multiclick selects */
+	int		bellSuppressTime; /* msecs after Bell before another allowed */
+	Boolean		bellInProgress; /* still ringing/flashing prev bell? */
 	char		*charClass;	/* for overriding word selection */
 	Boolean		cutNewline;	/* whether or not line cut has \n */
 	Boolean		cutToBeginningOfLine;  /* line cuts to BOL? */
@@ -340,7 +349,8 @@ typedef struct {
 	Atom*		selection_atoms; /* which selections we own */
 	Cardinal	sel_atoms_size;	/*  how many atoms allocated */
 	Cardinal	selection_count; /* how many atoms in use */
-	Boolean		eight_bits;	/* use 8th bit instead of ESC prefix */
+	Boolean		input_eight_bits;/* use 8th bit instead of ESC prefix */
+	Boolean		output_eight_bits; /* honor all bits or strip */
 	Pixmap		menu_item_bitmap;	/* mask for checking items */
 	Widget		mainMenu, vtMenu, tekMenu, fontMenu;
 	char*		menu_font_names[NMENUFONTS];
@@ -351,6 +361,7 @@ typedef struct _TekPart {
     XFontStruct *Tfont[TEKNUMFONTS];
     int		tobaseline[TEKNUMFONTS]; /* top to baseline for each font */
     char	*initial_font;		/* large, 2, 3, small */
+    char	*gin_terminator_str;	/* ginTerminator resource */
 } TekPart;
 
 
@@ -371,16 +382,22 @@ typedef struct _Misc {
     char *T_geometry;
     char *f_n;
     char *f_b;
+#ifdef ALLOWLOGGING
     Boolean log_on;
+#endif
     Boolean login_shell;
     Boolean re_verse;
+    int resizeGravity;
     Boolean reverseWrap;
+    Boolean autoWrap;
     Boolean logInhibit;
     Boolean signalInhibit;
     Boolean tekInhibit;
     Boolean scrollbar;
     Boolean titeInhibit;
     Boolean tekSmall;	/* start tek window in small size */
+    Boolean appcursorDefault;
+    Boolean appkeypadDefault;
 } Misc;
 
 typedef struct {int foo;} XtermClassPart, TekClassPart;
@@ -414,7 +431,7 @@ typedef struct _XtermWidgetRec {
     unsigned	flags;		/* mode flags			*/
     unsigned	initflags;	/* initial mode flags		*/
     Tabs	tabs;		/* tabstops of the terminal	*/
-    Misc	misc;		/* miscelaneous parameters	*/
+    Misc	misc;		/* miscellaneous parameters	*/
 } XtermWidgetRec, *XtermWidget;
 
 typedef struct _TekWidgetRec {
@@ -424,22 +441,42 @@ typedef struct _TekWidgetRec {
 
 #define BUF_SIZE 4096
 
-/* masks for terminal flags */
+/*
+ * terminal flags
+ * There are actually two namespaces mixed together here.
+ * One is the set of flags that can go in screen->buf attributes
+ * and which must fit in a char.
+ * The other is the global setting stored in
+ * term->flags and screen->save_modes.  This need only fit in an unsigned.
+ */
 
+#define	ATTRIBUTES	0x07	/* mask: user-visible attributes */
+/* global flags and character flags (visible character attributes) */
 #define INVERSE		0x01	/* invert the characters to be output */
 #define UNDERLINE	0x02	/* true if underlining */
 #define BOLD		0x04
-#define WRAPAROUND	0x08
-#define REVERSE_VIDEO	0x10	/* true if screen white on black */
-#define ORIGIN		0x20	/* true if in origin mode */
-#define INSERT		0x40	/* true if in insert mode */
-#define SMOOTHSCROLL	0x80	/* true if in smooth scroll mode */
-#define IN132COLUMNS	0x200	/* true if in 132 column mode */
-#define LINEFEED	0x400
+/* character flags (internal attributes) */
+#define LINEWRAPPED	0x08	/* used on the first character in a
+				 * line to indicate that it wraps onto
+				 * the next line so we can tell the
+				 * difference between lines that have
+				 * wrapped around and lines that have
+				 * ended naturally with a CR at column
+				 * max_col.
+				 */
+#define CHARDRAWN	0x10    /* a character has been drawn here on the
+				   screen.  Used to distinguish blanks from
+				   empty parts of the screen when selecting */
+/* global flags */
+#define WRAPAROUND	0x400	/* true if auto wraparound mode */
 #define	REVERSEWRAP	0x800	/* true if reverse wraparound mode */
+#define REVERSE_VIDEO	0x1000	/* true if screen white on black */
+#define LINEFEED	0x2000	/* true if in auto linefeed mode */
+#define ORIGIN		0x4000	/* true if in origin mode */
+#define INSERT		0x8000	/* true if in insert mode */
+#define SMOOTHSCROLL	0x10000	/* true if in smooth scroll mode */
+#define IN132COLUMNS	0x20000	/* true if in 132 column mode */
 
-#define	ATTRIBUTES	0x07	/* attributes mask */
-#define CHAR		0177
 
 #define VWindow(screen)		(screen->fullVwin.window)
 #define VShellWindow		term->core.parent->core.window
@@ -476,8 +513,9 @@ typedef struct Tek_Link
 {
 	struct Tek_Link	*next;	/* pointer to next TekLink in list
 				   NULL <=> this is last TekLink */
-	short count;
-	char *ptr;
+	short fontsize;		/* character size, 0-3 */
+	short count;		/* number of chars in data */
+	char *ptr;		/* current pointer into data */
 	char data [TEK_LINK_BLOCK_SIZE];
 } TekLink;
 
@@ -488,8 +526,13 @@ typedef struct Tek_Link
 #define	TOGGLE		1
 
 /* flags for inhibit */
+#ifdef ALLOWLOGGING
 #define	I_LOG		0x01
+#endif
 #define	I_SIGNAL	0x02
 #define	I_TEK		0x04
 
 extern Cursor make_colored_cursor();
+extern int GetBytesAvailable();
+extern void first_map_occurred();
+extern int kill_process_group();

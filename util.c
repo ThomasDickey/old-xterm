@@ -1,8 +1,6 @@
 /*
- *	$XConsortium: util.c,v 1.19 89/12/10 20:44:15 jim Exp $
+ *	$XConsortium: util.c,v 1.31 91/06/20 18:34:47 gildea Exp $
  */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -29,19 +27,15 @@
 
 /* util.c */
 
-#ifndef lint
-static char rcs_id[] = "$XConsortium: util.c,v 1.19 89/12/10 20:44:15 jim Exp $";
-#endif	/* lint */
-
-#include <stdio.h>
-#include <X11/Intrinsic.h>
-#include <setjmp.h>
-typedef int *jmp_ptr;
-
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
 #include "menu.h"
+
+#include <stdio.h>
+
+static void horizontal_copy_area();
+static void vertical_copy_area();
 
 /*
  * These routines are used for the jump scroll feature
@@ -108,32 +102,8 @@ register TScreen *screen;
 		if((i = screen->top_marg + refreshheight - 1 - bot) > 0)
 			refreshheight -= i;
 	}
-	if(scrollheight > 0) {
-		if (screen->multiscroll && scrollheight == 1 &&
-		 screen->topline == 0 && screen->top_marg == 0 &&
-		 screen->bot_marg == screen->max_row) {
-			if (screen->incopy < 0 && screen->scrolls == 0)
-				CopyWait (screen);
-			screen->scrolls++;
-		} else {
-			if (screen->incopy)
-				CopyWait (screen);
-			screen->incopy = -1;
-		}
-
-		XCopyArea (
-		    screen->display, 
-		    TextWindow(screen),
-		    TextWindow(screen),
-		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar,
-		    (int) (scrolltop + screen->scroll_amt) * FontHeight(screen)
-			+ screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar, 
-		    (int) scrolltop*FontHeight(screen) + screen->border);
-	}
+	scrolling_copy_area(screen, scrolltop+screen->scroll_amt,
+			    scrollheight, screen->scroll_amt);
 	ScrollSelection(screen, -(screen->scroll_amt));
 	screen->scroll_amt = 0;
 	screen->refresh_amt = 0;
@@ -248,32 +218,15 @@ register int amount;
 			}
 		}
 	}
-	if(scrollheight > 0) {
-		if (screen->multiscroll
-		&& amount==1 && screen->topline == 0
-		&& screen->top_marg==0
-		&& screen->bot_marg==screen->max_row) {
-			if (screen->incopy<0 && screen->scrolls==0)
-				CopyWait(screen);
-			screen->scrolls++;
-		} else {
-			if (screen->incopy)
-				CopyWait(screen);
-			screen->incopy = -1;
-		}
 
-		XCopyArea(
-		    screen->display, 
-		    TextWindow(screen),
-		    TextWindow(screen),
-		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar,
-		    (int) (scrolltop+amount) * FontHeight(screen) + screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar,
-		    (int) scrolltop * FontHeight(screen) + screen->border);
+	if (screen->multiscroll && amount == 1 &&
+	    screen->topline == 0 && screen->top_marg == 0 &&
+	    screen->bot_marg == screen->max_row) {
+	    if (screen->incopy < 0 && screen->scrolls == 0)
+		CopyWait(screen);
+	    screen->scrolls++;
 	}
+	scrolling_copy_area(screen, scrolltop+amount, scrollheight, amount);
 	if(refreshheight > 0) {
 		XClearArea (
 		   screen->display,
@@ -345,32 +298,15 @@ register int amount;
 		scrollheight -= i;
 	if((i = screen->top_marg + refreshheight - 1 - bot) > 0)
 		refreshheight -= i;
-	if(scrollheight > 0) {
-		if (screen->multiscroll
-		&& amount==1 && screen->topline == 0
-		&& screen->top_marg==0
-		&& screen->bot_marg==screen->max_row) {
-			if (screen->incopy<0 && screen->scrolls==0)
-				CopyWait(screen);
-			screen->scrolls++;
-		} else {
-			if (screen->incopy)
-				CopyWait(screen);
-			screen->incopy = -1;
-		}
 
-		XCopyArea (
-		    screen->display,
-		    TextWindow(screen),
-		    TextWindow(screen),
-		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar, 
-		    (int) (scrolltop-amount) * FontHeight(screen) + screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar,
-		    (int) scrolltop * FontHeight(screen) + screen->border);
+	if (screen->multiscroll && amount == 1 &&
+	    screen->topline == 0 && screen->top_marg == 0 &&
+	    screen->bot_marg == screen->max_row) {
+	    if (screen->incopy < 0 && screen->scrolls == 0)
+		CopyWait(screen);
+	    screen->scrolls++;
 	}
+	scrolling_copy_area(screen, scrolltop-amount, scrollheight, -amount);
 	if(refreshheight > 0)
 		XClearArea (
 		    screen->display,
@@ -431,22 +367,7 @@ register int n;
 		scrollheight -= i;
 	if((i = screen->cur_row + refreshheight - 1 - bot) > 0)
 		refreshheight -= i;
-	if(scrollheight > 0) {
-		if (screen->incopy)
-			CopyWait (screen);
-		screen->incopy = -1;
-		XCopyArea (
-		    screen->display, 
-		    TextWindow(screen),
-		    TextWindow(screen),
-		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar,
-		    (int) (scrolltop - n) * FontHeight(screen) + screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar,
-		    (int) scrolltop * FontHeight(screen) + screen->border);
-	}
+	vertical_copy_area(screen, scrolltop-n, scrollheight, -n);
 	if(refreshheight > 0)
 		XClearArea (
 		    screen->display,
@@ -523,23 +444,7 @@ register int n;
 			}
 		}
 	}
-	if(scrollheight > 0) {
-		if (screen->incopy)
-			CopyWait(screen);
-		screen->incopy = -1;
-
-		XCopyArea (
-		    screen->display,
-		    TextWindow(screen),
-		    TextWindow(screen),
-		    screen->normalGC,
-		    (int) screen->border + screen->scrollbar,
-		    (int) (scrolltop + n) * FontHeight(screen) + screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) screen->border + screen->scrollbar,
-		    (int) scrolltop * FontHeight(screen) + screen->border);
-	}
+	vertical_copy_area(screen, scrolltop+n, scrollheight, n);
 	if(refreshheight > 0)
 		XClearArea (
 		    screen->display,
@@ -563,10 +468,10 @@ register int n;
  * Insert n blanks at the cursor's position, no wraparound
  */
 InsertChar (screen, n)
-register TScreen *screen;
-register int n;
+    register TScreen *screen;
+    register int n;
 {
-	register int width = n * FontWidth(screen), cx, cy;
+        register int cx, cy;
 
 	if(screen->cursor_state)
 		HideCursor();
@@ -575,28 +480,26 @@ register int n;
 	    if(!AddToRefresh(screen)) {
 		if(screen->scroll_amt)
 			FlushScroll(screen);
-	
-		if (screen->incopy)
-			CopyWait (screen);
-		screen->incopy = -1;
+
+		/*
+		 * prevent InsertChar from shifting the end of a line over
+		 * if it is being appended to
+		 */
+		if (non_blank_line (screen->buf, screen->cur_row, 
+				    screen->cur_col, screen->max_col + 1))
+		    horizontal_copy_area(screen, screen->cur_col,
+					 screen->max_col+1 - (screen->cur_col+n),
+					 n);
 	
 		cx = CursorX (screen, screen->cur_col);
 		cy = CursorY (screen, screen->cur_row);
-		XCopyArea(
-		    screen->display,
-		    TextWindow(screen), TextWindow(screen),
-		    screen->normalGC,
-		    cx, cy,
-		    (unsigned) Width(screen)
-		        - (screen->cur_col + n) * FontWidth(screen),
-		    (unsigned) FontHeight(screen), 
-		    cx + width, cy);
+
 		XFillRectangle(
 		    screen->display,
 		    TextWindow(screen), 
 		    screen->reverseGC,
 		    cx, cy,
-		    (unsigned) width, (unsigned) FontHeight(screen));
+		    (unsigned) n * FontWidth(screen), (unsigned) FontHeight(screen));
 	    }
 	}
 	/* adjust screen->buf */
@@ -608,10 +511,10 @@ register int n;
  * Deletes n chars at the cursor's position, no wraparound.
  */
 DeleteChar (screen, n)
-register TScreen *screen;
-register int	n;
+    register TScreen *screen;
+    register int	n;
 {
-	register int width, cx, cy;
+	register int width;
 
 	if(screen->cursor_state)
 		HideCursor();
@@ -624,25 +527,17 @@ register int	n;
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 	
-		width = n * FontWidth(screen);
+		horizontal_copy_area(screen, screen->cur_col+n,
+				     screen->max_col+1 - (screen->cur_col+n),
+				     -n);
 	
-		if (screen->incopy)
-			CopyWait (screen);
-		screen->incopy = -1;
-	
-		cx = CursorX (screen, screen->cur_col);
-		cy = CursorY (screen, screen->cur_row);
-		XCopyArea(screen->display,
-		     TextWindow(screen), TextWindow(screen),
-		     screen->normalGC, 
-		     cx + width, cy,
-		     Width(screen) - (screen->cur_col + n) * FontWidth(screen),
-		     FontHeight(screen), 
-		     cx, cy);
-		XFillRectangle (screen->display, TextWindow(screen),
+		XFillRectangle
+		    (screen->display, TextWindow(screen),
 		     screen->reverseGC,
-		     screen->border + screen->scrollbar + Width(screen) - width,
-		     cy, width, FontHeight(screen));
+		     screen->border + screen->scrollbar
+		       + Width(screen) - n*FontWidth(screen),
+		     CursorY (screen, screen->cur_row), n * FontWidth(screen),
+		     FontHeight(screen));
 	    }
 	}
 	/* adjust screen->buf */
@@ -725,14 +620,19 @@ register TScreen *screen;
 	       (screen->max_col - screen->cur_col + 1));
 	bzero(screen->buf [2 * screen->cur_row + 1] + screen->cur_col,
 	       (screen->max_col - screen->cur_col + 1));
+	/* with the right part cleared, we can't be wrapping */
+	screen->buf [2 * screen->cur_row + 1] [0] &= ~LINEWRAPPED;
 }
 
 /*
  * Clear first part of cursor's line, inclusive.
  */
 ClearLeft (screen)
-register TScreen *screen;
+    register TScreen *screen;
 {
+        int i;
+	Char *cp;
+
 	if(screen->cursor_state)
 		HideCursor();
 	screen->do_wrap = 0;
@@ -748,8 +648,15 @@ register TScreen *screen;
 		     FontHeight(screen));
 	    }
 	}
-	bzero (screen->buf [2 * screen->cur_row], (screen->cur_col + 1));
-	bzero (screen->buf [2 * screen->cur_row + 1], (screen->cur_col + 1));
+	
+	for ( i=0, cp=screen->buf[2 * screen->cur_row];
+	      i < screen->cur_col + 1;
+	      i++, cp++)
+	    *cp = ' ';
+	for ( i=0, cp=screen->buf[2 * screen->cur_row + 1];
+	      i < screen->cur_col + 1;
+	      i++, cp++)
+	    *cp = CHARDRAWN;
 }
 
 /* 
@@ -810,7 +717,7 @@ register TScreen *screen;
 		  ExposureMask, &reply);
 		switch (reply.type) {
 		case Expose:
-			HandleExposure (screen, (XExposeEvent *) &reply);
+			HandleExposure (screen, &reply);
 			break;
 		case NoExpose:
 		case GraphicsExpose:
@@ -820,7 +727,7 @@ register TScreen *screen;
 					screen->scrolls--;
 			}
 			if (reply.type == GraphicsExpose)
-				HandleExposure (screen, (XExposeEvent *) &reply);
+			    HandleExposure (screen, &reply);
 
 			if ((reply.type == NoExpose) ||
 			    ((XExposeEvent *)rep)->count == 0) {
@@ -836,26 +743,158 @@ register TScreen *screen;
 		}
 	}
 }
+
 /*
- * This routine handles exposure events
+ * used by vertical_copy_area and and horizontal_copy_area
  */
-HandleExposure (screen, reply)
-register TScreen *screen;
-register XExposeEvent *reply;
+static void
+copy_area(screen, src_x, src_y, width, height, dest_x, dest_y)
+    TScreen *screen;
+    int src_x, src_y;
+    unsigned int width, height;
+    int dest_x, dest_y;
+{
+    /* wait for previous CopyArea to complete unless
+       multiscroll is enabled and active */
+    if (screen->incopy  &&  screen->scrolls == 0)
+	CopyWait(screen);
+    screen->incopy = -1;
+
+    /* save for translating Expose events */
+    screen->copy_src_x = src_x;
+    screen->copy_src_y = src_y;
+    screen->copy_width = width;
+    screen->copy_height = height;
+    screen->copy_dest_x = dest_x;
+    screen->copy_dest_y = dest_y;
+
+    XCopyArea(screen->display, 
+	      TextWindow(screen), TextWindow(screen),
+	      screen->normalGC,
+	      src_x, src_y, width, height, dest_x, dest_y);
+}
+
+/*
+ * use when inserting or deleting characters on the current line
+ */
+static void
+horizontal_copy_area(screen, firstchar, nchars, amount)
+    TScreen *screen;
+    int firstchar;		/* char pos on screen to start copying at */
+    int nchars;
+    int amount;			/* number of characters to move right */
+{
+    int src_x = CursorX(screen, firstchar);
+    int src_y = CursorY(screen, screen->cur_row);
+
+    copy_area(screen, src_x, src_y,
+	      (unsigned)nchars*FontWidth(screen), FontHeight(screen),
+	      src_x + amount*FontWidth(screen), src_y);
+}
+
+/*
+ * use when inserting or deleting lines from the screen
+ */
+static void
+vertical_copy_area(screen, firstline, nlines, amount)
+    TScreen *screen;
+    int firstline;		/* line on screen to start copying at */
+    int nlines;
+    int amount;			/* number of lines to move up (neg=down) */
+{
+    if(nlines > 0) {
+	int src_x = screen->border + screen->scrollbar;
+	int src_y = firstline * FontHeight(screen) + screen->border;
+
+	copy_area(screen, src_x, src_y,
+		  (unsigned)Width(screen), nlines*FontHeight(screen),
+		  src_x, src_y - amount*FontHeight(screen));
+    }
+}
+
+/*
+ * use when scrolling the entire screen
+ */
+scrolling_copy_area(screen, firstline, nlines, amount)
+    TScreen *screen;
+    int firstline;		/* line on screen to start copying at */
+    int nlines;
+    int amount;			/* number of lines to move up (neg=down) */
+{
+
+    if(nlines > 0) {
+	vertical_copy_area(screen, firstline, nlines, amount);
+    }
+}
+
+/*
+ * Handler for Expose events on the VT widget.
+ * Returns 1 iff the area where the cursor was got refreshed.
+ */
+HandleExposure (screen, event)
+    register TScreen *screen;
+    register XEvent *event;
+{
+    register XExposeEvent *reply = (XExposeEvent *)event;
+
+    /* if not doing CopyArea or if this is a GraphicsExpose, don't translate */
+    if(!screen->incopy  ||  event->type != Expose)
+	return handle_translated_exposure (screen, reply->x, reply->y,
+					   reply->width, reply->height);
+    else {
+	/* compute intersection of area being copied with
+	   area being exposed. */
+	int both_x1 = Max(screen->copy_src_x, reply->x);
+	int both_y1 = Max(screen->copy_src_y, reply->y);
+	int both_x2 = Min(screen->copy_src_x+screen->copy_width,
+			  reply->x+reply->width);
+	int both_y2 = Min(screen->copy_src_y+screen->copy_height,
+			  reply->y+reply->height);
+	int value = 0;
+
+	/* was anything copied affected? */
+	if(both_x2 > both_x1  && both_y2 > both_y1) {
+	    /* do the copied area */
+	    value = handle_translated_exposure
+		(screen, reply->x + screen->copy_dest_x - screen->copy_src_x,
+		 reply->y + screen->copy_dest_y - screen->copy_src_y,
+		 reply->width, reply->height);
+	}
+	/* was anything not copied affected? */
+	if(reply->x < both_x1 || reply->y < both_y1
+	   || reply->x+reply->width > both_x2
+	   || reply->y+reply->height > both_y2)
+	    value = handle_translated_exposure (screen, reply->x, reply->y,
+						reply->width, reply->height);
+
+	return value;
+    }
+}
+
+/*
+ * Called by the ExposeHandler to do the actual repaint after the coordinates
+ * have been translated to allow for any CopyArea in progress.
+ * The rectangle passed in is pixel coordinates.
+ */
+handle_translated_exposure (screen, rect_x, rect_y, rect_width, rect_height)
+    register TScreen *screen;
+    register int rect_x, rect_y;
+    register unsigned int rect_width, rect_height;
 {
 	register int toprow, leftcol, nrows, ncols;
 	extern Bool waiting_for_initial_map;
 
-	if((toprow = (reply->y - screen->border) /
-	 FontHeight(screen)) < 0)
+	toprow = (rect_y - screen->border) / FontHeight(screen);
+	if(toprow < 0)
 		toprow = 0;
-	if((leftcol = (reply->x - screen->border - screen->scrollbar)
-	 / FontWidth(screen)) < 0)
+	leftcol = (rect_x - screen->border - screen->scrollbar)
+	    / FontWidth(screen);
+	if(leftcol < 0)
 		leftcol = 0;
-	nrows = (reply->y + reply->height - 1 - screen->border) / 
+	nrows = (rect_y + rect_height - 1 - screen->border) / 
 		FontHeight(screen) - toprow + 1;
 	ncols =
-	 (reply->x + reply->width - 1 - screen->border - screen->scrollbar) /
+	 (rect_x + rect_width - 1 - screen->border - screen->scrollbar) /
 			FontWidth(screen) - leftcol + 1;
 	toprow -= screen->scrolls;
 	if (toprow < 0) {
@@ -882,18 +921,18 @@ register XExposeEvent *reply;
 	return (0);
 }
 
-ReverseVideo (term)
-	XtermWidget term;
+ReverseVideo (termw)
+	XtermWidget termw;
 {
-	register TScreen *screen = &term->screen;
+	register TScreen *screen = &termw->screen;
 	GC tmpGC;
 	Window tek = TWindow(screen);
 	unsigned long tmp;
 
-	tmp = term->core.background_pixel;
+	tmp = termw->core.background_pixel;
 	if(screen->cursorcolor == screen->foreground)
 		screen->cursorcolor = tmp;
-	term->core.background_pixel = screen->foreground;
+	termw->core.background_pixel = screen->foreground;
 	screen->foreground = tmp;
 
 	tmp = screen->mousecolorback;
@@ -913,7 +952,7 @@ ReverseVideo (term)
 	recolor_cursor (screen->arrow,
 			screen->mousecolor, screen->mousecolorback);
 
-	term->misc.re_verse = !term->misc.re_verse;
+	termw->misc.re_verse = !termw->misc.re_verse;
 
 	XDefineCursor(screen->display, TextWindow(screen), screen->pointer_cursor);
 	if(tek)
@@ -923,7 +962,7 @@ ReverseVideo (term)
 	if(screen->scrollWidget)
 		ScrollBarReverseVideo(screen->scrollWidget);
 
-	XSetWindowBackground(screen->display, TextWindow(screen), term->core.background_pixel);
+	XSetWindowBackground(screen->display, TextWindow(screen), termw->core.background_pixel);
 	if(tek) {
 	    TekReverseVideo(screen);
 	}
@@ -932,7 +971,7 @@ ReverseVideo (term)
 	 screen->max_col + 1, False);
 	if(screen->Tshow) {
 	    XClearWindow(screen->display, tek);
-	    TekExpose((XExposeEvent *) NULL);
+	    TekExpose((Widget)NULL, (XEvent *)NULL, (Region)NULL);
 	}
 	update_reversevideo();
 }

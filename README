@@ -10,8 +10,6 @@ clean things up as we go, but there is still a lot of work to do.
 If you are porting this to a machine that has problems with overlapping
 bcopy's, watch out!
 
-Two lists of Control Sequences are provided.  The file ctlseq.ms is based on
-the X10 document, with minor and far from sufficient edits.  The file
-ctlseq2.txt is the result of someone walking through the code.  Ideally,
-the two should be merged into one document.
-
+There are two documents on xterm: the man page, xterm.man, which describes
+how to use it, and ctlseq.ms, which describes the control sequences it
+understands.

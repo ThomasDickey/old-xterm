@@ -1,9 +1,6 @@
 /*
- *	$XConsortium: main.h,v 1.3 88/09/06 17:08:12 jim Exp $
+ *	$XConsortium: main.h,v 1.5 91/02/06 16:00:15 gildea Exp $
  */
-
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -28,9 +25,7 @@
  * SOFTWARE.
  */
 
-/* @(#)main.h\tX10/6.6\t11/10/86 */
-
-#define	DEFBOLDFONT		"fixed"
+#define	DEFFONT			"fixed"
+#define	DEFBOLDFONT		NULL 	/* no bold font uses overstriking */
 #define	DEFBORDER		2
 #define	DEFBORDERWIDTH		2
-#define	DEFFONT			"fixed"

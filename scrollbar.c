@@ -1,8 +1,6 @@
 /*
- *	$XConsortium: scrollbar.c,v 1.32 89/12/15 11:45:51 kit Exp $
+ *	$XConsortium: scrollbar.c,v 1.41 91/05/22 15:20:07 gildea Exp $
  */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -27,12 +25,11 @@
  * SOFTWARE.
  */
 
+#include "ptyx.h"		/* gets Xt headers, too */
+
 #include <stdio.h>
 #include <ctype.h>
-#include <setjmp.h>
 #include <X11/Xatom.h>
-
-#include "ptyx.h"		/* X headers included here. */
 
 #include <X11/StringDefs.h>
 #include <X11/Shell.h>
@@ -43,24 +40,10 @@
 #include "error.h"
 #include "menu.h"
 
-extern void bcopy();
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: scrollbar.c,v 1.32 89/12/15 11:45:51 kit Exp $";
-#endif	/* lint */
-
 /* Event handlers */
 
 static void ScrollTextTo();
 static void ScrollTextUpDownBy();
-
-static Bool IsEventType( display, event, type )
-	Display *display;
-	XEvent *event;
-	int type;
-{
-	return (event->type == type);
-}
 
 
 /* resize the text window for a terminal screen, modifying the
@@ -72,95 +55,114 @@ static void ResizeScreen(xw, min_width, min_height )
 	int min_width, min_height;
 {
 	register TScreen *screen = &xw->screen;
+#ifndef nothack
 	XSizeHints sizehints;
-	XSetWindowAttributes newAttributes;
-	XWindowAttributes oldAttributes;
-	XEvent event;
+	long supp;
+#endif
 	XtGeometryResult geomreqresult;
-	Dimension oldWidth, oldHeight;
 	Dimension reqWidth, reqHeight, repWidth, repHeight;
-	static Arg argList[] = {
-	    {XtNminWidth,	0},
-	    {XtNminHeight,	0},
-	    /* %%% the next two should move to VTInitialize, VTSetValues */
-	    {XtNwidthInc,	0},
-	    {XtNheightInc,	0}
-	};
+
+	/*
+	 * I'm going to try to explain, as I understand it, why we
+	 * have to do XGetWMNormalHints and XSetWMNormalHints here,
+	 * although I can't guarantee that I've got it right.
+	 *
+	 * In a correctly written toolkit program, the Shell widget
+	 * parses the user supplied geometry argument.  However,
+	 * because of the way xterm does things, the VT100 widget does
+	 * the parsing of the geometry option, not the Shell widget.
+	 * The result of this is that the Shell widget doesn't set the
+	 * correct window manager hints, and doesn't know that the
+	 * user has specified a geometry.
+	 *
+	 * The XtVaSetValues call below tells the Shell widget to
+	 * change its hints.  However, since it's confused about the
+	 * hints to begin with, it doesn't get them all right when it
+	 * does the SetValues -- it undoes some of what the VT100
+	 * widget did when it originally set the hints.
+	 *
+	 * To fix this, we do the following:
+	 *
+	 * 1. Get the sizehints directly from the window, going around
+	 *    the (confused) shell widget.
+	 * 2. Call XtVaSetValues to let the shell widget know which
+	 *    hints have changed.  Note that this may not even be
+	 *    necessary, since we're going to right ahead after that
+	 *    and set the hints ourselves, but it's good to put it
+	 *    here anyway, so that when we finally do fix the code so
+	 *    that the Shell does the right thing with hints, we
+	 *    already have the XtVaSetValues in place.
+	 * 3. We set the sizehints directly, this fixing up whatever
+	 *    damage was done by the Shell widget during the
+	 *    XtVaSetValues.
+	 *
+	 * Gross, huh?
+	 *
+	 * The correct fix is to redo VTRealize, VTInitialize and
+	 * VTSetValues so that font processing happens early enough to
+	 * give back responsibility for the size hints to the Shell.
+	 *
+	 * Someday, we hope to have time to do this.  Someday, we hope
+	 * to have time to completely rewrite xterm.
+	 */
 
 #ifndef nothack
-	long supp;
-
-	/* %%% gross hack caused by our late processing of geometry
-	   (in VTRealize) and setting of size hints there, leaving
-	   Shell with insufficient information to do the job properly here.
-	   Instead of doing it properly, we save and restore the
-	   size hints around Shell.SetValues and Shell.GeometryManager
+	/*
+	 * NOTE: If you change the way any of the hints are calculated
+	 * below, make sure you change the calculation both in the
+	 * sizehints assignments and in the XtVaSetValues.
 	 */
-	if (!XGetWMNormalHints (screen->display, XtWindow(XtParent(xw)),
+
+	if (! XGetWMNormalHints(screen->display, XtWindow(XtParent(xw)),
 				&sizehints, &supp))
-	    sizehints.flags = 0;
+	     sizehints.flags = 0;
 	sizehints.base_width = min_width;
 	sizehints.base_height = min_height;
 	sizehints.width_inc = FontWidth(screen);
 	sizehints.height_inc = FontHeight(screen);
 	sizehints.min_width = sizehints.base_width + sizehints.width_inc;
 	sizehints.min_height = sizehints.base_height + sizehints.height_inc;
-	sizehints.width =  (screen->max_col + 1) * FontWidth(screen)
-				+ min_width;
-	sizehints.height = FontHeight(screen) * (screen->max_row + 1)
-				+ min_height;
 	sizehints.flags |= (PBaseSize|PMinSize|PResizeInc);
+	/* These are obsolete, but old clients may use them */
+	sizehints.width = (screen->max_col + 1) * FontWidth(screen)
+	     + min_width;
+	sizehints.height = (screen->max_row + 1) * FontHeight(screen)
+	     + min_height;
 #endif
+	
+	/*
+	 * Note: width and height are not set here because they are 
+	 * obsolete. 						
+	 */
+	XtVaSetValues(XtParent(xw),
+		      XtNbaseWidth, min_width,
+		      XtNbaseHeight, min_height,
+		      XtNwidthInc, FontWidth(screen),
+		      XtNheightInc, FontHeight(screen),
+		      XtNminWidth, min_width + FontWidth(screen),
+		      XtNminHeight, min_height + FontHeight(screen),
+		      NULL);
 
-	argList[0].value = (XtArgVal)min_width;
-	argList[1].value = (XtArgVal)min_height;
-	argList[2].value = (XtArgVal)FontWidth(screen);
-	argList[3].value = (XtArgVal)FontHeight(screen);
-	XtSetValues( XtParent(xw), argList, XtNumber(argList) );
-
-	XGetWindowAttributes( screen->display, TextWindow(screen),
-			      &oldAttributes );
-
-	newAttributes.event_mask =
-	    oldAttributes.your_event_mask | StructureNotifyMask;
-	newAttributes.bit_gravity = EastGravity;
-
-        /* The following statement assumes scrollbar is on Left! 
-           If we ever have scrollbars on the right, then the
-           bit-gravity should be left alone, NOT changed to EastGravity. */
-	XChangeWindowAttributes( screen->display, TextWindow(screen),
-	     CWEventMask|CWBitGravity, &newAttributes );
-
-	oldWidth = xw->core.width;
-	oldHeight = xw->core.height;
 	reqWidth = (screen->max_col + 1) * FontWidth(screen) + min_width;
 	reqHeight = FontHeight(screen) * (screen->max_row + 1) + min_height;
 	geomreqresult = XtMakeResizeRequest ((Widget)xw, reqWidth, reqHeight,
 					     &repWidth, &repHeight);
 
+	if (geomreqresult == XtGeometryAlmost) {
+	     geomreqresult = XtMakeResizeRequest ((Widget)xw, repWidth,
+						  repHeight, NULL, NULL);
+	}
+
 #ifndef nothack
 	XSetWMNormalHints(screen->display, XtWindow(XtParent(xw)), &sizehints);
 #endif
-
-	if (oldWidth != reqWidth || oldHeight != reqHeight) {
-	    /* wait for a window manager to actually do it */
-	    XIfEvent (screen->display, &event, IsEventType, (char *)ConfigureNotify);
-	}
-
-	newAttributes.event_mask = oldAttributes.your_event_mask;
-	newAttributes.bit_gravity = NorthWestGravity;
-	XChangeWindowAttributes( screen->display, TextWindow(screen),
-				 CWEventMask|CWBitGravity,
-				 &newAttributes );
 }
 
 void DoResizeScreen (xw)
     register XtermWidget xw;
 {
     int border = 2 * xw->screen.border;
-    int sb = (xw->screen.scrollbar ? xw->screen.scrollWidget->core.width : 0);
-
-    ResizeScreen (xw, border + sb, border);
+    ResizeScreen (xw, border + xw->screen.scrollbar, border);
 }
 
 
@@ -185,7 +187,7 @@ static Widget CreateScrollBar(xw, x, y, height)
 	argList[3].value = (XtArgVal) xw->misc.re_verse;
 
 	scrollWidget = XtCreateWidget("scrollbar", scrollbarWidgetClass, 
-	  xw, argList, XtNumber(argList));
+	  (Widget)xw, argList, XtNumber(argList));
         XtAddCallback (scrollWidget, XtNscrollProc, ScrollTextUpDownBy, 0);
         XtAddCallback (scrollWidget, XtNjumpProc, ScrollTextTo, 0);
 	return (scrollWidget);
@@ -283,30 +285,7 @@ WindowScroll(screen, top)
 		refreshtop = scrollheight;
 	}
 	x = screen->scrollbar +	screen->border;
-	if(scrollheight > 0) {
-		if (screen->multiscroll && scrollheight == 1 &&
-		 screen->topline == 0 && screen->top_marg == 0 &&
-		 screen->bot_marg == screen->max_row) {
-			if (screen->incopy < 0 && screen->scrolls == 0)
-				CopyWait (screen);
-			screen->scrolls++;
-		} else {
-			if (screen->incopy)
-				CopyWait (screen);
-			screen->incopy = -1;
-		}
-		XCopyArea(
-		    screen->display, 
-		    TextWindow(screen), TextWindow(screen),
-		    screen->normalGC,
-		    (int) x,
-		    (int) scrolltop * FontHeight(screen) + screen->border, 
-		    (unsigned) Width(screen),
-		    (unsigned) scrollheight * FontHeight(screen),
-		    (int) x,
-		    (int) (scrolltop + i) * FontHeight(screen)
-			+ screen->border);
-	}
+	scrolling_copy_area(screen, scrolltop, scrollheight, -i);
 	screen->topline = top;
 	XClearArea(
 	    screen->display,
@@ -375,13 +354,17 @@ ScrollBarOn (xw, init, doalloc)
 	ResizeScrollBar (screen->scrollWidget, -1, -1, 
 			 Height (screen) + border);
 	RealizeScrollBar (screen->scrollWidget, screen);
-	screen->scrollbar = screen->scrollWidget->core.width;
+	screen->scrollbar = screen->scrollWidget->core.width +
+	     screen->scrollWidget->core.border_width;
 
 	ScrollBarDrawThumb(screen->scrollWidget);
 	DoResizeScreen (xw);
-	/* map afterwards so BitGravity can be used profitably */
-	XMapWindow(screen->display, XtWindow(screen->scrollWidget));
+	XtMapWidget(screen->scrollWidget);
 	update_scrollbar ();
+	if (screen->buf) {
+	    XClearWindow (screen->display, XtWindow (term));
+	    Redraw ();
+	}
 }
 
 ScrollBarOff(screen)
@@ -389,10 +372,14 @@ ScrollBarOff(screen)
 {
 	if(!screen->scrollbar)
 		return;
+	XtUnmapWidget(screen->scrollWidget);
 	screen->scrollbar = 0;
-	XUnmapWindow(screen->display, XtWindow(screen->scrollWidget));
 	DoResizeScreen (term);
 	update_scrollbar ();
+	if (screen->buf) {
+	    XClearWindow (screen->display, XtWindow (term));
+	    Redraw ();
+	}
 }
 
 /*ARGSUSED*/

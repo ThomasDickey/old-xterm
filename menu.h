@@ -1,4 +1,18 @@
+/* $XConsortium: menu.h,v 1.24 93/02/25 17:21:31 gildea Exp $ */
+
 /* Copyright 1989 Massachusetts Institute of Technology */
+
+/*
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation, and that the name of M.I.T. not be used in advertising or
+publicity pertaining to distribution of the software without specific,
+written prior permission.  M.I.T. makes no representations about the
+suitability of this software for any purpose.  It is provided "as is"
+without express or implied warranty.
+*/
 
 typedef struct _MenuEntry {
     char *name;
@@ -10,17 +24,38 @@ extern MenuEntry mainMenuEntries[], vtMenuEntries[], tekMenuEntries[];
 extern MenuEntry fontMenuEntries[];
 extern Arg menuArgs[];
 
-extern void HandleAllowSends(), HandleVisualBell(),
-  HandleLogging(), HandleRedraw(), HandleSendSignal(), 
-  HandleQuit(), HandleScrollbar(), HandleJumpscroll(), HandleReverseVideo(),
-  HandleAutoWrap(), HandleReverseWrap(), HandleAutoLineFeed(), 
-  HandleAppCursor(), HandleAppKeypad(), HandleScrollKey(), 
-  HandleScrollTtyOutput(), HandleAllow132(), HandleCursesEmul(), 
-  HandleMarginBell(), HandleAltScreen(), HandleSoftReset(), 
-  HandleHardReset(), HandleSetTerminalType(), HandleVisibility(), 
-  HandleSetTekText(), HandleTekPage(), HandleTekReset(), HandleTekCopy();
-
-
+extern void HandleAllowSends();
+extern void HandleSetVisualBell();
+#ifdef ALLOWLOGGING
+extern void HandleLogging();
+#endif
+extern void HandleRedraw();
+extern void HandleSendSignal();
+extern void HandleQuit();
+extern void HandleScrollbar();
+extern void HandleJumpscroll();
+extern void HandleReverseVideo();
+extern void HandleAutoWrap();
+extern void HandleReverseWrap();
+extern void HandleAutoLineFeed();
+extern void HandleAppCursor();
+extern void HandleAppKeypad();
+extern void HandleScrollKey();
+extern void HandleScrollTtyOutput();
+extern void HandleAllow132();
+extern void HandleCursesEmul();
+extern void HandleMarginBell();
+extern void HandleAltScreen();
+extern void HandleSoftReset();
+extern void HandleHardReset();
+extern void HandleClearSavedLines();
+extern void HandleSetTerminalType();
+extern void HandleVisibility();
+extern void HandleSetTekText();
+extern void HandleTekPage();
+extern void HandleTekReset();
+extern void HandleTekCopy();
+extern void DoSecureKeyboard();
 
 /*
  * The following definitions MUST match the order of entries given in 
@@ -32,7 +67,9 @@ extern void HandleAllowSends(), HandleVisualBell(),
  */
 #define mainMenu_securekbd 0
 #define mainMenu_allowsends 1
+#ifdef ALLOWLOGGING
 #define mainMenu_logging 2
+#endif
 #define mainMenu_redraw 3
 #define mainMenu_line1 4
 #define mainMenu_suspend 5
@@ -66,10 +103,11 @@ extern void HandleAllowSends(), HandleVisualBell(),
 #define vtMenu_line1 15
 #define vtMenu_softreset 16
 #define vtMenu_hardreset 17
-#define vtMenu_line2 18
-#define vtMenu_tekshow 19
-#define vtMenu_tekmode 20
-#define vtMenu_vthide 21
+#define vtMenu_clearsavedlines 18
+#define vtMenu_line2 19
+#define vtMenu_tekshow 20
+#define vtMenu_tekmode 21
+#define vtMenu_vthide 22
 
 /*
  * items in vt100 font menu
@@ -79,8 +117,11 @@ extern void HandleAllowSends(), HandleVisualBell(),
 #define fontMenu_font2 2
 #define fontMenu_font3 3
 #define fontMenu_font4 4
-#define fontMenu_fontescape 5
-#define fontMenu_fontsel 6
+#define fontMenu_font5 5
+#define fontMenu_font6 6
+#define fontMenu_lastBuiltin fontMenu_font6
+#define fontMenu_fontescape 7
+#define fontMenu_fontsel 8
 /* number of non-line items should match NMENUFONTS in ptyx.h */
 
 
@@ -132,11 +173,12 @@ extern void HandleAllowSends(), HandleVisualBell(),
 		    mainMenuEntries[mainMenu_allowsends].widget, \
 		    term->screen.allowSendEvents)
 
+#ifdef ALLOWLOGGING
 #define update_logging() \
   update_menu_item (term->screen.mainMenu, \
 		    mainMenuEntries[mainMenu_logging].widget, \
 		    term->screen.logging)
-
+#endif
 
 #define update_scrollbar() \
   update_menu_item (term->screen.vtMenu, \
