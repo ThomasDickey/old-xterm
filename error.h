@@ -1,6 +1,32 @@
 /*
- *	@Source: /u1/X/xterm/RCS/error.h,v @
- *	@Header: error.h,v 10.100 86/12/01 14:39:28 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/error.h,v @
+ *	@Header: error.h,v 1.6 87/09/11 08:17:21 toddb Exp @
+ */
+
+
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
  */
 
 /* @(#)error.h	X10/6.6	11/6/86 */
@@ -30,38 +56,30 @@
 #define	ERROR_PTYS	32	/* get_pty: not enough ptys */
 #define	ERROR_NOX	33	/* get_terminal: can't connect to server */
 #define	ERROR_NOX2	34	/* get_terminal: can't connect and getty */
-#define	ERROR_TITLEFONT	35	/* get_terminal: can't open title font */
 #define	ERROR_INIT	36	/* spawn: can't initialize window */
 #define	ERROR_NOCO	37	/* resize: no `co' in termcap */
 #define	ERROR_NOLI	38	/* resize: no `li' in termcap */
 #define	ERROR_BORDER	39	/* get_terminal: can't make border tile */
 #define	ERROR_BACK	40	/* get_terminal: can't make background tile */
+#define ERROR_NOX3      43      /* get_terminal: bad pty from display server */
 /* charproc.c */
 #define	ERROR_SELECT	50	/* in_put: select() failed */
-#define	ERROR_CRTITLE	51	/* VTTitleInit: XCreateWindow() failed */
-#define	ERROR_HILITE	52	/* VTTitleInit: make_hilite() failed */
-#define	ERROR_CRLFRG	53	/* VTTitleInit: XCreateWindows() failed */
 #define	ERROR_VINIT	54	/* VTInit: can't initialize window */
-#define	ERROR_RTMALLOC1	55	/* VTRetitle: malloc failed */
-#define	ERROR_RTMALLOC2	56	/* VTRetitle: malloc failed */
+#define	ERROR_CNMALLOC1	55	/* Changename: malloc failed */
+#define	ERROR_CNMALLOC2	56	/* Changename: malloc failed */
 /* Tekproc.c */
 #define	ERROR_TSELECT	60	/* Tinput: select() failed */
-#define	ERROR_TCRTITLE	61	/* TekTitleInit: XCreateWindow() failed */
-#define	ERROR_THILITE	62	/* TekTitleInit: make_hilite() failed */
-#define	ERROR_TCRLFRG	63	/* TekTitleInit: XCreateWindows() failed */
 #define	ERROR_TINIT	64	/* TekInit: can't initialize window */
 #define	ERROR_TBACK	65	/* TekBackground: can't make background */
 #define	ERROR_TWINNAME	66	/* TekInit: malloc failed */
 /* button.c */
-#define	ERROR_BMALLOC	70	/* GetRestOfLine: malloc() failed */
 #define	ERROR_BMALLOC2	71	/* SaltTextAway: malloc() failed */
+#define ERROR_BADMENU   72      /* ModeMenu: don't know what menu to use */
 /* misc.c */
 #define	ERROR_LOGEXEC	80	/* StartLog: exec() failed */
-#define	ERROR_OPENBITMAP 81	/* IconInit: XReadBitmapFile returns zero */
-#define	ERROR_SYNTAXBITMAP 82	/* IconInit: XReadBitmapFile returns negative */
 #define	ERROR_XERROR	83	/* xerror: XError event */
 #define	ERROR_XIOERROR	84	/* xioerror: X I/O error */
-#define	ERROR_WINNAME	85	/* IconInit: malloc failed */
+#define ERROR_WINNAME   85      /* get_terminal: malloc failed */
 /* screen.c */
 #define	ERROR_SCALLOC	90	/* Alloc: calloc() failed on base */
 #define	ERROR_SCALLOC2	91	/* Alloc: calloc() failed on rows */

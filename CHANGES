@@ -29,7 +29,7 @@ causes both to appear again.
 
 If the initial mode is vt102, /etc/termcap is searched, in order, for the
 following termcaps, until one is found:
-	xterms, xterm, vt102, vt100, ansi, dumb
+	xterm, vt102, vt100, ansi, dumb
 If the vt102 window happens to be 80x24, then xterms is added to the begining
 of the list.  If the initial mode is tek, the termcaps searched for are:
 	tek4015, tek4014, tek4013, tek4010, dumb
@@ -38,6 +38,7 @@ The window size is passed to the operating system via TIOCSWINSZ (4.3) or
 TIOCSSIZE (sun).  A SIGWINCH siganl is sent if the vt102 window is resized.
 
 For login windows, menus are disabled until a user has successfully login.
+(||| This isn't currently true. )
 
 A new menu (xterm) has been added (control left button) that gives the version
 number.  The menu allows titlebars to be displayed (see below), the windows
@@ -58,57 +59,22 @@ window is hilited, and are gone when unhilited.
 Both windows are visible and the mouse cursor is in either window, only the
 active window is hilited (before both windows were hilited).
 
-A time delay has been added for window hiliting/unhiliting so that the mouse
-passing momentarily through a window will not cause it to hilite and then
-unhilite when autoraise is on.
-
-Automatic raising of windows has been added, so that the window is automatically
-raised (after the time delay) when the mouse enters a window.  The mode is
-turned on via .Xdefaults "xterm.AutoRaise on", via command line option -ar
-or via the xterm menu.  This is a dubious feature.
-
 Visual bell mode can be turned on via .Xdefaults "xterm.VisualBell on", via
 command line option -vb and from the xterm menu.
-
-If the NOWINDOWMENU is not defined, then
-Control right button activates a windows menu that lists the visible (named)
-windows in back to front order reading down.  Selecting a window name cause
-that window to be raised to the top (useful for getting to a buried
-window).  This feature does not belong in xterm, and will be
-completely removed in V11 of X, where window managers can be more intellegent.
 
 The tek window has the same name as the vt102 window, but with " (Tek)"
 appended (before they were the same).
 
-During startup, xterm tries to create unique window names so that the
-windows menu will not contain ambiguous windows.  It does this by look
-through the list of windows and if a name exist that is the same, " #N"
-will be appended to make it unique (N is a number two or greater).
-
-Some reorganization of the code and data has been done to put more data in
-the text segment so many xterm processes can share the (read-only) data, rather
-than having n copies in core.
-
 There are several bug fixes including better sun compatibility and a problem
 in the vt102 parse table.
-
-With some mods to libX.a, xterm solves a problem of running xterm on a remote
-host with a local window, when the remote host uses a different keymap (like
-running on a remote microvax on a sun).  If the environment variable KEYBD
-is set or the command line option "-kb name" is given, then a keymap file
-with the given name is used, rather than the default of your .Xkeymap file.
-Standard names for keymap files is yet to be made.  (This option is turned on
-via defining KEYBD in the Makefile.)
 
 Xterm now always creates its own icon(s), which includes the window's name.
 The -i option now means startup showing the icon.  The option #[+-]x[+-]y
 means to position the icon there instead of centered within the window.
-The bitmap within the icon show the current active mode (either vt102 or
-tek).  The icon reverse-videos with the windows.
-By default, the icons are miniture versions of the window.
+The icon reverse-videos with the windows.
 
 When the mouse is in the stripped area of the titlebar, you can get any
-of the three menus without pressing the control key.  Clicking in the
+of the two menus without pressing the control key.  Clicking in the
 actual title iconifies.  Clicking in an icon deiconifies it.
 
 Many mode option on the command line allow a '+' instead of '-' to indicate
@@ -171,8 +137,7 @@ The bitmap used for the icons is now user definable.  The VT102 bitmap may be
 set with .Xdefaults "xterm.IconBitmap file" or with "-ib file" on the command
 line.  The Tek bitmap may be set with .Xdefaults "xterm.TekIconBitmap file"
 or with "-it file" on the command line.  These files are assumed to be
-bitmap(1) format files.  If only one bitmap file is specified, it is used for
-both modes.  If both are specified as null file names, then no bitmap is drawn.
+bitmap(1) format files.
 
 Normally, the title text of the icon is displayed to the right of the
 bitmap.  The text may be displayed under the bitmap by using .Xdefaults
@@ -196,50 +161,19 @@ vt102 emulation is much more complete than the original xterm.
 
 Underlined characters is now supported.
 
-A partial sun tty emulation is provided (x, y, w, h, c, r are numbers):
-	\E[3;x;yt	move window to (x, y)
-	\E[4;w;ht	resize window - width w, height h pixels
-	\E[5t		raise window
-	\E[6t		lower window
-	\E[7t		redisplay window
-	\E[8;r;ct	resize window - r rows, c columns
-	\E[13t		send window position \E[3;x;yt
-	\E[14t		send window size (pixel) \E[4;w;ht
-	\E[18t		send window size (rows and columns) \E[8;r;ct
-
-The text for reexcuting (shift-left button), copy (shift-middle button-drag)
-and paste (shift-right button) is now hilited by reverse video.
+The text for selection and extension is now hilited by reverse video.
 
 Pasting text that was originally displayed as vt102 graphic characters now
 returns the original ascii character (and not the internal representation).
 
 Text that is scrolled off the top of the window can be saved and is accessable
-via a scrollbar.  By default, saving is off and can be turned changed via
-escape sequence \E[?43h (on) and \E[43l (off) or from the mode menu.  The
-scrollbar is normally off, but may be made visible with .Xdefault option
-"xterm.ScrollBar on" or command line option -sb.  The scrollbar state can
-be changed via the mode menu or escape sequences \E[?42h (on) and \E[?42l
-(off).
-
-The scrollbar is composed of three parts (from top down), the scroll button,
-the save button and the scroll region.  The scroll button changes what is
-displayed in the window.  Left button pressed in the scroll button causes
-the window to move one line up (the text scrolls one line down).  The right
-button moves one line down.  Shift left button moves one screenful up and shift
-right button moves one screenful down.  Control left button moves to the top
-of the buffer, control right button moves to the bottom.  The visible area
-is shown graphically in the scroll region, with the (usually) dark region
-that part of the buffer that appears in the window.  Clicking the left or
-right button in the scroll region cause the visible region to be position
-with its top at the mouse position.  The save button shows the state of saving
-or not saving lines.  By default, any input or output will return the
-screen to the bottom.
+via a scrollbar.  The scrollbar is normally off, but may be made visible with
+.Xdefault option "xterm.ScrollBar on" or command line option -sb.  The
+scrollbar state can be changed via the mode menu.
 
 The default maximum number of lines saved off the top is 64, but can be
 specified in .Xdefaults as "xterm.SaveLines 100" for 100 lines, or as
 a command line option "-sl 100".
-
-The lines saved can be cleared via the mode menu.
 
 A margin bell can be turned on via .Xdefaults "xterm.MarginBell on", command
 line option -mb or mode menu.  The default number of columns from the right
@@ -285,9 +219,6 @@ wraparound only works when autowrap is also on and is useful, for instance,
 when entering a long line that wraps to the shell and needing to erase
 backwards to correct it.
 
-The scrollbar code has been modified to use fewer pixmaps, and should work
-better on the GPX.
-
 An alternate screen buffer is now supported.  Entry into the alternate screen
 buffer with \E[?47h will automatically inhibit lines from being saved off the
 top of the window and \E[?47l returns to the normal screen buffer and restores
@@ -297,11 +228,6 @@ returning to the regular buffer.
 
 If the normal font is specified and the bold font isn't, then the bold font
 is automatically created be overstring, ala dcmartin@ingres.
-
-The scrollbar now has its own menu, available when the middle button is pressed
-anywhere in the scrollbar.  The menu entries originally in the mode menu having
-to do with the scrollbar have been moved to the scrollbar menu (except the
-Scrollbar entry, to initially display the scrollbar).
 
 The scroll bar may be repositioned automatically at the bottom when input comes
 in by using .Xdefaults "xterm.ScrollInput on", using -si on the command line
@@ -317,25 +243,6 @@ line may be obtained by using .Xdefaults "xterm.StatusNormal on", with
 escape sequences \E[?48h (on) and \E[?48l (off).  In normal video mode, a
 box is still drawn around the status line.
 
-Page scroll mode may be activated by using .Xdefaults "xterm.PageScroll on",
-using -ps on the command line or via the mode menu, or may be control by the
-escape sequences \E[?49h (on) and \E[?49l (off).  In page scroll mode,
-after a page of input has been displayed, further scrolling is disabled
-and the text cursor is hidden.  Typing a carriage return allows another
-line to be scrolled (the return is discarded).  Pressing the space bar (or any
-other printable character) causes another page to be scrolled (the character
-is discarded).  Typing a control character scrolls another page, but the
-control character is sent (e.g., your interrupt character).
-
-A page in page scroll mode is defined to be the number of lines in the current
-scrolling region, minus the page overlap number.  The page overlap is one by
-default, but may be set by .Xdefaults "xterm.PageOverlap 3" or via the
-"-po 3" command line option.
-
-Page scroll mode is automatically inhibited when using the alternate screen.
-
-The icon windows are now named, with " (icon)" appended.  Thus, iconified
-xterms now show up in the windows menu.
 
 Tektronix
 ---------

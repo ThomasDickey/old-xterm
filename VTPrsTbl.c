@@ -1,15 +1,41 @@
 /*
- *	@Source: /u1/X/xterm/RCS/VTparsetable.c,v @
- *	@Header: VTparsetable.c,v 10.101 86/12/01 21:49:52 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/VTPrsTbl.c,v @
+ *	@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @
+ */
+
+
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
  */
 
 #ifndef lint
-static char *rcsid_VTparsetable_c = "@Header: VTparsetable.c,v 10.101 86/12/01 21:49:52 jg Rel @";
+static char *rcsid_VTparsetable_c = "@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @";
 #endif	lint
 
 #include "VTparse.h"
 #ifndef lint
-static char sccs_id[] = "@(#)VTparsetable.c\tX10/6.6\t11/6/86";
+static char rcs_id[] = "@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @";
 #endif	lint
 /*
  * Stupid Apollo C preprocessor can't handle long lines.  So... To keep
@@ -285,7 +311,7 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 /*	T		U		V		W	*/
-CASE_GROUND_STATE,
+CASE_TRACK_MOUSE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
@@ -325,7 +351,7 @@ CASE_GROUND_STATE,
 CASE_DECSTBM,
 CASE_GROUND_STATE,
 /*	t		u		v		w	*/
-CASE_SUN_EMU,
+CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
@@ -429,11 +455,11 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 /*	D		E		F		G	*/
 CASE_GROUND_STATE,
-CASE_ERASE_STATUS,
-CASE_FROM_STATUS,
+CASE_GROUND_STATE,
+CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 /*	H		I		J		K	*/
-CASE_HIDE_STATUS,
+CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
@@ -446,9 +472,9 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
-CASE_SHOW_STATUS,
+CASE_GROUND_STATE,
 /*	T		U		V		W	*/
-CASE_TO_STATUS,
+CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
@@ -775,7 +801,7 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 /*	T		U		V		W	*/
-CASE_GROUND_STATE,
+CASE_XTERM_TITLE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
@@ -1220,7 +1246,7 @@ CASE_ESC_IGNORE,
 CASE_ESC_IGNORE,
 /*	0		1		2		3	*/
 CASE_GROUND_STATE,
-CASE_HIDDEN,
+CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 /*	4		5		6		7	*/

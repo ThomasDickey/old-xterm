@@ -1,6 +1,32 @@
 /*
- *	@Source: /u1/X/xterm/RCS/misc.c,v @
- *	@Header: misc.c,v 10.106 86/12/24 08:29:28 swick Exp @
+ *	@Source: /orpheus/u1/X11/clients/xterm/RCS/misc.c,v @
+ *	@Header: misc.c,v 1.29 87/09/10 18:09:03 swick Exp @
+ */
+
+
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
  */
 
 #include <stdio.h>
@@ -8,374 +34,140 @@
 #include <signal.h>
 #include <ctype.h>
 #include <pwd.h>
+#include <strings.h>
 #include <sys/time.h>
 #include <sys/file.h>
-#include <X/Xlib.h>
-#include "scrollbar.h"
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xatom.h>
+#include <X11/Xtlib.h>
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
+#include <X11/cursorfont.h>
 #include "gray.ic"
 #include "hilite.ic"
-#include "icon.ic"
-#include "tek_icon.ic"
 #include "wait.ic"
 #include "waitmask.ic"
-#include "../cursors/left_ptr.cursor"
-#include "../cursors/left_ptr_mask.cursor"
-#include "../cursors/tcross.cursor"
-#include "../cursors/tcross_mask.cursor"
-#include "../cursors/xterm.cursor"
-#include "../cursors/xterm_mask.cursor"
+
+extern char *malloc();
+extern char *mktemp();
+extern void exit();
+extern void perror();
+extern void abort();
 
 #ifndef lint
-static char sccs_id[] = "@(#)misc.c\tX10/6.6\t11/11/86";
+static char rcs_id[] = "@Header: misc.c,v 1.29 87/09/10 18:09:03 swick Exp @";
 #endif	lint
 
 xevents()
 {
-	XEvent reply;
-	register XEvent *rep = & reply;
-	register Screen *screen = &term.screen;
+	XEvent event;
+	register TScreen *screen = &term.screen;
+	XtEventReturnCode returnCode;
 
 	if(screen->scroll_amt)
 		FlushScroll(screen);
-	XPending ();
+	XPending (screen->display);
 	do {
-		XNextEvent (&reply);
-		xeventpass(&reply);
-	} while (QLength() > 0);
+		if (waitingForTrackInfo)
+			return;
+		XNextEvent (screen->display, &event);
+		returnCode = XtDispatchEvent(&event);
+		switch (returnCode) {
+			case XteventHandled :
+				break;
+			case XteventNotHandled :
+/* |||
+fprintf(stderr, "Event %d not handled for window %d (subwindow %d)\n",
+ (int)event.type, (int)event.window, (int)event.subwindow);
+*/
+				break;
+			case XteventNoHandler :
+/* |||
+fprintf(stderr, "Event %d no entry for window %d (subwindow %d)\n",
+ (int)event.type, (int)event.window, (int)event.subwindow);
+*/
+				break;
+		}
+	} while (QLength(screen->display) > 0);
 }
 
-xeventpass(rep)
-register XEvent *rep;
+/*ARGSUSED*/
+XtEventReturnCode EventDoNothing(event, eventdata)
+XEvent *event;
+caddr_t eventdata;
 {
-	register Screen *screen = &term.screen;
-	register Window window = rep->window;
-	register Window w;
-	register int i;
-
-	switch ((int)rep->type) {
-	 case KeyPressed:
-		Input (&term.keyboard, &term.screen,
-		 (XKeyPressedEvent *)rep);
-		break;
-
-	 case ExposeWindow:
-		if(screen->sb && window == screen->sb->bar) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeWindow scrollbar\n", stderr);
-#endif DEBUG
-			if(((XExposeEvent *)rep)->subwindow ==
-			 screen->sb->button) {
-				screen->sb->buttonstate = -1;
-				DrawButton(screen->sb);
-			} else if(((XExposeEvent *)rep)->subwindow ==
-			 screen->sb->save) {
-				screen->sb->savestate = -1;
-				DrawSave(screen->sb);
-			}
-			break;
-		}
-		if (screen->active_icon) {
-#ifdef DEBUG
-		    fputs( "ExposeWindow icon\n", stderr );
-#endif DEBUG
-		    if (window == screen->iconVwin.window) {
-		        if (!screen->icon_show) {
-			    screen->mappedVwin = &screen->iconVwin;
-			    screen->icon_show = TRUE;
-			    screen->show = FALSE;
-			    screen->timer = 0;
-			    screen->holdoff = FALSE;
-			    if(screen->fullTwin.window)
-				moveiconwindow( screen->fullTwin.window,
-						screen->fullVwin.window );
-			}
-			if (screen->TekEmu)
-			    VTUnselect();
-			if (term.flags & ICONINPUT)
-			    reselectwindow(screen);
-			else
-			    unselectwindow(screen, INWINDOW);
-			screen->iconinput = FALSE;
-			VTExpose(rep);
-		    } else if (window == screen->iconTwin.window) {
-			if (!screen->icon_show) {
-			    screen->mappedTwin = &screen->iconTwin;
-			    screen->icon_show = TRUE;
-			    screen->Tshow = FALSE;
-			    screen->timer = 0;
-			    screen->holdoff = FALSE;
-			    if (screen->fullVwin.window)
-				moveiconwindow( screen->fullVwin.window,
-						screen->fullTwin.window );
-			}
-			if (!screen->TekEmu)
-			    TekUnselect();
-			if (term.flags & ICONINPUT)
-			    reselectwindow(screen);
-			else
-			    unselectwindow(screen, INWINDOW);
-			screen->iconinput = FALSE;
-			TekExpose(rep);
-			}
-		} else if (window == screen->iconVwin.window ||
-			   window == screen->iconTwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fprintf(stderr, "ExposeWindow %s\n", window ==
-				 screen->iconVwin.window ? "icon" : "Ticon");
-#endif DEBUG
-			RefreshIcon(screen, window);
-			break;
-		}
-		if(Titlebar(screen) || screen->icon_show) {
-		/* icon_show is a kludge as the titlebar exposure event
-		 * frequently arrives before the full window exposure event */
-			if(window == screen->title.tbar) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeWindow title\n", stderr);
-#endif DEBUG
-				VTTitleExpose((XExposeWindowEvent *)rep);
-				break;
-			} else if(window == screen->Ttitle.tbar) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeWindow Ttitle\n", stderr);
-#endif DEBUG
-				TekTitleExpose((XExposeWindowEvent *)rep);
-				break;
-			}
-		}
-		if(window == screen->fullVwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeWindow VT\n", stderr);
-#endif DEBUG
-			if(!screen->show) {
-				screen->mappedVwin = &screen->fullVwin;
-				if(screen->Ticonunmap) {
-					screen->Ticonunmap = FALSE;
-					XMapWindow( screen->fullTwin.window );
-					screen->Tshow = TRUE;
-					if(!screen->TekEmu) {
-					    screen->holdoff = TRUE;
-					    XUnmapTransparent(VWindow(screen));
-					    XMapWindow(VWindow(screen));
-					    break;
-					}
-				} else {
-					screen->timer = 0;
-					screen->holdoff = FALSE;
-				}
-				screen->show = TRUE;
-				reselectwindow(screen);
-				if(screen->icon_show && screen->deiconwarp)
-				    DeiconWarp(screen);
-
-				screen->icon_show = FALSE;
-				screen->iconinput = FALSE;
-			}
-			VTExpose(rep);
-		} else if(window == screen->fullTwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeWindow Tek\n", stderr);
-#endif DEBUG
-			if(!screen->Tshow) {
-				screen->mappedTwin = &screen->fullTwin;
-				if(screen->iconunmap) {
-					screen->iconunmap = FALSE;
-					XMapWindow( screen->fullVwin.window );
-					screen->show = TRUE;
-					if(screen->TekEmu) {
-					    screen->holdoff = TRUE;
-					    XUnmapTransparent(TWindow(screen));
-					    XMapWindow(TWindow(screen));
-					    break;
-					}
-				} else {
-					screen->timer = 0;
-					screen->holdoff = FALSE;
-				}
-				screen->Tshow = TRUE;
-				reselectwindow(screen);
-				if(screen->icon_show && screen->deiconwarp)
-					DeiconWarp(screen);
-				screen->icon_show = FALSE;
-				screen->iconinput = FALSE;
-			}
-			TekExpose(rep);
-		}
-		break;
-
-	 case ExposeRegion:
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeRegion\n", stderr);
-#endif DEBUG
-		if (((XExposeWindowEvent *)rep)->detail == ExposeCopy &&
-		    screen->incopy <= 0) {
-			screen->incopy = 1;
-			if (screen->scrolls > 0)
-				screen->scrolls--;
-		}
-		if (HandleExposure (screen, rep))
-			screen->cursor_state = OFF;
-		break;
-
-	 case ExposeCopy:
-#ifdef DEBUG
-			if(debug)
-				fputs("ExposeCopy\n", stderr);
-#endif DEBUG
-		if (screen->incopy <= 0 && screen->scrolls > 0)
-			screen->scrolls--;
-		if (screen->scrolls)
-			screen->incopy = -1;
-		else
-			screen->incopy = 0;
-		break;
-
-	 case ButtonPressed:
-		if (screen->incopy)
-			CopyWait (screen);
-		if(window == screen->iconVwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ButtonPressed icon\n", stderr);
-#endif DEBUG
-			XUnmapWindow(window);
-			if(screen->Ticonunmap && !screen->TekEmu) {
-				screen->Ticonunmap = FALSE;
-				XMapWindow(TWindow(screen));
-				screen->Tshow = TRUE;
-				screen->holdoff = TRUE;
-			}
-			XMapWindow(screen->fullVwin.window);
-			break;
-		} else if(window == screen->iconTwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("ButtonPressed Ticon\n", stderr);
-#endif DEBUG
-			XUnmapWindow(window);
-			if(screen->iconunmap && screen->TekEmu) {
-				screen->iconunmap = FALSE;
-				XMapWindow(VWindow(screen));
-				screen->show = TRUE;
-				screen->holdoff = TRUE;
-			}
-			XMapWindow(screen->fullTwin.window);
-			break;
-		}
-		/* drop through */
-	 case ButtonReleased:
-#ifdef DEBUG
-			if(debug)
-				fputs("ButtonPressed or ButtonReleased\n",
-				 stderr);
-#endif DEBUG
-		HandleButtons(&term, rep, screen->respond);
-		break;
-
-	 case UnmapWindow:		/* full windows */
-		if (window == screen->fullVwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("UnmapWindow VT\n", stderr);
-#endif DEBUG
-			if (screen->fullVwin.titlebar)
-				VTTitleUnhilite();
-			screen->show = FALSE;
-			if(screen->Tshow) {
-				screen->Ticonunmap = TRUE;
-				screen->Tshow = FALSE;
-				XUnmapWindow( screen->fullTwin.window );
-				SyncUnmap( screen->fullTwin.window,
-					   TWINDOWEVENTS );
-			}
-		} else if(window == screen->fullTwin.window) {
-#ifdef DEBUG
-			if(debug)
-				fputs("UnmapWindow Tek\n", stderr);
-#endif DEBUG
-			if (screen->fullTwin.titlebar)
-				TekTitleUnhilite();
-			screen->Tshow = FALSE;
-			if(screen->show) {
-				screen->iconunmap = TRUE;
-				screen->show = FALSE;
-				XUnmapWindow( screen->fullVwin.window );
-				SyncUnmap( screen->fullVwin.window,
-					   WINDOWEVENTS );
-			}
-		}
-		reselectwindow(screen);
-		screen->timer = 0;
-		break;
-	 case EnterWindow:
-		if(screen->sb) {
-			if(window == screen->sb->button) {
-				if((i = GetButtonState(screen->sb)) !=
-				 BUTTON_NORMAL)
-					SetButtonState(screen->sb, i | HILITED);
-				break;
-			} else if(window == screen->sb->bar)
-				break;
-		}
-		if((window == VWindow(screen) || window == TWindow(screen)) &&
-		 (((XEnterWindowEvent *)rep)->detail & 0xff) !=
-		 IntoOrFromSubwindow) {
-#ifdef DEBUG
-			if(debug)
-				fprintf(stderr, "EnterWindow %s\n", window ==
-				 VWindow(screen) ? "VT" : "Tek");
-#endif DEBUG
-			screen->autowindow = window;
-			DoEnterLeave(screen, EnterWindow);
-		}
-		break;
-	 case LeaveWindow:
-		if(screen->sb) {
-			if(window == screen->sb->button) {
-				if((i = GetButtonState(screen->sb)) !=
-				 BUTTON_NORMAL)
-					SetButtonState(screen->sb, i& ~HILITED);
-				break;
-			} else if(window == screen->sb->bar)
-				break;
-		}
-		if((window == VWindow(screen) || window == TWindow(screen)) &&
-		 (((XEnterWindowEvent *)rep)->detail & 0xff) !=
-		 IntoOrFromSubwindow)
-#ifdef DEBUG
-		{
-			if(debug)
-				fprintf(stderr, "LeaveWindow %s\n", window ==
-				 VWindow(screen) ? "VT" : "Tek");
-#endif DEBUG
-			DoEnterLeave(screen, LeaveWindow);
-#ifdef DEBUG
-		}
-#endif DEBUG
-		break;
-	 case FocusChange:
-		if(((XFocusChangeEvent *)rep)->detail == EnterWindow)
-			selectwindow(screen, FOCUS);
-		else
-			unselectwindow(screen, FOCUS);
-		break;
-	 default:
-		break;
-	}
+	return (XteventHandled);
 }
+
+/*ARGSUSED*/
+XtEventReturnCode HandleKeyPressed(event, eventdata)
+XEvent *event;
+caddr_t eventdata;
+{
+	Input (&term.keyboard, &term.screen, (XKeyPressedEvent *)event);
+	return (XteventHandled);
+}
+/*ARGSUSED*/
+XtEventReturnCode HandleEnterWindow(event, eventdata)
+register XEnterWindowEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+
+	if (((event->detail) != NotifyInferior)
+	 && event->mode == NotifyNormal
+	 && event->focus) {
+#ifdef DEBUG
+		if(debug)
+			fprintf(stderr, "EnterWindow %s\n", window ==
+			 VWindow(screen) ? "VT" : "Tek");
+#endif DEBUG
+		selectwindow(screen, INWINDOW);
+	}
+	return (XteventHandled);
+}
+
+/*ARGSUSED*/
+XtEventReturnCode HandleLeaveWindow(event, eventdata)
+register XEnterWindowEvent *event;
+caddr_t eventdata;
+{
+	register TScreen *screen = &term.screen;
+
+	if (((event->detail) != NotifyInferior)
+	 && event->mode == NotifyNormal
+	 && event->focus) {
+#ifdef DEBUG
+		if(debug)
+			fprintf(stderr, "LeaveWindow %s\n", window ==
+			 VWindow(screen) ? "VT" : "Tek");
+#endif DEBUG
+		unselectwindow(screen, INWINDOW);
+	}
+	return (XteventHandled);
+}
+
+
+/*ARGSUSED*/
+XtEventReturnCode HandleFocusChange(event, eventdata)
+register XFocusChangeEvent *event;
+caddr_t eventdata;
+{
+        register TScreen *screen = &term.screen;
+
+        if(event->type == FocusIn)
+                selectwindow(screen, FOCUS);
+        else
+                unselectwindow(screen, FOCUS);
+        return (XteventHandled);
+}
+
+
 
 selectwindow(screen, flag)
-register Screen *screen;
+register TScreen *screen;
 register int flag;
 {
 	if(screen->TekEmu) {
@@ -385,7 +177,10 @@ register int flag;
 		if(screen->cellsused) {
 			screen->colorcells[2].pixel =
 			 screen->Tcursorcolor;
-			XStoreColor(&screen->colorcells[2]);
+			XStoreColor(screen->display, 
+			 DefaultColormap(screen->display,
+				DefaultScreen(screen->display)),
+			 &screen->colorcells[2]);
 		}
 		screen->select |= flag;
 		if(!Ttoggled)
@@ -405,13 +200,13 @@ register int flag;
 }
 
 unselectwindow(screen, flag)
-register Screen *screen;
+register TScreen *screen;
 register int flag;
 {
 	register int i;
 
 	screen->select &= ~flag;
-	if(!screen->select) {
+	if(!(screen->select)) {
 		if(screen->TekEmu) {
 			TekUnselect();
 			if(!Ttoggled)
@@ -420,154 +215,147 @@ register int flag;
 				i = (term.flags & REVERSE_VIDEO) == 0;
 				screen->colorcells[i].pixel =
 				 screen->Tcursorcolor;
-				XStoreColor(
+				XStoreColor(screen->display, 
+			         DefaultColormap(screen->display,
+					       DefaultScreen(screen->display)),
 				 &screen->colorcells[i]);
 			}
 			if(!Ttoggled)
 				TCursorToggle(TOGGLE);
-			return;
 		} else {
 			VTUnselect();
 			if(screen->cursor_state &&
 			 (screen->cursor_col != screen->cur_col ||
 			 screen->cursor_row != screen->cur_row))
 				HideCursor();
-			screen->select = 0;
 			if(screen->cursor_state)
 				ShowCursor();
-			return;
 		}
 	}
 }
 
 reselectwindow(screen)
-register Screen *screen;
+register TScreen *screen;
 {
-	Window win;
-	int x, y;
+	Window root, win;
+	int rootx, rooty, x, y;
+	unsigned int mask;
 
-	if(XQueryMouse(RootWindow, &x, &y, &win)) {
-		if(win && (win == VWindow(screen) || win == TWindow(screen))
-		       && (!screen->icon_show
-			   || (screen->active_icon && term.flags & ICONINPUT)))
+	if(XQueryPointer(
+	    screen->display, 
+	    DefaultRootWindow(screen->display), 
+	    &root, &win,
+	    &rootx, &rooty,
+	    &x, &y,
+	    &mask)) {
+		if(win && (win == VWindow(screen) || win == TWindow(screen)))
 			selectwindow(screen, INWINDOW);
 		else	unselectwindow(screen, INWINDOW);
 	}
 }
 
-DeiconWarp(screen)
-register Screen *screen;
+Pixmap Make_tile(width, height, bits, foreground, background, depth)
+	unsigned int width, height, depth;
+	Pixel foreground, background;
+	char *bits;
 {
-	if(screen->TekEmu)
-		XWarpMouse(TWindow(screen), TFullWidth(screen) / 2,
-		 TFullHeight(screen) / 2);
-	else
-		XWarpMouse(VWindow(screen), FullWidth(screen) / 2,
-		 FullHeight(screen) / 2);
+	register GC gc;
+	register Pixmap pix;
+	register TScreen *screen = &term.screen;
+	XGCValues gcVals;
+	XImage tileimage;
+	GC XtGetGC();
+
+        pix = (Pixmap)XCreatePixmap(screen->display, 
+	  DefaultRootWindow(screen->display), width, height, depth);
+	gcVals.foreground = foreground;
+	gcVals.background = background;
+	gc = XCreateGC(screen->display, (Drawable) pix, 
+	  GCForeground+GCBackground, &gcVals);
+	tileimage.height = height;
+	tileimage.width = width;
+	tileimage.xoffset = 0;
+	tileimage.format = XYBitmap;
+	tileimage.data = bits;
+	tileimage.byte_order = LSBFirst;
+	tileimage.bitmap_unit = 8;
+	tileimage.bitmap_bit_order = LSBFirst;
+	tileimage.bitmap_pad = 8;
+	tileimage.bytes_per_line = (width+7)>>3;
+	tileimage.depth = 1;
+        XPutImage(screen->display, pix, gc, &tileimage, 0, 0, 0, 0, width, height);
+        /* done with gc */
+	return(pix);
 }
 
-#define	ENTERLEAVE	500000L
 
-DoEnterLeave(screen, type)
-register Screen *screen;
-int type;
+Pixmap make_gray(fg, bg, depth)
+Pixel fg, bg;
 {
-	if (!screen->autoraise && !screen->holdoff) {
-	    if (type == EnterWindow)
-		    selectwindow( screen, INWINDOW );
-	    else    unselectwindow( screen, INWINDOW );
-	    return;
-	}
-
-	screen->timer = type;
-	if(!screen->holdoff)
-		Timer(ENTERLEAVE);
+	return(Make_tile(gray_width, gray_height, gray_bits, fg, bg, depth));
 }
 
-Timer(val)
-long val;
+/* ARGSUSED */
+Cursor make_tcross(fg, bg)
+Pixel fg, bg;
 {
-	struct itimerval it;
-
-	bzero(&it, sizeof(it));
-	it.it_value.tv_usec = val;
-	setitimer(ITIMER_REAL, &it, (struct itimerval *)0);
+	register TScreen *screen = &term.screen;
+	Cursor c;
+	
+	c = XCreateFontCursor(screen->display, XC_tcross);
+/*
+	XRecolorCursor(screen->display, c, PixelToColor(fg), PixelToColor(bg));
+*/
+	return(c);
 }
 
-onalarm()
+/* ARGSUSED */
+Cursor make_xterm(fg, bg)
+unsigned long fg, bg;
 {
-	register Screen *screen = &term.screen;
-
-	if(screen->timer == 0 || screen->holdoff) {	/* extraneous alarm */
-		Timer(0L);
-		return;
-	}
-	if(screen->timer == EnterWindow) {
-#ifdef DEBUG
-		if(debug)
-			fprintf(stderr, "onalarm: EnterWindow %s\n",
-			 screen->autoraise ? (screen->autowindow ==
-			 VWindow(screen) ? "VT" : "Tek") : "");
-#endif DEBUG
-		selectwindow(screen, INWINDOW);
-		if(screen->autoraise)
-			XRaiseWindow(screen->autowindow);
-	} else	/* LeaveWindow */
-#ifdef DEBUG
-	{
-		if(debug)
-			fputs("onalarm: LeaveWindow\n", stderr);
-#endif DEBUG
-		unselectwindow(screen, INWINDOW);
-#ifdef DEBUG
-	}
-#endif DEBUG
-	screen->timer = 0;
+	register TScreen *screen = &term.screen;
+	Cursor c;
+	
+	c = XCreateFontCursor(screen->display, XC_xterm);
+/*
+	XRecolorCursor(screen->display, c, PixelToColor(fg), PixelToColor(bg));
+*/
+	return(c);
 }
 
-Pixmap make_hilite(fg, bg)
-int fg, bg;
-{
-	extern Pixmap Make_tile();
+static XColor foreground = { 0L, 65535, 65535, 65535 };
+static XColor background = { 0L,    0,     0,     0 };
 
-	return(Make_tile(hilite_width, hilite_height, hilite_bits, fg,
-	 bg));
+Cursor make_wait(fg, bg)
+Pixel fg, bg;
+{
+	register TScreen *screen = &term.screen;
+	Pixmap source, mask;
+
+	source = Make_tile(wait_width, wait_height, wait_bits, fg, bg, 1);
+	mask = Make_tile(waitmask_width, waitmask_height, waitmask_bits, 
+	 fg, bg, 1);
+/*
+	return(XCreatePixmapCursor(screen->display, source, mask, PixelToColor(fg),
+	 PixelToColor(bg), wait_x_hot, wait_y_hot));
+*/
+	return(XCreatePixmapCursor(screen->display, source, mask, 
+	 &foreground, &background, wait_x_hot, wait_y_hot));
 }
 
-Pixmap make_gray()
-{
-	extern Pixmap Make_tile();
+/* ARGSUSED */
+Cursor make_arrow(fg, bg)
+unsigned long fg, bg;
 
-	return(Make_tile(gray_width, gray_height, gray_bits, BlackPixel,
-	 WhitePixel));
-}
-
-Cursor make_tcross(fg, bg, func)
-int fg, bg, func;
 {
-	return(XCreateCursor(tcross_width, tcross_height, tcross_bits,
-	 tcross_mask_bits, tcross_x_hot, tcross_y_hot, fg, bg, func));
-}
-
-Cursor make_xterm(fg, bg, func)
-int fg, bg, func;
-{
-	return(XCreateCursor(xterm_width, xterm_height, xterm_bits,
-	 xterm_mask_bits, xterm_x_hot, xterm_y_hot, fg, bg, func));
-}
-
-Cursor make_wait(fg, bg, func)
-int fg, bg, func;
-{
-	return(XCreateCursor(wait_width, wait_height, wait_bits, waitmask_bits,
-	 wait_x_hot, wait_y_hot, fg, bg, func));
-}
-
-Cursor make_arrow(fg, bg, func)
-int fg, bg, func;
-{
-	return(XCreateCursor(left_ptr_width, left_ptr_height, left_ptr_bits,
-	 left_ptr_mask_bits, left_ptr_x_hot, left_ptr_y_hot, fg, bg, func));
+	register TScreen *screen = &term.screen;
+	Cursor c;
+	
+	c = XCreateFontCursor(screen->display, XC_left_ptr);
+/*
+	XRecolorCursor(screen->display, c, PixelToColor(fg), PixelToColor(bg));
+*/
+	return(c);
 }
 
 char *uniquesuffix(name)
@@ -577,25 +365,30 @@ char *name;
 	register Window *cp;
 	register int temp, j, k, exact, *number;
 	char *wname;
-	Window *children, parent;
-	int nchildren;
+	Window *children, parent, root;
+	unsigned int nchildren;
 	static char *suffix, sufbuf[10];
+	TScreen *screen = &term.screen;
 	char *malloc();
 
 	if(suffix)
 		return(suffix);
 	suffix = sufbuf;
-	if(!XQueryTree(RootWindow, &parent, &nchildren, &children) ||
-	 nchildren < 1 || (number = (int *)malloc(nchildren * sizeof(int)))
+	if(!XQueryTree(
+	    screen->display, 
+	    DefaultRootWindow(screen->display), 
+	    &root, &parent,
+	    &children, &nchildren) ||
+	 nchildren < 1 || (number = (int *)malloc((unsigned)nchildren * sizeof(int)))
 	 == NULL)
 		return(suffix);
 	exact = FALSE;
 	i = strlen(name);
 	for(np = number, cp = children, j = nchildren ; j > 0 ; cp++, j--) {
-		if(!XFetchName(*cp, &wname) || wname == NULL)
+		if(!XFetchName(screen->display, *cp, &wname) || wname == NULL)
 			continue;
 		if(strncmp(name, wname, i) == 0) {
-			if(wname[i] == 0 || strcmp(&wname[i], " (Tek)") == 0)
+			if(wname[i] == 0 || XStrCmp(&wname[i], " (Tek)") == 0)
 				exact = TRUE;
 			else if(strncmp(&wname[i], " #", 2) == 0)
 				*np++ = atoi(&wname[i + 2]);
@@ -639,353 +432,100 @@ char *name;
 Bell()
 {
 	extern Terminal term;
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
+	register Pixel xorPixel = screen->foreground ^ screen->background;
+	XGCValues gcval;
+	GC visualGC;
 
 	if(screen->visualbell) {
+		gcval.function = GXxor;
+		gcval.foreground = xorPixel;
+		visualGC = XtGetGC(screen->display, (XContext)NULL, 
+		 DefaultRootWindow(screen->display),
+		 GCFunction+GCForeground, &gcval);
 		if(screen->TekEmu) {
-			if(screen->icon_show && !screen->active_icon) {
-				XPixSet(screen->iconTwin.window, 0, 0,
-				 screen->iconTwin.width, screen->iconTwin.height,
-				 screen->foreground);
-				XFlush();
-				XClear(screen->iconTwin.window);
-				RefreshIcon(screen, screen->iconTwin.window);
-			} else {
-				XPixFill(TWindow(screen), 0, 0,
-				 TFullWidth(screen), TFullHeight(screen),
-				 screen->foreground, (Bitmap)0, GXinvert,
-				 screen->xorplane);
-				XFlush();
-				XPixFill(TWindow(screen), 0, 0,
-				 TFullWidth(screen), TFullHeight(screen),
-				 screen->foreground, (Bitmap)0, GXinvert,
-				 screen->xorplane);
-			}
+			XFillRectangle(
+			    screen->display,
+			    TWindow(screen), 
+			    visualGC,
+			    0, 0,
+			    (unsigned) TFullWidth(screen),
+			    (unsigned) TFullHeight(screen));
+			XFlush(screen->display);
+			XFillRectangle(
+			    screen->display,
+			    TWindow(screen), 
+			    visualGC,
+			    0, 0,
+			    (unsigned) TFullWidth(screen),
+			    (unsigned) TFullHeight(screen));
 		} else {
-			if(screen->icon_show && !screen->active_icon) {
-				XPixSet(screen->iconVwin.window, 0, 0,
-				 screen->iconVwin.width, screen->iconVwin.height,
-				 screen->foreground);
-				XFlush();
-				XClear(screen->iconVwin.window);
-				RefreshIcon(screen, screen->iconVwin.window);
-			} else {
-				XPixSet(VWindow(screen), 0, 0, FullWidth(screen),
-				 FullHeight(screen), screen->foreground);
-				XFlush();
-				XClear(VWindow(screen));
-				ScrnRefresh(screen, 0, 0, screen->max_row + 1 +
-				 screen->statusline, screen->max_col + 1);
-			}
+			XFillRectangle(
+			    screen->display,
+			    VWindow(screen), 
+			    visualGC,
+			    0, 0,
+			    (unsigned) FullWidth(screen),
+			    (unsigned) FullHeight(screen));
+			XFlush(screen->display);
+			XFillRectangle(
+			    screen->display,
+			    VWindow(screen), 
+			    visualGC,
+			    0, 0,
+			    (unsigned) FullWidth(screen),
+			    (unsigned) FullHeight(screen));
 		}
 	} else
-		XFeep(0);
+		XBell(screen->display, 0);
 }
 
 Redraw()
 {
 	extern Terminal term;
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
+	XExposeEvent event;
 
-	if(VWindow(screen) && screen->show) {
-		VTExpose(NULL);
+	event.type = Expose;
+	event.display = screen->display;
+	event.x = 0;
+	event.y = 0;
+	event.width = DisplayWidth(
+	  screen->display, DefaultScreen(screen->display));
+	event.height =DisplayHeight(
+	  screen->display, DefaultScreen(screen->display));
+	event.count = 0; 
+	
+	if(VWindow(screen)) {
+		extern XtEventReturnCode VTExpose();
+
+	        event.window = VWindow(screen);
+		(void) VTExpose(&event, (caddr_t)NULL);
 		if(screen->scrollbar) {
-			XClear(screen->sb->bar);
-			XClear(screen->sb->region);
-			screen->sb->buttonstate = -1;
-			DrawButton(screen->sb);
-			screen->sb->savestate = -1;
-			DrawSave(screen->sb);
-		}
-		if(Titlebar(screen)) {
-			XClear(screen->title.tbar);
-			XClear(screen->title.left);
-			XClear(screen->title.right);
-			VTTitleExpose(NULL);
+			RedrawScrollBar(screen->scrollWindow);
 		}
 	}
 	if(TWindow(screen) && screen->Tshow) {
-		TekExpose(NULL);
-		if(Titlebar(screen)) {
-			XClear(screen->Ttitle.tbar);
-			XClear(screen->Ttitle.left);
-			XClear(screen->Ttitle.right);
-			TekTitleExpose(NULL);
-		}
+	        event.window = TWindow(screen);
+		TekExpose(&event);
 	}
-}
-
-IconInit(screen, bm, Tbm)
-register Screen *screen;
-char *bm, *Tbm;
-{
-	register int w;
-
-	if(!bm && !Tbm) {	/* use default bitmaps */
-		screen->iconbitmap.bits = icon_bits;
-		screen->Ticonbitmap.bits = tek_icon_bits;
-		screen->bitmapwidth = screen->iconbitmap.width =
-		 screen->Ticonbitmap.width = icon_width;
-		screen->bitmapheight = screen->iconbitmap.height =
-		 screen->Ticonbitmap.height = icon_height;
-	} else if(bm && !*bm && Tbm && !*Tbm)	/* both empty means no bitmap */
-		screen->bitmapwidth = screen->bitmapheight = 0;
-	else {			/* user defined bitmap(s) */
-		if(bm && *bm) {
-			if((w = XReadBitmapFile(bm, &screen->iconbitmap.width,
-			 &screen->iconbitmap.height, &screen->iconbitmap.bits,
-			 NULL, NULL)) == 0) {
-openerror:
-				fprintf(stderr, "%s: Can't open %s\n",
-				 xterm_name, bm);
-				Exit(ERROR_OPENBITMAP);
-			} else if(w < 0) {
-syntaxerror:
-				fprintf(stderr, "%s: Syntax error in %s\n",
-				 xterm_name, bm);
-				Exit(ERROR_SYNTAXBITMAP);
-			}
-			screen->bitmapwidth = screen->iconbitmap.width;
-			screen->bitmapheight = screen->iconbitmap.height;
-		}
-		if(Tbm && *Tbm) {
-			if((w = XReadBitmapFile(Tbm, &screen->Ticonbitmap.width,
-			 &screen->Ticonbitmap.height, &screen->Ticonbitmap.bits,
-			 NULL, NULL)) == 0)
-				goto openerror;
-			else if(w < 0)
-				goto syntaxerror;
-			if(screen->bitmapwidth < screen->Ticonbitmap.width)
-				screen->bitmapwidth = screen->Ticonbitmap.width;
-			if(screen->bitmapheight < screen->Ticonbitmap.height)
-				screen->bitmapheight =
-				 screen->Ticonbitmap.height;
-		}
-		if(!screen->iconbitmap.bits) {
-			if(!screen->Ticonbitmap.bits) {
-				screen->Ticonbitmap.bits = tek_icon_bits;
-				screen->bitmapwidth = screen->Ticonbitmap.width
-				 = icon_width;
-				screen->bitmapheight =
-				 screen->Ticonbitmap.height = icon_height;
-			}
-			screen->iconbitmap.bits = screen->Ticonbitmap.bits;
-			screen->iconbitmap.width = screen->Ticonbitmap.width;
-			screen->iconbitmap.height = screen->Ticonbitmap.height;
-		} else if(!screen->Ticonbitmap.bits) {
-			if(!screen->iconbitmap.bits) {
-				screen->iconbitmap.bits = icon_bits;
-				screen->bitmapwidth = screen->iconbitmap.width
-				 = icon_width;
-				screen->bitmapheight =
-				 screen->iconbitmap.height = icon_height;
-			}
-			screen->Ticonbitmap.bits = screen->iconbitmap.bits;
-			screen->Ticonbitmap.width = screen->iconbitmap.width;
-			screen->Ticonbitmap.height = screen->iconbitmap.height;
-		}
-	}
-	if((screen->winname = malloc(strlen(win_name) + 10)) == NULL)
-		Error(ERROR_WINNAME);
-	strcpy(screen->winname, win_name);
-	strcat(screen->winname, uniquesuffix(win_name));
-	screen->winnamelen = strlen(screen->winname);
-	IconRecalc(screen);
-}
-
-IconRecalc(screen)
-register Screen *screen;
-{
-	register int i, w;
-
-	if (screen->active_icon) return;
-
-	w = XQueryWidth(screen->winname, screen->titlefont->id);
-	if(screen->bitmapwidth > 0) {
-		if(screen->textundericon) {
-			screen->icon_text_x = TITLEPAD;
-			screen->icon_text_y = screen->bitmapheight +
-			 2 * TITLEPAD;
-			screen->iconVwin.height = screen->bitmapheight +
-			  screen->titlefont->height + 3 * TITLEPAD;
-			screen->iconbitmap.x = screen->Ticonbitmap.x =
-			 screen->iconbitmap.y = screen->Ticonbitmap.y =
-			 TITLEPAD;
-			if((i = screen->bitmapwidth - w) >= 0) {
-				screen->iconVwin.width = screen->bitmapwidth +
-				 2 * TITLEPAD;
-				screen->icon_text_x += i / 2;
-			} else {
-				screen->iconVwin.width = w + 2 * TITLEPAD;
-				i = (-i) / 2;
-				screen->iconbitmap.x += i;
-				screen->Ticonbitmap.x += i;
-			}
-		} else {
-			screen->icon_text_x = screen->bitmapwidth +
-			 2 * TITLEPAD;
-			screen->icon_text_y = TITLEPAD;
-			screen->iconVwin.width = w + screen->bitmapwidth +
-			 3 * TITLEPAD;
-			screen->iconbitmap.x = screen->Ticonbitmap.x =
-			 screen->iconbitmap.y = screen->Ticonbitmap.y =
-			 TITLEPAD;
-			if((i = screen->bitmapheight -
-			 screen->titlefont->height) >= 0) {
-				screen->iconVwin.height = screen->bitmapheight +
-				 2 * TITLEPAD;
-				screen->icon_text_y += i / 2;
-			} else {
-				screen->iconVwin.height = screen->titlefont->height
-				 + 2 * TITLEPAD;
-				i = (-i) / 2;
-				screen->iconbitmap.y += i;
-				screen->Ticonbitmap.y += i;
-			}
-		}
-		if((i = screen->iconbitmap.width - screen->Ticonbitmap.width)
-		 >= 0)
-			screen->Ticonbitmap.x += i / 2;
-		else
-			screen->iconbitmap.x += (-i) / 2;
-		if((i = screen->iconbitmap.height - screen->Ticonbitmap.height)
-		 >= 0)
-			screen->Ticonbitmap.y += i / 2;
-		else
-			screen->iconbitmap.y += (-i) / 2;
-	} else {
-		screen->icon_text_x = TITLEPAD;
-		screen->iconVwin.width = w + 2 * TITLEPAD;
-		screen->iconVwin.height = screen->titlefont->height + 2 * TITLEPAD;
-	}
-
-	if (screen->iconVwin.window)
-	    XChangeWindow( screen->iconVwin.window, screen->iconVwin.width,
-			   screen->iconVwin.height );
-
-	if (screen->iconTwin.window) {
-	    screen->iconTwin.width = screen->iconVwin.width;
-	    screen->iconTwin.height = screen->iconVwin.height;
-	    XChangeWindow( screen->iconTwin.window, screen->iconTwin.width,
-			   screen->iconTwin.height );
-	}
-
-	icon_box[0].x = screen->icon_text_x - 2;
-	icon_box[0].y = screen->icon_text_y - 2;
-	icon_box[3].x = -(icon_box[1].x = w + 3);
-	icon_box[4].y = -(icon_box[2].y = screen->titlefont->height + 3);
-}
-
-RefreshIcon(screen, window)
-register Screen *screen;
-Window window;
-{
-	register BitmapBits *bb;
-	register int fg, bg;
-
-	bb = screen->TekEmu ? &screen->Ticonbitmap : &screen->iconbitmap;
-	fg = screen->foreground;
-	bg = screen->background;
-	if(screen->bitmapwidth > 0)
-		XBitmapBitsPut(window, bb->x, bb->y, bb->width, bb->height,
-		 bb->bits, fg, bg, (Bitmap)0, GXcopy, AllPlanes);
-	XText(window, screen->icon_text_x, screen->icon_text_y,
-	 screen->winname, screen->winnamelen, screen->titlefont->id, fg, bg);
-	screen->icon_show = TRUE;
-	if(screen->iconinput)
-		IconBox(screen);
-}
-
-IconBox(screen)
-register Screen *screen;
-{
-	if (screen->active_icon) return;
-
-	XDraw(screen->TekEmu ? screen->iconTwin.window : screen->iconVwin.window,
-	 icon_box, NBOX, 1, 1, screen->foreground, GXcopy, AllPlanes);
-}
-
-/*
- * Move win1's icon window to where win2's icon window is.
- */
-moveiconwindow(win1, win2)
-register Window win1, win2;
-{
-	WindowInfo wininfo1, wininfo2;
-
-	XQueryWindow(win1, &wininfo1);
-	XQueryWindow(win2, &wininfo2);
-	if(wininfo1.assoc_wind && wininfo2.assoc_wind) {
-		XQueryWindow(wininfo2.assoc_wind, &wininfo2);
-		XMoveWindow(wininfo1.assoc_wind, wininfo2.x, wininfo2.y);
-	}
-}
-
-IconGeometry(screen, ix, iy)
-register Screen *screen;
-register int *ix, *iy;
-{
-	register int i;
-	int w, h;
-
-	if(icon_geom) {
-		i = XParseGeometry(icon_geom, ix, iy, &w, &h);
-		if((i & XValue) && (i & XNegative))
-			*ix = DisplayWidth() - *ix - screen->iconVwin.width - 2 *
-			 screen->borderwidth;
-		if((i & YValue) && (i & YNegative))
-			*iy = DisplayHeight() - *iy - screen->iconVwin.height - 2 *
-			 screen->borderwidth;
-	}
-}
-
-InTitle(screen, window, x)
-register Screen *screen;
-Window window;
-int x;
-{
-	register int i, j;
-
-	if(window == screen->title.tbar) {
-		i = (j = FullWidth(screen) / 2) - (screen->title.x -
-		 screen->title_n_size);
-		j = x - j;
-		if(j < 0)
-			j = -j;
-		if(j < i) {
-			XUnmapWindow(VWindow(screen));
-			XMapWindow(screen->iconVwin.window);
-			return(TRUE);
-		}
-	} else {
-		i = (j = TFullWidth(screen) / 2) - (screen->Ttitle.x -
-		 screen->title_n_size);
-		j = x - j;
-		if(j < 0)
-			j = -j;
-		if(j < i) {
-			XUnmapWindow(TWindow(screen));
-			XMapWindow(screen->iconTwin.window);
-			return(TRUE);
-		}
-	}
-	return(FALSE);
 }
 
 SyncUnmap(win, mask)
 register Window win;
-register int mask;
+register long int mask;
 {
 	XEvent ev;
 	register XEvent *rep = &ev;
+	register TScreen *screen = &term.screen;
 
 	do { /* ignore events through unmap */
-		XWindowEvent(win, mask, rep);
-	} while(rep->type != UnmapWindow);
+		XWindowEvent(screen->display, win, mask, rep);
+	} while(rep->type != UnmapNotify);
 }
 
 StartLog(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	register char *cp;
 	register int i;
@@ -1000,7 +540,7 @@ register Screen *screen;
 			free(screen->logfile);
 		if(log_default == NULL)
 			mktemp(log_default = log_def_name);
-		if((screen->logfile = malloc(strlen(log_default) + 1)) == NULL)
+		if((screen->logfile = malloc((unsigned)strlen(log_default) + 1)) == NULL)
 			return;
 		strcpy(screen->logfile, log_default);
 	}
@@ -1028,7 +568,7 @@ register Screen *screen;
 				if(((cp = getenv("SHELL")) == NULL || *cp == 0)
 				 && ((pw = getpwuid(screen->uid)) == NULL ||
 				 *(cp = pw->pw_shell) == 0) ||
-				 (shell = malloc(strlen(cp) + 1)) == NULL)
+				 (shell = malloc((unsigned) strlen(cp) + 1)) == NULL)
 					shell = "/bin/sh";
 				else
 					strcpy(shell, cp);
@@ -1068,7 +608,7 @@ register Screen *screen;
 }
 
 CloseLog(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	if(!screen->logging || (screen->inhibit & I_LOG))
 		return;
@@ -1078,7 +618,7 @@ register Screen *screen;
 }
 
 FlushLog(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	register char *cp;
 	register int i;
@@ -1091,16 +631,17 @@ register Screen *screen;
 
 logpipe()
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 
 	if(screen->logging)
 		CloseLog(screen);
 }
 
+
 do_osc(func)
 int (*func)();
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	register int mode, c;
 	register char *cp;
 	char buf[512];
@@ -1114,11 +655,22 @@ int (*func)();
 		*cp++ = c;
 	*cp = 0;
 	switch(mode) {
-	 case 0:	/* new title */
-		Retitle(buf);
+	 case 0:	/* new icon name and title*/
+		Changename(buf);
+		Changetitle(buf);
 		break;
+
+	 case 1:	/* new icon name only */
+		Changename(buf);
+		break;
+
+	 case 2:	/* new title only */
+		Changetitle(buf);
+		break;
+
+
 	 case 46:	/* new log file */
-		if((cp = malloc(strlen(buf) + 1)) == NULL)
+		if((cp = malloc((unsigned)strlen(buf) + 1)) == NULL)
 			break;
 		strcpy(cp, buf);
 		if(screen->logfile)
@@ -1128,81 +680,66 @@ int (*func)();
 	}
 }
 
-Retitle(name)
+Changename(name)
 register char *name;
 {
-	register Screen *screen = &term.screen;
-	register int w, i, j;
-	char icon[512];
+	register TScreen *screen = &term.screen;
 
-	free(screen->winname);
-	if((screen->winname = malloc((screen->winnamelen = strlen(name)) + 1))
-	 == NULL)
-		Error(ERROR_RTMALLOC1);
-	strcpy(screen->winname, name);
-	strcpy(icon, name);
-	strcat(icon, " (icon)");
-	IconRecalc(screen);
+	free(screen->iconname);
+	if((screen->iconname = 
+	 malloc((unsigned)(screen->iconnamelen = strlen(name)) + 1)) == NULL)
+		Error(ERROR_CNMALLOC1);
+	strcpy(screen->iconname, name);
 	if(screen->fullVwin.window) {
-		XStoreName(screen->fullVwin.window, name);
-		XStoreName(screen->iconVwin.window, icon);
-		XChangeWindow(screen->iconVwin.window, screen->iconVwin.width,
-		 screen->iconVwin.height);
-		if(screen->title.tbar) {
-			w = FullWidth(screen);
-			screen->title.fullwidth = XQueryWidth(name,
-			 screen->titlefont->id);
-			if((screen->title.width = i = screen->title.fullwidth)
-			 > (j = w - 2 * (MINHILITE + screen->title_n_size + 1)))
-				screen->title.width = (i = j) +
-				 screen->title_n_size;
-			j = w - i - 2 * (screen->title_n_size + 1);
-			i = j / 2;
-			j -= i;
-			screen->title.x = i + 1 + screen->title_n_size;
-			screen->title.y = TITLEPAD;
-			XClear(screen->title.tbar);
-			XChangeWindow(screen->title.left, i,
-			 screen->titlefont->height);
-			XConfigureWindow(screen->title.right, w - j - 1,
-			 TITLEPAD, j, screen->titlefont->height);
-			VTTitleExpose((XExposeWindowEvent *)NULL);
-		}
+		XChangeProperty(
+		    screen->display,
+		    VWindow(screen), 
+		    XA_WM_ICON_NAME, XA_STRING,
+		    8, PropModeReplace,
+		    (unsigned char *)name, screen->iconnamelen);
 	}
 	if(screen->fullTwin.window) {
-		free(screen->Twinname);
-		if((screen->Twinname = malloc((screen->Twinnamelen =
-		 screen->winnamelen + 6) + 1)) == NULL)
-			Error(ERROR_RTMALLOC2);
-		strcpy(screen->Twinname, name);
-		strcat(screen->Twinname, " (Tek)");
-		XStoreName(screen->fullTwin.window, screen->Twinname);
-		XStoreName(screen->iconTwin.window, icon);
-		XChangeWindow(screen->iconTwin.window, screen->iconTwin.width,
-		 screen->iconTwin.height);
-		if(screen->Ttitle.tbar) {
-			w = TFullWidth(screen);
-			screen->Ttitle.fullwidth = XQueryWidth(screen->Twinname,
-			 screen->titlefont->id);
-			if((screen->Ttitle.width = i = screen->Ttitle.fullwidth)
-			 > (j = w - 2 * (MINHILITE + screen->title_n_size + 1)))
-				screen->Ttitle.width = (i = j) +
-				 screen->title_n_size;
-			j = w - i - 2 * (screen->title_n_size + 1);
-			i = j / 2;
-			j -= i;
-			screen->Ttitle.x = i + 1 + screen->title_n_size;
-			screen->Ttitle.y = TITLEPAD;
-			XClear(screen->Ttitle.tbar);
-			XChangeWindow(screen->Ttitle.left, i,
-			 screen->titlefont->height);
-			XConfigureWindow(screen->Ttitle.right, w - j - 1,
-			 TITLEPAD, j, screen->titlefont->height);
-			TekTitleExpose((XExposeWindowEvent *)NULL);
-		}
+		free(screen->Ticonname);
+		if((screen->Ticonname = malloc((unsigned)(screen->Ticonnamelen =
+		 screen->iconnamelen + 6) + 1)) == NULL)
+			Error(ERROR_CNMALLOC2);
+		strcpy(screen->Ticonname, name);
+		strcat(screen->Ticonname, " (Tek)");
+		XChangeProperty(
+		    screen->display,
+		    VWindow(screen), 
+		    XA_WM_ICON_NAME, XA_STRING, 8, PropModeReplace,
+		    (unsigned char *)screen->Ticonname, screen->Ticonnamelen);
 	}
 }
 
+Changetitle(name)
+register char *name;
+{
+	register TScreen *screen = &term.screen;
+
+	free(screen->titlename);
+	if((screen->titlename = 
+	 malloc((unsigned)(screen->titlenamelen = strlen(name)) + 1)) == NULL)
+		Error(ERROR_CNMALLOC1);
+	strcpy(screen->titlename, name);
+	if(screen->fullVwin.window) {
+		XStoreName(screen->display, VWindow(screen), name);
+	}
+	if(screen->fullTwin.window) {
+		free(screen->Ttitlename);
+		if((screen->Ttitlename = malloc((unsigned)(screen->Ttitlenamelen =
+		 screen->titlenamelen + 6) + 1)) == NULL)
+			Error(ERROR_CNMALLOC2);
+		strcpy(screen->Ttitlename, name);
+		strcat(screen->Ttitlename, " (Tek)");
+		XStoreName(screen->display, TWindow(screen), screen->Ttitlename);
+	}
+}
+
+#ifndef DEBUG
+/* ARGSUSED */
+#endif
 Panic(s, a)
 char	*s;
 int a;
@@ -1220,7 +757,7 @@ int a;
 SysError (i)
 int i;
 {
-	fprintf (stderr, "%s: Error %d, errno %d:", xterm_name, i, errno);
+	fprintf (stderr, "%s: Error %d, errno %d:\n", xterm_name, i, errno);
 	perror ("");
 	Cleanup(i);
 }
@@ -1240,7 +777,7 @@ int code;
 {
 #ifdef notdef
 	extern Terminal term;
-	register Screen *screen;
+	register TScreen *screen;
 
 	screen = &term.screen;
 	if (screen->pid > 1)
@@ -1266,7 +803,7 @@ register char *var, *value;
 	while (environ [index] != NULL) {
 	    if (strncmp (environ [index], var, len) == 0) {
 		/* found it */
-		environ[index] = (char *)malloc (len + strlen (value) + 1);
+		environ[index] = (char *)malloc ((unsigned)len + strlen (value) + 1);
 		strcpy (environ [index], var);
 		strcat (environ [index], value);
 		return;
@@ -1278,8 +815,8 @@ register char *var, *value;
 	if (debug) fputs ("expanding env\n", stderr);
 #endif DEBUG
 
-	environ [index] = (char *) malloc (len + strlen (value) + 1);
-	strcpy (environ [index], var);
+	environ [index] = (char *) malloc ((unsigned)len + strlen (value) + 1);
+	(void) strcpy (environ [index], var);
 	strcat (environ [index], value);
 	environ [++index] = NULL;
 }
@@ -1302,20 +839,34 @@ register char	*s1, *s2;
 	return (NULL);
 }
 
+/*ARGSUSED*/
 xerror(d, ev)
 Display *d;
 register XErrorEvent *ev;
 {
-	fprintf(stderr, "%s: %s\n", xterm_name,
-	 XErrDescrip(ev->error_code));
-	fprintf(stderr, "Request code %d, func %d, serial #%ld, window %ld\n",
-	 ev->request_code, ev->func, ev->serial, (long)ev->window);
-	Exit(ERROR_XERROR);
+        char buffer[BUFSIZ];
+	XGetErrorText(d, ev->error_code, buffer, BUFSIZ);
+	fprintf(stderr, "%s: %s\n", xterm_name, buffer);
+	fprintf(stderr, "Request code %d, minor code %d, serial #%ld, resource id %ld\n",
+	 ev->request_code, ev->minor_code, ev->serial, (long)ev->resourceid);
+    	_cleanup();
+    	abort();
+/*	Exit(ERROR_XERROR); */
 }
 
+/*ARGSUSED*/
 xioerror(d)
 Display *d;
 {
 	perror(xterm_name);
 	Exit(ERROR_XIOERROR);
+}
+
+XStrCmp(s1, s2)
+char *s1, *s2;
+{
+  if (s1 && s2) return(strcmp(s1, s2));
+  if (s1 && *s1) return(1);
+  if (s2 && *s2) return(-1);
+  return(0);
 }

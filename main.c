@@ -1,16 +1,37 @@
 /*
- *	@Source: /u1/X/xterm/RCS/main.c,v @
- *	@Header: main.c,v 10.102 86/12/08 09:30:16 swick Exp @
+ *	@Source: /orpheus/u1/X11/clients/xterm/RCS/main.c,v @
+ *	@Header: main.c,v 1.29 87/08/03 17:05:39 swick Locked @
  */
 
-#include <X/mit-copyright.h>
+#include <X11/copyright.h>
 
-/* Copyright    Massachusetts Institute of Technology    1984, 1985	*/
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
 
 /* main.c */
 
 #ifndef lint
-static char sccs_id[] = "@(#)main.c\tX10/6.6\t11/10/86";
+static char rcs_id[] = "@Header: main.c,v 1.29 87/08/03 17:05:39 swick Locked @";
 #endif	lint
 
 #include <pwd.h>
@@ -24,20 +45,39 @@ static char sccs_id[] = "@(#)main.c\tX10/6.6\t11/10/86";
 #include <signal.h>
 #include <strings.h>
 #include <setjmp.h>
+
+#ifdef apollo
+#include <sys/types.h>
+#define ttyslot() 1
+#define vhangup() ;
+#endif
+
 #include <utmp.h>
 #include <sys/param.h>	/* for NOFILE */
-#include <X/Xlib.h>
-#include "scrollbar.h"
+#include <X11/Xlib.h>
+#include <X11/Xtlib.h>
 #include "ptyx.h"
 #include "data.h"
 #include "error.h"
 #include "main.h"
 
+extern Pixmap make_gray();
+extern char *malloc();
+extern char *calloc();
+extern char *ttyname();
+extern void exit();
+extern void sleep();
+extern void bcopy();
+extern void vhangup();
+extern long lseek();
+
+XrmNameList nameList;
+XrmClassList classList;
+
 int switchfb[] = {0, 2, 1, 3};
 
 static int reapchild ();
 
-static char *brdr_color;
 static char **command_to_exec;
 static struct  sgttyb d_sg = {
         0, 0, 0177, CKILL, EVENP|ODDP|ECHO|XTABS|CRMOD
@@ -51,15 +91,10 @@ static struct  ltchars d_ltc = {
         CFLUSH, CWERASE, CLNEXT
 };
 static int d_disipline = NTTYDISC;
-static int d_lmode = LCRTBS|LCRTERA|LCRTKIL|LCTLECH;
-static char def_bold_font[] = DEFBOLDFONT;
-static char def_font[] = DEFFONT;
-static char def_title_font[] = DEFTITLEFONT;
-static char def_icon_font[] = DEFICONFONT;
+static long int d_lmode = LCRTBS|LCRTERA|LCRTKIL|LCTLECH;
 static char display[256];
 static char etc_utmp[] = "/etc/utmp";
 static char *get_ty;
-static char *iconbitmap;
 static int inhibit;
 static int log_on;
 static int login_shell;
@@ -68,283 +103,326 @@ static int loginpty;
 #ifdef TIOCCONS
 static int Console;
 #endif TIOCCONS
-static char *tekiconbitmap;
 static int tslot;
-static char *xdef[] = {
-	"ActiveIcon",		/* DEF_ACTIVEICON */
-	"AllowIconInput",	/* DEF_ALLOWICONINPUT */
-	"AutoRaise",		/* DEF_AUTORAISE */
-	"Background",		/* DEF_BACKGROUND */
-	"BodyFont",		/* DEF_BODYFONT */
-	"BoldFont",		/* DEF_BOLDFONT */
-	"Border",		/* DEF_BORDER */
-	"BorderWidth",		/* DEF_BORDERWIDTH */
-	"C132",			/* DEF_C132 */
-	"Curses",		/* DEF_CURSES */
-	"Cursor",		/* DEF_CURSOR */
-	"DeiconifyWarp",	/* DEF_DEICONWARP */
-	"Foreground",		/* DEF_FOREGROUND */
-	"IconBitmap",		/* DEF_ICONBITMAP */
-	"IconFont",		/* DEF_ICONFONT */
-	"IconStartup",		/* DEF_ICONSTARTUP */
-	"InternalBorder",	/* DEF_INTERNALBORDER */
-	"JumpScroll",		/* DEF_JUMPSCROLL */
-#ifdef KEYBD
-	"KeyBoard",		/* DEF_KEYBOARD */
-#endif KEYBD
-	"LogFile",		/* DEF_LOGFILE */
-	"Logging",		/* DEF_LOGGING */
-	"LogInhibit",		/* DEF_LOGINHIBIT */
-	"LoginShell",		/* DEF_LOGINSHELL */
-	"MarginBell",		/* DEF_MARGINBELL */
-	"Mouse",		/* DEF_MOUSE */
-	"NMarginBell",		/* DEF_NMARGINBELL */
-	"PageOverlap",		/* DEF_PAGEOVERLAP */
-	"PageScroll",		/* DEF_PAGESCROLL */
-	"ReverseVideo",		/* DEF_REVERSEVIDEO */
-	"ReverseWrap",		/* DEF_REVERSEWRAP */
-	"SaveLines",		/* DEF_SAVELINES */
-	"ScrollBar",		/* DEF_SCROLLBAR */
-	"ScrollInput",		/* DEF_SCROLLINPUT */
-	"ScrollKey",		/* DEF_SCROLLKEY */
-	"SignalInhibit",	/* DEF_SIGNALINHIBIT */
-	"StatusLine",		/* DEF_STATUSLINE */
-	"StatusNormal",		/* DEF_STATUSNORMAL */
-	"TekIconBitmap",	/* DEF_TEKICONBITMAP */
-	"TekInhibit",		/* DEF_TEKINHIBIT */
-	"TextUnderIcon",	/* DEF_TEXTUNDERICON */
-	"TitleBar",		/* DEF_TITLEBAR */
-	"TitleFont",		/* DEF_TITLEFONT */
-	"VisualBell",		/* DEF_VISUALBELL */
-	0,
+static jmp_buf env;
+
+#define	XtNxterm		"xterm"
+#define	XtNwindowName		"windowName"
+#define	XtNboldFont		"boldFont"
+#define	XtNc132			"c132"
+#define XtNtitle		"title"
+#define	XtNcurses		"curses"
+#define	XtNcursor		"cursor"
+#define	XtNcursorShape		"cursorShape"
+#define	XtNgeometry		"geometry"
+#define	XtNiconStartup		"iconStartup"
+#define	XtNinternalBorder	"internalBorder"
+#define	XtNjumpScroll		"jumpScroll"
+#define	XtNlogFile		"logFile"
+#define	XtNlogging		"logging"
+#define	XtNlogInhibit		"logInhibit"
+#define	XtNloginShell		"loginShell"
+#define	XtNmarginBell		"marginBell"
+#define	XtNmouse		"mouse"
+#define	XtNmultiScroll		"multiScroll"
+#define	XtNnMarginBell		"nMarginBell"
+#define	XtNreverseWrap		"reverseWrap"
+#define	XtNsaveLines		"saveLines"
+#define	XtNscrollBar		"scrollBar"
+#define	XtNscrollInput		"scrollInput"
+#define	XtNscrollKey		"scrollKey"
+#define	XtNsignalInhibit	"signalInhibit"
+#define	XtNtekInhibit		"tekInhibit"
+#define	XtNtekStartup		"tekStartup"
+#define	XtNvisualBell		"visualBell"
+
+#define	XtCApp			"App"
+#define	XtCC132			"C132"
+#define	XtCCurses		"Curses"
+#define	XtCBitmapbits		"Bitmapbits"
+#define	XtCGeometry		"Geometry"
+#define	XtCIconstartup		"Iconstartup"
+#define	XtCJumpscroll		"Jumpscroll"
+#define	XtCLogfile		"Logfile"
+#define	XtCLogging		"Logging"
+#define	XtCLoginhibit		"Loginhibit"
+#define	XtCLoginshell		"Loginshell"
+#define	XtCMarginbell		"Marginbell"
+#define	XtCMultiscroll		"Multiscroll"
+#define	XtCColumn		"Column"
+#define	XtCReverseVideo		"ReverseVideo"
+#define	XtCReverseWrap		"ReverseWrap"
+#define	XtCRows			"Rows"
+#define	XtCScrollbar		"ScrollBar"
+#define	XtCScrollcond		"Scrollcond"
+#define	XtCSignalInibit		"SignalInibit"
+#define	XtCTekInhibit		"TekInhibit"
+#define	XtCTekStartup		"TekStartup"
+#define	XtCVisualbell		"Visualbell"
+
+
+/* Defaults */
+static  Boolean	defaultFALSE	   = FALSE;
+static  Boolean	defaultTRUE	   = TRUE;
+static	char	*defaultNULL	   = NULL;
+static	int	defaultBorderWidth = DEFBORDERWIDTH;
+static	int	defaultIntBorder   = DEFBORDER;
+static  int	defaultSaveLines   = SAVELINES;
+static	int	defaultNMarginBell = N_MARGINBELL;
+static  char	*defaultFont	   = DEFFONT;
+static	char	*defaultBoldFont  = DEFBOLDFONT;
+
+/* term.screen.flags things that don't map directly from option */
+static Boolean reverseWrap;
+static Boolean logInhibit;
+static Boolean signalInhibit;
+static Boolean tekInhibit;
+
+/* term.screen.xxx things that don't map directly from option */
+static Boolean scrollbar;
+
+
+/*static*/ Resource resourceList[] = {
+{XtNbackground,	XtCColor,	XrmRPixel,	sizeof(Pixel),
+	(caddr_t) &term.screen.background,	(caddr_t) &XtDefaultBGPixel},
+{XtNforeground,	XtCColor,	XrmRPixel,	sizeof(Pixel),
+	(caddr_t) &term.screen.foreground,	(caddr_t) &XtDefaultFGPixel},
+{XtNfont,	XtCFont,	XrmRString,	sizeof(char *),
+	(caddr_t) &f_n,				(caddr_t) &defaultNULL},
+{XtNboldFont,	XtCFont,	XrmRString,	sizeof(char *),
+	(caddr_t) &f_b,				(caddr_t) &defaultNULL},
+{XtNborder,	XtCColor,	XrmRPixel,	sizeof(Pixel),
+	(caddr_t) &term.screen.bordercolor,	(caddr_t) &XtDefaultFGPixel},
+{XtNborderWidth,XtCBorderWidth,	XrmRInt,		sizeof(int),
+	(caddr_t) &term.screen.borderwidth,	(caddr_t)&defaultBorderWidth},
+{XtNc132,	XtCC132,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.c132,		(caddr_t) &defaultFALSE},
+{XtNcurses,	XtCCurses,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.curses,		(caddr_t) &defaultFALSE},
+{XtNcursor,	XtCColor,	XrmRPixel,	sizeof(Pixel),
+	(caddr_t) &term.screen.cursorcolor,	
+	(caddr_t) &term.screen.foreground},
+{XtNcursorShape,XtCCursor,	XrmRString,	sizeof(char *),
+	(caddr_t) &curs_shape,			(caddr_t) &defaultNULL},
+{XtNgeometry,XtCGeometry,	XrmRString,	sizeof(char *),
+	(caddr_t) &geo_metry,			(caddr_t) &defaultNULL},
+{XtNiconStartup,XtCIconstartup,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &iconstartup,			(caddr_t) &defaultFALSE},
+{XtNinternalBorder,XtCBorderWidth,XrmRInt,	sizeof(int),
+	(caddr_t) &term.screen.border,		(caddr_t) &defaultIntBorder},
+{XtNjumpScroll,	XtCJumpscroll,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.jumpscroll,	(caddr_t) &defaultTRUE},
+{XtNlogFile,	XtCLogfile,	XrmRString,	sizeof(char *),
+	(caddr_t) &term.screen.logfile,		(caddr_t) &defaultNULL},
+{XtNlogging,	XtCLogging,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &log_on,			(caddr_t) &defaultFALSE},
+{XtNlogInhibit,	XtCLoginhibit,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &logInhibit,			(caddr_t) &defaultFALSE},
+{XtNloginShell,	XtCLoginshell,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &login_shell,			(caddr_t) &defaultFALSE},
+{XtNmarginBell,	XtCMarginbell,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.marginbell,	(caddr_t) &defaultFALSE},
+{XtNmouse,	XtCColor,	XrmRPixel,	sizeof(Pixel),
+/*	(caddr_t) &term.screen.mousecolor,	(caddr_t) &XtDefaultFGPixel},
+*/
+	(caddr_t) &term.screen.mousecolor,	
+	(caddr_t) &term.screen.cursorcolor},
+{XtNmultiScroll,XtCMultiscroll,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.multiscroll,	(caddr_t) &defaultFALSE},
+{XtNnMarginBell,XtCColumn,	XrmRInt,	sizeof(int),
+	(caddr_t) &term.screen.nmarginbell,	(caddr_t) &defaultNMarginBell},
+{XtNreverseVideo,XtCReverseVideo,XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &re_verse,			(caddr_t) &defaultFALSE},
+{XtNreverseWrap,XtCReverseWrap,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &reverseWrap,			(caddr_t) &defaultFALSE},
+{XtNsaveLines,	XtCRows,	XrmRInt,	sizeof(int),
+	(caddr_t) &save_lines,			(caddr_t) &defaultSaveLines},
+{XtNscrollBar,	XtCScrollbar,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &scrollbar,			(caddr_t) &defaultFALSE},
+{XtNscrollInput,XtCScrollcond,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.scrollinput,	(caddr_t) &defaultTRUE},
+{XtNscrollKey,	XtCScrollcond,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.scrollkey,	(caddr_t) &defaultFALSE},
+{XtNsignalInhibit,XtCSignalInibit,XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &signalInhibit,		(caddr_t) &defaultFALSE},
+{XtNtekInhibit,	XtCTekInhibit,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &tekInhibit,			(caddr_t) &defaultFALSE},
+{XtNtekStartup,	XtCTekStartup,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.TekEmu,		(caddr_t) &defaultFALSE},
+{XtNtitle,	XtCString,	XrmRString,	sizeof(char *),
+	(caddr_t) &title_name,			(caddr_t) &defaultNULL},
+{XtNvisualBell,XtCVisualbell,	XrmRBoolean,	sizeof(Boolean),
+	(caddr_t) &term.screen.visualbell,	(caddr_t) &defaultFALSE},
+{XtNwindowName,	XtCString,	XrmRString,	sizeof(char *),
+	(caddr_t) &window_name,			(caddr_t) &defaultNULL},
+
 };
+
+
+/* Command line options table.  Only resources are entered here...there is a
+   pass over the remaining options after XtParseCommand is let loose. */
+
+static XrmOptionDescRec optionDescList[] = {
+{"=",		XtNgeometry,	XrmoptionIsArg,		(caddr_t) NULL},
+{"-132",	XtNc132,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+132",	XtNc132,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-T",		XtNtitle,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-b",		XtNinternalBorder,XrmoptionSepArg,	(caddr_t) NULL},
+{"-bd",		XtNborder,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-bg",		XtNbackground,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-bw",		XtNborderWidth,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-cr",		XtNcursor,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-cu",		XtNcurses,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+cu",		XtNcurses,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-e",		NULL,		XrmoptionSkipLine,	(caddr_t) NULL},
+{"-fb",		XtNboldFont,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-fg",		XtNforeground,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-fn",		XtNfont,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-i",		XtNiconStartup,	XrmoptionNoArg,		(caddr_t) "on"},
+{"-j",		XtNjumpScroll,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+j",		XtNjumpScroll,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-l",		XtNlogging,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+l",		XtNlogging,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-lf",		XtNlogFile,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-ls",		XtNloginShell,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+ls",		XtNloginShell,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-mb",		XtNmarginBell,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+mb",		XtNmarginBell,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-ms",		XtNmouse,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-n",		XtNwindowName,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-nb",		XtNnMarginBell,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-r",		XtNreverseVideo,XrmoptionNoArg,		(caddr_t) "on"},
+{"+r",		XtNreverseVideo,XrmoptionNoArg,		(caddr_t) "off"},
+{"-rv",		XtNreverseVideo,XrmoptionNoArg,		(caddr_t) "on"},
+{"+rv",		XtNreverseVideo,XrmoptionNoArg,		(caddr_t) "off"},
+{"-rw",		XtNreverseWrap,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+rw",		XtNreverseWrap,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-s",		XtNmultiScroll,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+s",		XtNmultiScroll,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-sb",		XtNscrollBar,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+sb",		XtNscrollBar,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-si",		XtNscrollInput,	XrmoptionNoArg,		(caddr_t) "off"},
+{"+si",		XtNscrollInput,	XrmoptionNoArg,		(caddr_t) "on"},
+{"-sk",		XtNscrollKey,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+sk",		XtNscrollKey,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-sl",		XtNsaveLines,	XrmoptionSepArg,	(caddr_t) NULL},
+{"-t",		XtNtekStartup,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+t",		XtNtekStartup,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-vb",		XtNvisualBell,	XrmoptionNoArg,		(caddr_t) "on"},
+{"+vb",		XtNvisualBell,	XrmoptionNoArg,		(caddr_t) "off"},
+{"-w",		XtNborderWidth,	XrmoptionSepArg,	(caddr_t) NULL},
+};
+
+void XtGetUsersDataBase()
+{
+	XrmResourceDataBase resources, userResources;
+	int uid;
+	extern struct passwd *getpwuid();
+	struct passwd *pw;
+	char filename[1024];
+	FILE *f;
+
+	strcpy(filename, LIBDIR);
+	strcat(filename, "/Xdefaults" );
+	f = fopen(filename, "r");
+	if (f) {
+	        XrmGetDataBase(f, &resources);
+		fclose(f);
+	} else
+		resources = NULL;
+
+	/* Open .Xdefaults file and merge into existing data base */
+	uid = getuid();
+	pw = getpwuid(uid);
+	if (pw) {
+		strcpy(filename, pw->pw_dir);
+		strcat(filename, "/.Xdefaults");
+		f = fopen(filename, "r");
+		if (f) {
+			XrmGetDataBase(f, &userResources);
+			if (resources)
+			    XrmMergeDataBases(userResources, &resources);
+			else
+			    resources = userResources;
+			fclose(f);
+		}
+		strcpy(filename, pw->pw_dir);
+		strcat(filename, "/.X11defaults");
+		f = fopen(filename, "r");
+		if (f) {
+			XrmGetDataBase(f, &userResources);
+			if (resources)
+			    XrmMergeDataBases(userResources, &resources);
+			else
+			    resources = userResources;
+			fclose(f);
+		}
+	}
+	if (resources) XrmSetCurrentDataBase(resources);
+}
+
+
+OpenDisplay()
+{
+	register TScreen *screen = &term.screen;
+	register int try;
+	for (try = 10 ; ; ) {
+	    if (screen->display = XOpenDisplay(display))
+		break;
+	    if (!get_ty) {
+		fprintf(stderr, "%s: No such display server %s\n", xterm_name,
+		 XDisplayName(display));
+		exit(ERROR_NOX);
+	    }
+	    if (--try <= 0)  {
+		fprintf (stderr, "%s: Can't connect to display server %s\n",
+		 xterm_name,  XDisplayName(display));
+		exit (ERROR_NOX2);
+	    }	    
+	    sleep (5);
+	}
+
+	if (screen->display->fd > 31) {
+		fprintf(stderr, 
+		 "%s: Display server returned bogus file descriptor %d\n",
+		  xterm_name, screen->display->fd);
+		exit (ERROR_NOX3);
+	};
+}
+
+/* ||| */
+struct timeval startT, initT, endT;
+struct timezone tz;
 
 main (argc, argv)
 int argc;
 char **argv;
 {
-	register Screen *screen = &term.screen;
-	register char *strind;
+	register TScreen *screen = &term.screen;
 	register int i, pty;
-	register char **cp;
-	short fnflag = 0;	/* True iff -fn option used */
-	short fbflag = 0;	/* True iff -fb option used */
 	int Xsocket, mode;
-	extern onalarm();
 	char *malloc();
 	char *basename();
 	int xerror(), xioerror();
-#ifdef KEYBD
-	extern char *keyboardtype;	/* used in XKeyBind.c */
-	char *getenv();
-#endif KEYBD
 
-	xterm_name = (strcmp(*argv, "-") == 0) ? "xterm" : basename(*argv);
+	xterm_name = (XStrCmp(*argv, "-") == 0) ? "xterm" : basename(*argv);
 
-	term.flags = WRAPAROUND | SMOOTHSCROLL | AUTOREPEAT;
-	screen->border = DEFBORDER;
-	screen->borderwidth = DEFBORDERWIDTH;
-	screen->reversestatus = TRUE;
-	screen->mappedVwin = &screen->fullVwin;
-	screen->mappedTwin = &screen->fullTwin;
-	screen->active_icon = DEFACTIVEICON;
-	screen->scrollinput = DEFSCROLLINPUT;
-	screen->fullVwin.titlebar = DEFTITLEBAR;
-	f_b = def_bold_font;
-	f_n = def_font;
-	f_t = def_title_font;
-	f_i = def_icon_font;
+/* ||| 
+gettimeofday(&startT, &tz);
+*/
+	/* Init the Toolkit. */
+	XtInitialize();
+/* ||| 
+gettimeofday(&initT, &tz);
+*/
+	/* Parse the command line for resources */
+	XtGetUsersDataBase();
+	XrmParseCommand(optionDescList, XtNumber(optionDescList), XtNxterm,
+	 &argc, argv);
 
+	/* Parse the rest of the command line */
 	display[0] = '\0';
-#ifdef KEYBD
-	if((strind = getenv("KEYBD")) && *strind) {
-		if((keyboardtype = malloc(strlen(strind) + 1)) == NULL)
-			SysError(ERROR_KMALLOC);
-		strcpy(keyboardtype, strind);
-	}
-#endif KEYBD
-
-	/*
-	 * go get options out of default file
-	 */
-	for(i = 0, cp = xdef ; *cp ; i++, cp++) {
-		if(!(strind = XGetDefault(xterm_name, *cp)))
-			continue;
-		switch(i) {
-		 case DEF_ACTIVEICON:
-			if (strcmp (strind, "off") == 0)
-				screen->active_icon = FALSE;
-			continue;
-		 case DEF_ALLOWICONINPUT:
-		 	if (strcmp (strind, "on") == 0)
-			        term.flags |= ICONINPUT;
-			continue;
-		 case DEF_AUTORAISE:
-			if (strcmp (strind, "on") == 0) 
-				screen->autoraise = TRUE;
-			continue;
-		 case DEF_BACKGROUND:
-			back_color = strind;
-			continue;
-		 case DEF_BODYFONT:
-			f_n = strind;
-			fnflag = TRUE;
-			continue;
-		 case DEF_BOLDFONT:
-			f_b = strind;
-			fbflag = TRUE;
-			continue;
-		 case DEF_BORDER:
-			brdr_color = strind;
-			continue;
-		 case DEF_BORDERWIDTH:
-			screen->borderwidth = atoi (strind);
-			continue;
-		 case DEF_C132:
-			if (strcmp (strind, "on") == 0) 
-				screen->c132 = TRUE;
-			continue;
-		 case DEF_CURSES:
-			if (strcmp (strind, "on") == 0) 
-				screen->curses = TRUE;
-			continue;
-		 case DEF_CURSOR:
-			curs_color = strind;
-			continue;
-		 case DEF_DEICONWARP:
-			if (strcmp (strind, "on") == 0)
-				screen->deiconwarp = TRUE;
-			continue;
-		 case DEF_FOREGROUND:
-			fore_color = strind;
-			continue;
-		 case DEF_ICONBITMAP:
-			iconbitmap = strind;
-			continue;
-		 case DEF_ICONFONT:
-		 	f_i = strind;
-			continue;
-		 case DEF_ICONSTARTUP:
-			if (strcmp (strind, "on") == 0)
-				screen->icon_show = -1;
-			continue;
-		 case DEF_INTERNALBORDER:
-			screen->border = atoi (strind);
-			continue;
-		 case DEF_JUMPSCROLL:
-			if (strcmp (strind, "on") == 0) {
-				screen->jumpscroll = TRUE;
-				term.flags &= ~SMOOTHSCROLL;
-			}
-			continue;
-#ifdef KEYBD
-		 case DEF_KEYBOARD:
-			if(keyboardtype)
-				free(keyboardtype);
-			keyboardtype = strind;
-			continue;
-#endif KEYBD
-		 case DEF_LOGFILE:
-			if(screen->logfile = malloc(strlen(strind) + 1))
-				strcpy(screen->logfile, strind);
-			continue;
-		 case DEF_LOGGING:
-			if (strcmp (strind, "on") == 0) 
-				log_on = TRUE;
-			continue;
-		 case DEF_LOGINHIBIT:
-			if (strcmp (strind, "on") == 0) 
-				inhibit |= I_LOG;
-			continue;
-		 case DEF_LOGINSHELL:
-			if (strcmp (strind, "on") == 0) 
-				login_shell = TRUE;
-			continue;
-		 case DEF_MARGINBELL:
-			if (strcmp (strind, "on") == 0) 
-				screen->marginbell = TRUE;
-			continue;
-		 case DEF_MOUSE:
-			mous_color = strind;
-			continue;
-		 case DEF_NMARGINBELL:
-			n_marginbell = atoi (strind);
-			continue;
-		 case DEF_PAGEOVERLAP:
-			if((screen->pageoverlap = atoi (strind) - 1) < 0)
-				screen->pageoverlap = -1;
-			continue;
-		 case DEF_PAGESCROLL:
-			if (strcmp (strind, "on") == 0)
-				screen->pagemode = TRUE;
-			continue;
-		 case DEF_REVERSEVIDEO:
-			if (strcmp (strind, "on") == 0)
-				re_verse = TRUE;
-			continue;
-		 case DEF_REVERSEWRAP:
-			if (strcmp (strind, "on") == 0) 
-				term.flags |= REVERSEWRAP;
-			continue;
-		 case DEF_SAVELINES:
-			save_lines = atoi (strind);
-			continue;
-		 case DEF_SCROLLBAR:
-			if (strcmp (strind, "on") == 0) 
-				screen->scrollbar = SCROLLBARWIDTH;
-			continue;
-		 case DEF_SCROLLINPUT:
-			if (strcmp (strind, "off") == 0) 
-				screen->scrollinput = FALSE;
-			continue;
-		 case DEF_SCROLLKEY:
-			if (strcmp (strind, "on") == 0) 
-				screen->scrollkey = TRUE;
-			continue;
-		 case DEF_SIGNALINHIBIT:
-			if (strcmp (strind, "on") == 0) 
-				inhibit |= I_SIGNAL;
-			continue;
-		 case DEF_STATUSLINE:
-			if (strcmp (strind, "on") == 0) 
-				screen->statusline = TRUE;
-			continue;
-		 case DEF_STATUSNORMAL:
-			screen->reversestatus = (strcmp (strind, "on") != 0);
-			continue;
-		 case DEF_TEKICONBITMAP:
-			tekiconbitmap = strind;
-			continue;
-		 case DEF_TEKINHIBIT:
-			if (strcmp (strind, "on") == 0) 
-				inhibit |= I_TEK;
-			continue;
-		 case DEF_TEXTUNDERICON:
-			if (strcmp (strind, "on") == 0) 
-				screen->textundericon = TRUE;
-			continue;
-		 case DEF_TITLEBAR:
-			if (strcmp (strind, "off") == 0) 
-			    screen->fullVwin.titlebar = FALSE;
-			continue;
-		 case DEF_TITLEFONT:
-			f_t = strind;
-			continue;
-		 case DEF_VISUALBELL:
-			if (strcmp (strind, "on") == 0) 
-				screen->visualbell = TRUE;
-			continue;
-		}
-	}
-
-	/* parse command line */
-	
 	for (argc--, argv++ ; argc > 0 ; argc--, argv++) {
-	    if (**argv == '=') {
-		geo_metry = *argv;
-		continue;
-	    }
-
 	    if (**argv == '%') {
 		T_geometry = *argv;
 		*T_geometry = '=';
@@ -357,23 +435,20 @@ char **argv;
 		continue;
 	    }
 
-	    if((strind = index (*argv, ':')) != NULL) {
+	    if(index(*argv, ':') != NULL) {
 		strncpy(display, *argv, sizeof(display));
 		continue;
 	    }
 
-	    if(!(i = (**argv == '-')) && **argv != '+') Syntax ();
+	    if(!(i = (**argv == '-'))) Syntax (*argv);
 
-	    switch(argument(&(*argv)[1])) {
-	     case ARG_132:
-		screen->c132 = i;
-		continue;
+	    switch(argv[0][1]) {
 #ifdef TIOCCONS
-	     case ARG__C:
-		Console = i;
+	     case 'C':
+		Console = TRUE;
 		continue;
 #endif TIOCCONS
-	     case ARG__L:
+	     case 'L':
 		{
 		char tt[32];
 
@@ -389,8 +464,8 @@ char **argv;
 		tt[5] = 't';
 		chown(tt, 0, 0);
 		chmod(tt, 0622);
-		if (open(tt, O_RDWR) < 0) {
-			consolepr("open failed\n");
+		if (open(tt, O_RDWR, 0) < 0) {
+			consolepr("open(%s) failed\n", tt);
 		}
 		signal(SIGHUP, SIG_IGN);
 		vhangup();
@@ -402,258 +477,92 @@ char **argv;
 		dup2(0, 2);
 		continue;
 		}
-	     case ARG__S:
+	     case 'S':
 		sscanf(*argv + 2, "%c%c%d", passedPty, passedPty+1,
 		 &am_slave);
-		if (am_slave <= 0) Syntax();
-		continue;
-	     case ARG_AR:
-		screen->autoraise = i;
-		continue;
-	     case ARG_B:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    screen->border = atoi (*++argv);
-		} else
-		    screen->border = DEFBORDER;
-		continue;
-	     case ARG_BD:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    brdr_color = *++argv;
-		} else
-		    brdr_color = NULL;
-		continue;
-	     case ARG_BG:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    back_color = *++argv;
-		} else
-		    back_color = NULL;
-		continue;
-	     case ARG_BI:
-	        screen->active_icon = !i;
-		continue;
-	     case ARG_BW:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    screen->borderwidth = atoi (*++argv);
-		} else
-		    screen->borderwidth = DEFBORDERWIDTH;
-		continue;
-	     case ARG_CR:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    curs_color = *++argv;
-		} else
-		    curs_color = NULL;
-		continue;
-	     case ARG_CU:
-		screen->curses = i;
+		if (am_slave <= 0) Syntax(*argv);
 		continue;
 #ifdef DEBUG
-	     case ARG_D:
-		debug = i;
+	     case 'D':
+		debug = TRUE;
 		continue;
 #endif DEBUG
-	     case ARG_DW:
-		screen->deiconwarp = i;
-		continue;
-	     case ARG_E:
-	 	if(!i) Syntax();
-		if (argc <= 1) Syntax ();
+	     case 'e':
+		if (argc <= 1) Syntax (*argv);
 		command_to_exec = ++argv;
 		break;
-	     case ARG_FB:
-		if(fbflag = i) {
-		    if (--argc <= 0) Syntax ();
-		    f_b = *++argv;
-		    fbflag = TRUE;
-		} else {
-		    f_b = def_bold_font;
-		    fbflag = FALSE;
-		}
-		continue;
-	     case ARG_FG:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    fore_color = *++argv;
-		} else
-		    fore_color = NULL;
-		continue;
-	     case ARG_FI:
-	        if (i) {
-		    if (--argc <= 0) Syntax();
-		    f_i = *++argv;
-		} else
-		    f_i = def_icon_font;
-		continue;
-	     case ARG_FN:
-		if(fnflag = i) {
-		    if (--argc <= 0) Syntax ();
-		    f_n = *++argv;
-		    fnflag = TRUE;
-		} else {
-		    f_n = def_font;
-		    fnflag = FALSE;
-		}
-		continue;
-	     case ARG_FT:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    f_t = *++argv;
-		} else
-		    f_t = def_title_font;
-		continue;
-	     case ARG_I:
-		screen->icon_show = i ? -1 : 0;
-		continue;
-	     case ARG_IB:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    iconbitmap = *++argv;
-		} else
-		    iconbitmap = NULL;
-		continue;
-	     case ARG_IT:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    tekiconbitmap = *++argv;
-		} else
-		    tekiconbitmap = NULL;
-		continue;
-	     case ARG_J:
-		if(screen->jumpscroll = i)
-			term.flags &= ~SMOOTHSCROLL;
-		else
-			term.flags |= SMOOTHSCROLL;
-		continue;
-#ifdef KEYBD
-	     case ARG_K:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    keyboardtype = *++argv;
-		} else
-		    keyboardtype = NULL;
-		continue;
-#endif KEYBD
-	     case ARG_L:
-		log_on = i;
-		continue;
-	     case ARG_LF:
-		if(screen->logfile)
-			free(screen->logfile);
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    if(screen->logfile = malloc(strlen(*++argv) + 1))
-			    strcpy(screen->logfile, *argv);
-		} else
-		    screen->logfile = NULL;
-		continue;
-	     case ARG_LS:
-		login_shell = i;
-		continue;
-	     case ARG_MB:
-		screen->marginbell = i;
-		continue;
-	     case ARG_MS:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    mous_color = *++argv;
-		} else
-		    mous_color = NULL;
-		continue;
-	     case ARG_N:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    win_name = *++argv;
-		} else
-		    win_name = NULL;
-		continue;
-	     case ARG_NB:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    n_marginbell = atoi (*++argv);
-		} else
-		    n_marginbell = N_MARGINBELL;
-		continue;
-	     case ARG_PO:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    if((screen->pageoverlap = atoi (*++argv) - 1) < 0)
-			screen->pageoverlap = -1;
-		} else
-		    screen->pageoverlap = 0;
-		continue;
-	     case ARG_PS:
-		screen->pagemode = i;
-		continue;
-	     case ARG_RV:
-		re_verse = i;
-		continue;
-	     case ARG_RW:
-		if(i)
-		    term.flags |= REVERSEWRAP;
-		else
-		    term.flags &= ~REVERSEWRAP;
-		continue;
-	     case ARG_S:
-		screen->multiscroll = i;
-		continue;
-	     case ARG_SB:
-		screen->scrollbar = i ? SCROLLBARWIDTH : 0;
-		continue;
-	     case ARG_SI:
-		screen->scrollinput = i ? FALSE : DEFSCROLLINPUT;
-		continue;
-	     case ARG_SK:
-		screen->scrollkey = i;
-		continue;
-	     case ARG_SL:
-		if(i) {
-		    if (--argc <= 0) Syntax ();
-		    save_lines = atoi (*++argv);
-		} else
-		    save_lines = SAVELINES;
-		continue;
-	     case ARG_SN:
-		screen->reversestatus = !i;
-		continue;
-	     case ARG_ST:
-		screen->statusline = i;
-		continue;
-	     case ARG_T:
-		screen->TekEmu = i;
-		continue;
-	     case ARG_TB:
-		screen->fullVwin.titlebar = i ? FALSE : DEFTITLEBAR;
-		continue;
-	     case ARG_TI:
-		screen->textundericon = i;
-		continue;
-	     case ARG_VB:
-		screen->visualbell = i;
-		continue;
 	     default:
-		Syntax ();
+		Syntax (*argv);
 	    }
 	    break;
 	}
 
+
+	/* Initialize the display connection */
+	OpenDisplay();
+	/* Get initial values from .Xdefaults file */
+	XtGetResources(
+	    screen->display,
+	    resourceList,
+	    XtNumber(resourceList), 
+	    (ArgList) NULL,
+	    0,
+	    DefaultRootWindow(screen->display),
+	    XtNxterm,
+	    XtCApp,
+	    &nameList,
+	    &classList);
+
+/* ||| 
+    gettimeofday(&endT, &tz);
+    printf("init: %8.3f,   total: %8.3f\n",
+        ((initT.tv_sec*1000000.0+initT.tv_usec)
+          - (startT.tv_sec*1000000.0+startT.tv_usec))/1000000.0,
+        ((endT.tv_sec*1000000.0+endT.tv_usec)
+          - (startT.tv_sec*1000000.0+startT.tv_usec))/1000000.0);
+   exit(0);
+*/
+	/* Do additional processing on complex .Xdefaults stuff */
+
+	if (!f_n) {
+		if (f_b)
+			f_n = f_b;
+		else {
+			f_n = defaultFont;
+			f_b = defaultBoldFont;
+		}
+	}
+
+	term.flags = WRAPAROUND | AUTOREPEAT;
+	if (!screen->jumpscroll)	term.flags |= SMOOTHSCROLL;
+	if (reverseWrap)		term.flags |= REVERSEWRAP;
+
+	inhibit = 0;
+	if (logInhibit)			inhibit |= I_LOG;
+	if (signalInhibit)		inhibit |= I_SIGNAL;
+	if (tekInhibit)			inhibit |= I_TEK;
+
+	if (scrollbar)			screen->scrollbar = SCROLLBARWIDTH;
+
+	screen->color = 0;
+	if (screen->foreground != XtDefaultFGPixel)
+		screen->color |= C_FOREGROUND;
+	if (screen->background != XtDefaultBGPixel) {
+		screen->color |= C_BACKGROUND;
+	}
+	if (screen->cursorcolor != XtDefaultFGPixel)
+		screen->color |= C_CURSOR;
+	if (screen->mousecolor != XtDefaultFGPixel)
+		screen->color |= C_MOUSE;
+
 	term.initflags = term.flags;
 
-	if (fnflag && !fbflag) f_b = NULL;
-	if (!fnflag && fbflag) f_n = f_b;
-	if (!win_name && get_ty) {
-		win_name = (char *)malloc( 32 );
-		strcpy( win_name, "login(" );
-		gethostname( win_name+6, 25 );
-		strcat( win_name, ")" );
-	}
-	if(!win_name)
-		win_name = (get_ty ? "login" : (am_slave ? "xterm slave" :
+	if(!window_name)
+		window_name = (get_ty ? "login" : (am_slave ? "xterm slave" :
 		 (command_to_exec ? basename(command_to_exec[0]) :
 		 xterm_name)));
+	if (!title_name)
+		title_name = window_name;
 	if(inhibit & I_TEK)
 		screen->TekEmu = FALSE;
 
@@ -666,7 +575,7 @@ char **argv;
 	else
 #endif DEBUG
 	if(get_ty)
-		i = open("/dev/console", O_WRONLY);
+		i = open("/dev/console", O_WRONLY, 0);
 	if(i >= 0)
 		fileno(stderr) = i;
 	if(fileno(stderr) != (NOFILE - 1)) {
@@ -677,8 +586,6 @@ char **argv;
 	}
 
 	signal (SIGCHLD, reapchild);
-	signal (SIGHUP, SIG_IGN);
-	signal(SIGALRM, onalarm);
 
 	/* open a terminal for client */
 	get_terminal ();
@@ -699,7 +606,7 @@ char **argv;
 	}
 	screen->inhibit = inhibit;
 	mode = 1;
-	if (ioctl (pty, FIONBIO, &mode) == -1) SysError (ERROR_FIONBIO);
+	if (ioctl (pty, FIONBIO, (char *)&mode) == -1) SysError (ERROR_FIONBIO);
 	
 	pty_mask = 1 << pty;
 	X_mask = 1 << Xsocket;
@@ -709,8 +616,8 @@ char **argv;
 #ifdef DEBUG
 	if (debug) printf ("debugging on\n");
 #endif DEBUG
-	XErrorHandler(xerror);
-	XIOErrorHandler(xioerror);
+	XSetErrorHandler(xerror);
+	XSetIOErrorHandler(xioerror);
 	for( ; ; )
 		if(screen->TekEmu)
 			TekRun();
@@ -727,140 +634,49 @@ char *name;
 	return((cp = rindex(name, '/')) ? cp + 1 : name);
 }
 
-static struct argstr {
-	char *arg;
-	int val;
-} arg[] = {
-	{"132",	ARG_132},
-#ifdef TIOCCONS
-	{"C",	ARG__C},
-#endif TIOCCONS
-	{"L",	ARG__L},
-	{"S",	ARG__S},
-	{"ar",	ARG_AR},
-	{"b",	ARG_B},
-	{"bd",	ARG_BD},
-	{"bg",	ARG_BG},
-	{"bi",	ARG_BI},
-	{"bw",	ARG_BW},
-	{"cr",	ARG_CR},
-	{"cu",	ARG_CU},
-#ifdef DEBUG
-	{"d",	ARG_D},
-#endif DEBUG
-	{"dw",	ARG_DW},
-	{"e",	ARG_E},
-	{"fb",	ARG_FB},
-	{"fg",	ARG_FG},
-	{"fi",	ARG_FI},
-	{"fn",	ARG_FN},
-	{"ft",	ARG_FT},
-	{"i",	ARG_I},
-	{"ib",	ARG_IB},
-	{"it",	ARG_IT},
-	{"j",	ARG_J},
-#ifdef KEYBD
-	{"k",	ARG_K},
-#endif KEYBD
-	{"l",	ARG_L},
-	{"lf",	ARG_LF},
-	{"ls",	ARG_LS},
-	{"mb",	ARG_MB},
-	{"ms",	ARG_MS},
-	{"n",	ARG_N},
-	{"nb",	ARG_NB},
-	{"po",	ARG_PO},
-	{"ps",	ARG_PS},
-	{"r",	ARG_RV},
-	{"rv",	ARG_RV},
-	{"rw",	ARG_RW},
-	{"s",	ARG_S},
-	{"sb",	ARG_SB},
-	{"si",	ARG_SI},
-	{"sk",	ARG_SK},
-	{"sl",	ARG_SL},
-	{"sn",	ARG_SN},
-	{"st",	ARG_ST},
-	{"t",	ARG_T},
-	{"tb",	ARG_TB},
-	{"ti",	ARG_TI},
-	{"vb",	ARG_VB},
-	{"w",	ARG_BW},
-};
-
-argument(s)
-register char *s;
-{
-	register int i, low, high, com;
-
-	low = 0;
-	high = sizeof(arg) / sizeof(struct argstr) - 1;
-	while(low <= high) {/* use binary search, arg in lexigraphic order */
-		i = (low + high) / 2;
-		if ((com = strcmp(s, arg[i].arg)) == 0)
-			return(arg[i].val);
-		if(com > 0)
-			low = i + 1;
-		else
-			high = i - 1;
-	}
-	return(-1);
-}
-
 static char *ustring[] = {
-"Usage: xterm [-132] [-ar] [-b margin_width] [-bd border_color] \\\n",
-#ifdef ARG__C
-" [-bg backgrnd_color] [-bi] [-bw border_width] [-C] [-cr cursor_color] [-cu] \\\n",
-#else ARG__C
-" [-bg backgrnd_color] [-bi] [-bw border_width] [-cr cursor_color] [-cu] \\\n",
-#endif ARG__C
-" [-dw] [-fb bold_font] [-fg foregrnd_color] [-fi icon_font] [-fn norm_font] \\\n",
-" [-ft title_font] [-i] [-ib iconbitmap] [-it tekiconbitmap] [-j] \\\n",
-#ifdef ARG_K
-" [-k keybd] [-l] [-lf logfile] [-ls] [-mb] [-ms mouse_color] \\\n",
-#else ARG_K
-" [-l] [-lf logfile] [-ls] [-mb] [-ms mouse_color] \\\n",
-#endif ARG_K
-" [-n name] [-nb bell_margin] [-po] [-ps] [-rv] [-rw] [-s] \\\n",
-" [-sb] [-si] [-sk] [-sl save_lines] [-sn] [-st] [-t] [-tb] \\\n",
-" [-ti] [-vb] [=[width]x[height][[+-]xoff[[+-]yoff]]] \\\n",
+"Usage: xterm [-132] [-b inner_border_width] [-bd border_color] \\\n",
+#ifdef TIOCCONS
+" [-bg backgrnd_color] [-bw border_width] [-C] [-cr cursor_color] [-cu] \\\n",
+#else TIOCCONS
+" [-bg backgrnd_color] [-bw border_width] [-cr cursor_color] [-cu] \\\n",
+#endif TIOCCONS
+" [-fb bold_font] [-fg foregrnd_color] [-fn norm_font] \\\n",
+" [-i] [-j] [-l] [-lf logfile] [-ls] [-mb] [-ms mouse_color] \\\n",
+" [-n name] [-nb bell_margin] [-rv] [-rw] [-s] \\\n",
+" [-sb] [-si] [-sk] [-sl save_lines] [-sn] [-st] [-T title] [-t] [-tb] \\\n",
+" [-vb] [=[width]x[height][[+-]xoff[[+-]yoff]]] \\\n",
 " [%[width]x[height][[+-]xoff[[+-]yoff]]] [#[+-]xoff[[+-]yoff]] \\\n",
 " [-e command_to_exec]\n\n",
 "Fonts must be of fixed width and of same size;\n",
 "If only one font is specified, it will be used for normal and bold text\n",
 "The -132 option allows 80 <-> 132 column escape sequences\n",
-"The -ar option turns auto raise window mode on\n",
-#ifdef ARG__C
+#ifdef TIOCCONS
 "The -C option forces output to /dev/console to appear in this window\n",
-#endif ARG__C
-"The -bi option turns off miniature (active) icons and uses a bitmap icon\n",
+#endif TIOCCONS
 "The -cu option turns a curses bug fix on\n",
-"The -dw option warps the mouse on deiconify\n",
-"The -i option enables icon startup\n",
-"The -j option enables jump scroll\n",
-"The -l option enables logging\n",
+"The -i  option enables iconic startup\n",
+"The -j  option enables jump scroll\n",
+"The -l  option enables logging\n",
 "The -ls option makes the shell a login shell\n",
 "The -mb option turns the margin bell on\n",
-"The -ps option turns page scroll on\n",
 "The -rv option turns reverse video on\n",
 "The -rw option turns reverse wraparound on\n",
-"The -s option enables asynchronous scrolling\n",
+"The -s  option enables asynchronous scrolling\n",
 "The -sb option enables the scrollbar\n",
 "The -si option disables re-positioning the scrollbar at the bottom on input\n",
 "The -sk option causes the scrollbar to position at the bottom on a key\n",
-"The -sn option makes the status line normal video \n",
-"The -st option enables the status line\n",
-"The -t option starts Tektronix mode\n",
-"The -tb option disables the titlebar\n",
-"The -ti option places the window name under the icon\n",
+"The -t  option starts Tektronix mode\n",
 "The -vb option enables visual bell\n",
 0
 };
 
-Syntax ()
+Syntax (badOption)
+char	*badOption;
 {
 	register char **us = ustring;
 
+	fprintf(stderr, "Unknown option \"%s\"\n\n", badOption);
 	while (*us) fputs(*us++, stderr);
 	exit (1);
 }
@@ -873,8 +689,8 @@ int *pty, *tty;
 {
 	int devindex, letter = 0;
 
-	while (letter < 4) {
-	    ttydev [8] = ptydev [8] = "pqrs" [letter++];
+	while (letter < 11) {
+	    ttydev [8] = ptydev [8] = "pqrstuvwxyz" [letter++];
 	    devindex = 0;
 
 	    while (devindex < 16) {
@@ -898,99 +714,26 @@ get_terminal ()
  * sets up X and initializes the terminal structure except for term.buf.fildes.
  */
 {
-	register Screen *screen = &term.screen;
-	register int try;
-	Color cdef;
+	register TScreen *screen = &term.screen;
 	char *malloc();
 	
-	for (try = 10 ; ; ) {
-	    if (screen->display = XOpenDisplay(display))
-		break;
-	    if (!get_ty) {
-		fprintf(stderr, "%s: No such display server %s\n", xterm_name,
-		 XDisplayName(display));
-		exit(ERROR_NOX);
-	    }
-	    if (--try <= 0)  {
-		fprintf (stderr, "%s: Can't connect to display server %s\n",
-		 xterm_name, XDisplayName(display));
-		exit (ERROR_NOX2);
-	    }	    
-	    sleep (5);
-	}
+	screen->graybordertile = make_gray(screen->bordercolor,
+		screen->background,
+		DefaultDepth(screen->display, DefaultScreen(screen->display)));
 
-	if(re_verse) {
-		B_Pixel = WhitePixel;
-		B_Pixmap = WhitePixmap;
-		W_Pixel = BlackPixel;
-		W_Pixmap = BlackPixmap;
-	} else {
-		B_Pixel = BlackPixel;
-		B_Pixmap = BlackPixmap;
-		W_Pixel = WhitePixel;
-		W_Pixmap = WhitePixmap;
-	}
+	screen->arrow = make_arrow(screen->mousecolor, screen->background);
 
-	if (brdr_color && DisplayCells() > 2 &&
-	 XParseColor(brdr_color, &cdef) && XGetHardwareColor(&cdef)) {
-	    if(!(screen->bordertile = XMakeTile(cdef.pixel)))
-		Error(ERROR_BORDER);
-	} else
-	    screen->bordertile = B_Pixmap;
-	screen->graybordertile = make_gray();
+	XAutoRepeatOn(screen->display);
 
-	screen->foreground = B_Pixel;
-	screen->background = W_Pixel;
-	screen->cursorcolor = B_Pixel;
-	screen->mousecolor = B_Pixel;
+	if((screen->iconname = malloc((unsigned) strlen(window_name) + 10)) == NULL)
+		Error(ERROR_WINNAME);
+	strcpy(screen->iconname, window_name);
+	screen->iconnamelen = strlen(screen->iconname);
+	if((screen->titlename = malloc((unsigned) strlen(title_name) + 10)) == NULL)
+		Error(ERROR_WINNAME);
+	strcpy(screen->titlename, title_name);
+	screen->titlenamelen = strlen(screen->titlename);
 
-	if (DisplayCells() > 2 && (fore_color || back_color ||
-	 curs_color)) {
-		if (fore_color && XParseColor(fore_color, &cdef) &&
-		 XGetHardwareColor(&cdef)) {
-			screen->foreground = cdef.pixel;
-			screen->color |= C_FOREGROUND;
-		}
-		if (back_color && XParseColor(back_color, &cdef) &&
-		 XGetHardwareColor(&cdef)) {
-			screen->background = cdef.pixel;
-			screen->color |= C_BACKGROUND;
-		}
-		if (curs_color && XParseColor(curs_color, &cdef) &&
-		 XGetHardwareColor(&cdef)) {
-			screen->cursorcolor = cdef.pixel;
-			screen->color |= C_CURSOR;
-		} else
-			screen->cursorcolor = screen->foreground;
-	}
-
-	if (mous_color && DisplayCells() > 2 &&
-	 XParseColor(mous_color, &cdef) && XGetHardwareColor(&cdef)) {
-	    screen->mousecolor = cdef.pixel;
-	    screen->color |= C_MOUSE;
-	} else
-	    screen->mousecolor = screen->cursorcolor;
-
-	if(screen->color & C_BACKGROUND) {
-	    if(!(screen->bgndtile = XMakeTile(screen->background)))
-		Error(ERROR_BACK);
-	} else
-		screen->bgndtile = W_Pixmap;
-	screen->arrow = make_arrow(screen->mousecolor, screen->background,
-	 GXcopy);
-
-	XAutoRepeatOn();
-	if((screen->titlefont = XOpenFont(f_t)) == NULL) {
-		fprintf(stderr, "%s: Can't get title font %s\n", xterm_name,
-		 f_t);
-		exit(ERROR_TITLEFONT);
-	}
-	screen->title_n_size= XQueryWidth("m", screen->titlefont->id);
-	screen->titleheight = screen->titlefont->height + 2 * TITLEPAD + 1;
-	if(screen->fullVwin.titlebar)
-		screen->fullVwin.titlebar =
-		    screen->fullTwin.titlebar = screen->titleheight;
-	IconInit(screen, iconbitmap, tekiconbitmap);
 }
 
 static char *tekterm[] = {
@@ -1003,7 +746,6 @@ static char *tekterm[] = {
 };
 
 static char *vtterm[] = {
-	"xterms",
 	"xterm",
 	"vt102",
 	"vt100",
@@ -1011,6 +753,11 @@ static char *vtterm[] = {
 	"dumb",
 	0
 };
+
+hungtty()
+{
+	longjmp(env, 1);
+}
 
 spawn ()
 /* 
@@ -1021,7 +768,7 @@ spawn ()
  *  If slave, the pty named in passedPty is already open for use
  */
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
 	int Xsocket = screen->display->fd;
 	int index1, tty = -1;
 	int discipline;
@@ -1052,7 +799,6 @@ spawn ()
 	struct utmp utmp;
 #endif UTMP
 	extern int Exit();
-	struct passwd *getpwuid();
 	char *getenv();
 	char *index (), *rindex (), *strindex ();
 
@@ -1068,11 +814,7 @@ spawn ()
 		envnew = tekterm;
 		ptr = newtc;
 	} else {
-		/*
-		 * Special case of a 80x24 window, use "xterms"
-		 */
-		envnew = (screen->max_col == 79 && screen->max_row ==
-		 23) ? vtterm : &vtterm[1];
+		envnew = vtterm;
 		ptr = termcap;
 	}
 	while(*envnew) {
@@ -1098,7 +840,23 @@ spawn ()
 		setgid (screen->gid);
 		setuid (screen->uid);
 	} else {
-		if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0) {
+ 		/*
+ 		 * Sometimes /dev/tty hangs on open (as in the case of a pty
+ 		 * that has gone away).  Simply make up some reasonable
+ 		 * defaults.
+ 		 */
+ 		signal(SIGALRM, hungtty);
+ 		alarm(1);		
+ 		if (! setjmp(env)) {
+ 			tty = open ("/dev/tty", O_RDWR, 0);
+ 			alarm(0);
+ 		} else {
+ 			tty = -1;
+ 			errno = ENXIO;
+ 		}
+ 		signal(SIGALRM, SIG_DFL);
+ 
+ 		if (tty < 0) {
 			if (errno != ENXIO) SysError(ERROR_OPDEVTTY);
 			else {
 				no_dev_tty = TRUE;
@@ -1111,15 +869,15 @@ spawn ()
 		} else {
 			/* get a copy of the current terminal's state */
 
-			if(ioctl(tty, TIOCGETP, &sg) == -1)
+			if(ioctl(tty, TIOCGETP, (char *)&sg) == -1)
 				SysError (ERROR_TIOCGETP);
-			if(ioctl(tty, TIOCGETC, &tc) == -1)
+			if(ioctl(tty, TIOCGETC, (char *)&tc) == -1)
 				SysError (ERROR_TIOCGETC);
-			if(ioctl(tty, TIOCGETD, &discipline) == -1)
+			if(ioctl(tty, TIOCGETD, (char *)&discipline) == -1)
 				SysError (ERROR_TIOCGETD);
-			if(ioctl(tty, TIOCGLTC, &ltc) == -1)
+			if(ioctl(tty, TIOCGLTC, (char *)&ltc) == -1)
 				SysError (ERROR_TIOCGLTC);
-			if(ioctl(tty, TIOCLGET, &lmode) == -1)
+			if(ioctl(tty, TIOCLGET, (char *)&lmode) == -1)
 				SysError (ERROR_TIOCLGET);
 			close (tty);
 
@@ -1129,7 +887,7 @@ spawn ()
 			if ((tty = open ("/dev/tty", O_RDWR, 0)) < 0)
 				SysError (ERROR_OPDEVTTY2);
 
-			if (ioctl (tty, TIOCNOTTY, 0) == -1)
+			if (ioctl (tty, TIOCNOTTY, (char *) NULL) == -1)
 				SysError (ERROR_NOTTY);
 			close (tty);
 		}
@@ -1165,20 +923,20 @@ spawn ()
 		/* reset t_brkc to default value */
 		tc.t_brkc = -1;
 
-		if (ioctl (tty, TIOCSETP, &sg) == -1)
+		if (ioctl (tty, TIOCSETP, (char *)&sg) == -1)
 			SysError (ERROR_TIOCSETP);
-		if (ioctl (tty, TIOCSETC, &tc) == -1)
+		if (ioctl (tty, TIOCSETC, (char *)&tc) == -1)
 			SysError (ERROR_TIOCSETC);
-		if (ioctl (tty, TIOCSETD, &discipline) == -1)
+		if (ioctl (tty, TIOCSETD, (char *)&discipline) == -1)
 			SysError (ERROR_TIOCSETD);
-		if (ioctl (tty, TIOCSLTC, &ltc) == -1)
+		if (ioctl (tty, TIOCSLTC, (char *)&ltc) == -1)
 			SysError (ERROR_TIOCSLTC);
-		if (ioctl (tty, TIOCLSET, &lmode) == -1)
+		if (ioctl (tty, TIOCLSET, (char *)&lmode) == -1)
 			SysError (ERROR_TIOCLSET);
 #ifdef TIOCCONS
 		if (Console) {
 			int on = 1;
-			if (ioctl (tty, TIOCCONS, &on) == -1)
+			if (ioctl (tty, TIOCCONS, (char *)&on) == -1)
 				SysError(ERROR_TIOCCONS);
 		}
 #endif TIOCCONS
@@ -1195,7 +953,7 @@ spawn ()
 			bzero((char *)&utmp, sizeof(struct utmp));
 			(void) strcpy(utmp.ut_line, &ttydev[5]);
 			(void) strcpy(utmp.ut_name, pw->pw_name);
-			(void) strcpy(utmp.ut_host, DisplayName());
+			(void) strcpy(utmp.ut_host, XDisplayName(display));
 			time(&utmp.ut_time);
 			lseek(i, (long)(tslot * sizeof(struct utmp)), 0);
 			write(i, (char *)&utmp, sizeof(struct utmp));
@@ -1215,7 +973,7 @@ spawn ()
 		ts.ts_lines = screen->max_row + 1;
 		ts.ts_cols = screen->max_col + 1;
 	}
-	ioctl (screen->respond, TIOCSSIZE, &ts);
+	ioctl  (screen->respond, TIOCSSIZE, &ts);
 #endif TIOCSSIZE
 #else sun
 #ifdef TIOCSWINSZ
@@ -1231,7 +989,7 @@ spawn ()
 		ws.ws_xpixel = FullWidth(screen);
 		ws.ws_ypixel = FullHeight(screen);
 	}
-	ioctl (screen->respond, TIOCSWINSZ, &ws);
+	ioctl (screen->respond, TIOCSWINSZ, (char *)&ws);
 #endif TIOCSWINSZ
 #endif sun
 
@@ -1260,7 +1018,7 @@ spawn ()
 		 * a new entry to the environment.  The `1' is for the
 		 * NULL terminating entry.
 		 */
-		envnew = (char **) calloc (i + (4 + 1), sizeof(char *));
+		envnew = (char **) calloc ((unsigned) i + (4 + 1), sizeof(char *));
 		bcopy((char *)environ, (char *)envnew, i * sizeof(char *));
 		environ = envnew;
 		Setenv ("TERM=", TermName);
@@ -1272,10 +1030,10 @@ spawn ()
 		Setenv ("WINDOWID=", buf);
 		/* put the display into the environment of the shell*/
 		if (display[0] != '\0') 
-			Setenv ("DISPLAY=", screen->display->displayname);
+			Setenv ("DISPLAY=", XDisplayName(display));
 
 		signal(SIGTERM, SIG_DFL);
-		ioctl(0, TIOCSPGRP, &pgrp);
+		ioctl(0, TIOCSPGRP, (char *)&pgrp);
 		setpgrp (0, 0);
 		close(open(ttyname(0), O_WRONLY, 0));
 		setpgrp (0, pgrp);
@@ -1291,7 +1049,7 @@ spawn ()
 		}
 		signal(SIGHUP, SIG_IGN);
 		if (get_ty) {
-			ioctl (0, TIOCNOTTY, 0);
+			ioctl (0, TIOCNOTTY, (char *) NULL);
 			execl ("/etc/getty", "+", "Xwindow", get_ty, 0);
 		}
 		signal(SIGHUP, SIG_DFL);
@@ -1310,9 +1068,9 @@ spawn ()
 			shname++;
 		else
 			shname = ptr;
-		ldisc = strcmp("csh", shname + strlen(shname) - 3) == 0 ?
+		ldisc = XStrCmp("csh", shname + strlen(shname) - 3) == 0 ?
 		 NTTYDISC : 0;
-		ioctl(0, TIOCSETD, &ldisc);
+		ioctl(0, TIOCSETD, (char *)&ldisc);
 		execl (ptr, login_shell ? "-" : shname, 0);
 		fprintf (stderr, "%s: Could not exec %s!\n", xterm_name, ptr);
 		sleep(5);
@@ -1331,7 +1089,7 @@ spawn ()
 		if (tty > 2) close (tty);
 	}
 
-	signal(SIGINT, Exit);
+	signal(SIGINT, Exit); 
 	signal(SIGQUIT, Exit);
 	signal(SIGTERM, Exit);
 }
@@ -1339,7 +1097,8 @@ spawn ()
 Exit(n)
 int n;
 {
-	register Screen *screen = &term.screen;
+	register TScreen *screen = &term.screen;
+        int pty = term.screen.respond;  /* file descriptor of pty */
 #ifdef UTMP
 	register int i;
 	struct utmp utmp;
@@ -1351,6 +1110,7 @@ int n;
 		close(i);
 	}
 #endif UTMP
+        close(pty); /* close explicitly to avoid race with slave side */
 	if(screen->logging)
 		CloseLog(screen);
 
@@ -1365,7 +1125,7 @@ int n;
 }
 
 resize(screen, TermName, oldtc, newtc)
-Screen *screen;
+TScreen *screen;
 char *TermName;
 register char *oldtc, *newtc;
 {
@@ -1415,31 +1175,34 @@ static reapchild ()
 #ifdef DEBUG
 	if (debug) fputs ("Exiting\n", stderr);
 #endif DEBUG
-	pid  = wait3 (&status, WNOHANG, NULL);
+	pid  = wait3 (&status, WNOHANG, (struct rusage *)NULL);
 	if (!pid) return;
 	if (pid != term.screen.pid) return;
 	
 	Cleanup(0);
 }
 
-consolepr(string)
-char *string;
+/* VARARGS1 */
+consolepr(fmt,x0,x1,x2,x3,x4,x5,x6,x7,x8,x9)
+char *fmt;
 {
 	extern int errno;
 	extern char *sys_errlist[];
 	int oerrno;
 	int f;
+ 	char buf[ BUFSIZ ];
 
 	oerrno = errno;
+ 	strcpy(buf, "xterm: ");
+ 	sprintf(buf+strlen(buf), fmt, x0,x1,x2,x3,x4,x5,x6,x7,x8,x9);
+ 	strcat(buf, ": ");
+ 	strcat(buf, sys_errlist[oerrno]);
+ 	strcat(buf, "\n");	
 	f = open("/dev/console",O_WRONLY);
-	write(f, "xterm: ", 7);
-	write(f, string, strlen(string));
-	write(f, ": ", 2);
-	write(f, sys_errlist[oerrno],strlen(sys_errlist[oerrno]));
-	write(f, "\n", 1);
+	write(f, buf, strlen(buf));
 	close(f);
 	if ((f = open("/dev/tty", 2)) >= 0) {
-		ioctl(f, TIOCNOTTY, 0);
+		ioctl(f, TIOCNOTTY, (char *)NULL);
 		close(f);
 	}
 }
@@ -1456,7 +1219,7 @@ checklogin()
 	lseek(i, (long)(ts * sizeof(struct utmp)), 0);
 	ts = read(i, (char *)&utmp, sizeof(utmp));
 	close(i);
-	if(ts != sizeof(utmp) || strcmp(get_ty, utmp.ut_line) != 0 ||
+	if(ts != sizeof(utmp) || XStrCmp(get_ty, utmp.ut_line) != 0 ||
 	 !*utmp.ut_name || (pw = getpwnam(utmp.ut_name)) == NULL)
 		return(FALSE);
 	chdir(pw->pw_dir);

@@ -1,29 +1,51 @@
 /*
- *	@Source: /u1/X/xterm/RCS/screen.c,v @
- *	@Header: screen.c,v 10.100 86/12/01 14:45:17 jg Rel @
+ *	@Source: /orpheus/u1/X11/clients/xterm/RCS/screen.c,v @
+ *	@Header: screen.c,v 1.9 87/08/13 16:02:42 guarino Exp @
  */
 
-#include <X/mit-copyright.h>
+#include <X11/copyright.h>
 
-/* Copyright    Massachusetts Institute of Technology    1984, 1985	*/
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
 
 /* screen.c */
 
 #ifndef lint
-static char sccs_id[] = "@(#)screen.c\tX10/6.6\t11/3/86";
+static char rcs_id[] = "@Header: screen.c,v 1.9 87/08/13 16:02:42 guarino Exp @";
 #endif	lint
 
-#include <X/Xlib.h>
+#include <X11/Xlib.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <signal.h>
-#include "scrollbar.h"
 #include "ptyx.h"
 #include "error.h"
 
 extern char *calloc();
 extern char *malloc();
 extern char *realloc();
+extern void bcopy();
+extern void free();
 
 ScrnBuf Allocate (nrow, ncol)
 /*
@@ -36,11 +58,11 @@ register int nrow, ncol;
 {
 	register ScrnBuf base;
 
-	if ((base = (ScrnBuf) calloc ((nrow *= 2), sizeof (char *))) == 0)
+	if ((base = (ScrnBuf) calloc ((unsigned)(nrow *= 2), sizeof (char *))) == 0)
 		SysError (ERROR_SCALLOC);
 
 	for (nrow--; nrow >= 0; nrow--)
-		if ((base [nrow] = calloc (ncol, sizeof(char))) == 0)
+		if ((base [nrow] = calloc ((unsigned)ncol, sizeof(char))) == 0)
 			SysError (ERROR_SCALLOC2);
 
 	return (base);
@@ -51,7 +73,7 @@ ScreenWrite (screen, str, flags, length)
    Writes str into buf at row row and column col.  Characters are set to match
    flags.
  */
-Screen *screen;
+TScreen *screen;
 char *str;
 register unsigned flags;
 register int length;		/* length of string */
@@ -183,38 +205,31 @@ ScrnRefresh (screen, toprow, leftcol, nrows, ncols)
    	     coordinates of characters in screen;
 	     nrows and ncols positive.
  */
-register Screen *screen;
+register TScreen *screen;
 int toprow, leftcol, nrows, ncols;
 {
-	int y = toprow * FontHeight(screen) + screen->border + Titlebar(screen);
+	int y = toprow * FontHeight(screen) + screen->border +
+		screen->fnt_norm->max_bounds.ascent;
 	register int row;
 	register int topline = screen->topline;
 	int maxrow = toprow + nrows - 1;
 	int scrollamt = screen->scroll_amt;
 	int max = screen->max_row;
-	int dostatus = 0, left, width;
 	
 
-	if(screen->statusline && maxrow == screen->max_row + 1) {
-		dostatus++;
-		maxrow--;
-	}
 	if(screen->cursor_col >= leftcol && screen->cursor_col <=
 	 (leftcol + ncols - 1) && screen->cursor_row >= toprow + topline &&
 	 screen->cursor_row <= maxrow + topline)
 		screen->cursor_state = OFF;
-    for( ; ; ) {
-	for (row = toprow; row <= maxrow; y += FontHeight(screen), row++)
-	{
+	for (row = toprow; row <= maxrow; y += FontHeight(screen), row++) {
 	   register char *chars;
 	   register char *att;
 	   register int col = leftcol;
 	   int maxcol = leftcol + ncols - 1;
 	   int lastind;
 	   int flags;
-	   int gxfunction;
-	   Font fnt;
-	   int x, yb, pix, n;
+	   int x, n;
+	   GC gc;
 
 	   lastind = row - scrollamt;
 	   if (lastind < 0 || lastind > max)
@@ -234,34 +249,26 @@ int toprow, leftcol, nrows, ncols;
 
 	   flags = att[col];
 
-	   fnt = ActiveIcon(screen)
-		 ? screen->fnt_icon
-		 : (flags & BOLD)
-		   ? screen->fnt_bold
-		   : screen->fnt_norm;
+	   if ((flags & INVERSE) != 0)
+	       if (flags & BOLD) gc = screen->reverseboldGC;
+	       else gc = screen->reverseGC;
+	   else 
+	       if (flags & BOLD) gc = screen->normalboldGC;
+	       else gc = screen->normalGC;
 
-	   x = col * FontWidth(screen) + screen->border;
+	   x = CursorX(screen, col);
 	   lastind = col;
 
 	   for (; col <= maxcol; col++) {
 		if (att[col] != flags) {
-		   if (((flags & INVERSE) != 0) ^ (dostatus < 0 &&
-		    screen->reversestatus))
-		   	XText (VWindow(screen), x, y, &chars[lastind],
-				n = col - lastind, fnt,
-		   		pix = screen->background, screen->foreground);
-		   else
-		 	XText (VWindow(screen), x, y, &chars[lastind],
-				n = col - lastind, fnt,
-		   		pix = screen->foreground, screen->background);
+		   XDrawImageString(screen->display, TextWindow(screen), 
+		        	gc, x, y, &chars[lastind], n = col - lastind);
 		   if((flags & BOLD) && screen->enbolden)
-		 	XTextMask (VWindow(screen), x + 1, y, &chars[lastind],
-				n, fnt, pix);
-		   if(flags & UNDERLINE) {
-			yb = y + FontHeight(screen) - 2;
-			XLine(VWindow(screen), x, yb, x + n * FontWidth(screen),
-			 yb, 1, 1, pix, GXcopy, AllPlanes);
-		   }
+		 	XDrawString(screen->display, TextWindow(screen), 
+			 gc, x + 1, y, &chars[lastind], n);
+		   if(flags & UNDERLINE) 
+			XDrawLine(screen->display, TextWindow(screen), 
+			 gc, x, y+1, x+n*FontWidth(screen), y+1);
 
 		   x += (col - lastind) * FontWidth(screen);
 
@@ -269,55 +276,34 @@ int toprow, leftcol, nrows, ncols;
 
 		   flags = att[col];
 
-		   fnt = ActiveIcon(screen)
-		   	 ? screen->fnt_icon
-			 : (flags & BOLD)
-			   ? screen->fnt_bold
-			   : screen->fnt_norm;
+	   	   if ((flags & INVERSE) != 0)
+	       		if (flags & BOLD) gc = screen->reverseboldGC;
+	       		else gc = screen->reverseGC;
+	  	    else 
+	      		 if (flags & BOLD) gc = screen->normalboldGC;
+	      		 else gc = screen->normalGC;
 		}
 
 		if(chars[col] == 0)
 			chars[col] = ' ';
 	   }
 
-	   if (((flags & INVERSE) != 0) ^ (dostatus < 0 &&
-	    screen->reversestatus))
-	   	XText (VWindow(screen), x, y, &chars[lastind],
-		 n = col - lastind, fnt, pix = screen->background,
-		 screen->foreground);
-	   else
-	   	XText (VWindow(screen), x, y, &chars[lastind],
-		 n = col - lastind, fnt, pix = screen->foreground,
-		 screen->background);
+
+	   if ((flags & INVERSE) != 0)
+	       if (flags & BOLD) gc = screen->reverseboldGC;
+	       else gc = screen->reverseGC;
+	   else 
+	       if (flags & BOLD) gc = screen->normalboldGC;
+	       else gc = screen->normalGC;
+	   XDrawImageString(screen->display, TextWindow(screen), gc, 
+	         x, y, &chars[lastind], n = col - lastind);
 	   if((flags & BOLD) && screen->enbolden)
-		XTextMask (VWindow(screen), x + 1, y, &chars[lastind],
-			n, fnt, pix);
-	   if(flags & UNDERLINE) {
-		yb = y + FontHeight(screen) - 2;
-		XLine(VWindow(screen), x, yb, x + n * FontWidth(screen), yb, 1, 1,
-		 pix, GXcopy, AllPlanes);
-	   }
+		XDrawString(screen->display, TextWindow(screen), gc,
+		x + 1, y, &chars[lastind], n);
+	   if(flags & UNDERLINE) 
+		XDrawLine(screen->display, TextWindow(screen), gc, 
+		 x, y+1, x + n * FontWidth(screen), y+1);
 	}
-	if(dostatus <= 0)
-		break;
-	dostatus = -1;
-	topline = 0;
-	scrollamt = 0;
-	toprow = maxrow = max = screen->max_row + 1;
-	left = leftcol * FontWidth(screen) + screen->border;
-	width = ncols * FontWidth(screen);
-	if(leftcol == 0) {
-		left--;
-		width++;
-	}
-	if(leftcol + ncols - 1 >= screen->max_col)
-		width++;
-	XPixSet(VWindow(screen), left, y, width, screen->statusheight,
-	 screen->reversestatus ? screen->foreground : screen->background);
-	if(!screen->reversestatus)
-		StatusBox(screen);
-	y++;
-    }
 }
 
 ClearBufRows (screen, first, last)
@@ -325,7 +311,7 @@ ClearBufRows (screen, first, last)
    Sets the rows first though last of the buffer of screen to spaces.
    Requires first <= last; first, last are rows of screen->buf.
  */
-register Screen *screen;
+register TScreen *screen;
 register int first, last;
 {
 	first *= 2;
@@ -351,7 +337,7 @@ ScreenResize (screen, width, height, flags)
    7. Clears origin mode and sets scrolling region to be entire screen.
    8. Returns 0
  */
-register Screen *screen;
+register TScreen *screen;
 int width, height;
 unsigned *flags;
 {
@@ -362,9 +348,7 @@ unsigned *flags;
 	register ScrnBuf ab = screen->altbuf;
 	register int x;
 	register int border = 2 * screen->border;
-	register int extra, i, j, k;
-	register char *sl0, *sl1;	/* keep status line */
-	double scale_x, scale_y;
+	register int i, j, k;
 #ifdef sun
 #ifdef TIOCSSIZE
 	struct ttysize ts;
@@ -375,13 +359,9 @@ unsigned *flags;
 #endif TIOCSWINSZ
 #endif sun
 
-
-	if (ActiveIcon(screen)) return( 0 );	/* don't resize on icon exposure */
-
-	extra = Titlebar(screen) + screen->statusheight;
 	/* round so that it is unlikely the screen will change size on  */
 	/* small mouse movements.					*/
-	rows = (height + FontHeight(screen) / 2 - border - extra) /
+	rows = (height + FontHeight(screen) / 2 - border) /
 	 FontHeight(screen);
 	cols = (width + FontWidth(screen) / 2 - border - screen->scrollbar) /
 	 FontWidth(screen);
@@ -389,12 +369,13 @@ unsigned *flags;
 	if (cols < 1) cols = 1;
 
 	if ((width - border - screen->scrollbar) % FontWidth(screen)
-	 != 0 || (height - border - extra) % FontHeight(screen) != 0 ||
-	 rows < screen->minrows) {
-		XChangeWindow (VWindow(screen),
-		 cols * FontWidth(screen) + border + screen->scrollbar,
-		 (rows < screen->minrows ? screen->minrows : rows) *
-		 FontHeight(screen) + border + extra);
+	 != 0 || (height - border) % FontHeight(screen) != 0) {
+		XResizeWindow(
+		    screen->display,
+		    TextWindow(screen),
+		    (unsigned) cols * FontWidth(screen) + border
+		        + screen->scrollbar,
+		    (unsigned) rows * FontHeight(screen) + border);
 		return (-1);
 	}
 
@@ -402,10 +383,7 @@ unsigned *flags;
 	if (screen->max_row != rows - 1 || screen->max_col != cols - 1) {
 		if(screen->cursor_state)
 			HideCursor();
-		savelines = screen->sb ? screen->savelines : 0;
-		/* save status line */
-		sl0 = sb[i = 2 * (savelines + screen->max_row + 1)];
-		sl1 = sb[i + 1];
+		savelines = screen->scrollWindow ? screen->savelines : 0;
 		j = screen->max_col + 1;
 		i = cols - j;
 		k = screen->max_row;
@@ -414,9 +392,9 @@ unsigned *flags;
 		if(ab) {
 			/* resize current lines in alternate buf */
 			for (index = x = 0; index <= k; x += 2, index++) {
-				if ((ab[x] = realloc(ab[x], cols)) == NULL)
+				if ((ab[x] = realloc(ab[x], (unsigned) cols)) == NULL)
 					SysError(ERROR_SREALLOC);
-				if((ab[x + 1] = realloc(ab[x + 1], cols)) ==
+				if((ab[x + 1] = realloc(ab[x + 1], (unsigned) cols)) ==
 				 NULL)
 					SysError (ERROR_SREALLOC2);
 				if (cols > j) {
@@ -432,32 +410,33 @@ unsigned *flags;
 			}
 		}
 		/* resize current lines */
-		k += savelines + 1;	/* includes status line */
+                k += savelines;
 		for (index = x = 0; index <= k; x += 2, index++) {
-			if ((sb[x] = realloc(sb[x], cols)) == NULL)
+			if ((sb[x] = realloc(sb[x], (unsigned) cols)) == NULL)
 				SysError(ERROR_SREALLOC3);
-			if((sb[x + 1] = realloc(sb[x + 1], cols)) == NULL)
+			if((sb[x + 1] = realloc(sb[x + 1], (unsigned) cols)) == NULL)
 				SysError (ERROR_SREALLOC4);
 			if (cols > j) {
 				bzero (sb [x] + j, i);
 				bzero (sb [x + 1] + j, i);
 			}
 		}
-		/* discard excess bottom rows, but not status line */
-		for (index = rows, x = 2 * (k - 1); index <= screen->max_row;
+		/* discard excess bottom rows */
+		for (index = rows, x = 2 * k; index <= screen->max_row;
 		 x += 2, index++) {
 		   free (sb [x]);
 		   free (sb [x + 1]);
 		}
 		if(ab) {
-		    if((ab = (ScrnBuf)realloc(ab, 2 * sizeof(char *) * rows))
-		     == NULL)
+		    if((ab = (ScrnBuf)realloc((char *)ab,
+		     (unsigned) 2 * sizeof(char *) * rows)) == NULL)
 			SysError (ERROR_RESIZE);
 		    screen->altbuf = ab;
 		}
-		k = 2 * (rows + savelines + 1);	/* includes status line */
+		k = 2 * (rows + savelines);
 		/* resize sb */
-		if((sb = (ScrnBuf)realloc(sb, k * sizeof(char *))) == NULL)
+		if((sb = (ScrnBuf)realloc((char *) sb, (unsigned) k * sizeof(char *)))
+		  == NULL)
 			SysError (ERROR_RESIZE2);
 		screen->allbuf = sb;
 		screen->buf = &sb[2 * savelines];
@@ -466,25 +445,21 @@ unsigned *flags;
 			/* create additional bottom rows as required in alt */
 			for (index = screen->max_row + 1, x = 2 * index ;
 			 index < rows; x += 2, index++) {
-			   if((ab[x] = calloc (cols, sizeof(char))) == NULL)
+			   if((ab[x] = calloc ((unsigned) cols, sizeof(char))) == NULL)
 				SysError(ERROR_RESIZROW);
-			   if((ab[x + 1] = calloc (cols, sizeof(char))) == NULL)
+			   if((ab[x + 1] = calloc ((unsigned) cols, sizeof(char))) == NULL)
 				SysError(ERROR_RESIZROW2);
 			}
 		}
 		/* create additional bottom rows as required */
 		for (index = screen->max_row + 1, x = 2 * (index + savelines) ;
 		 index < rows; x += 2, index++) {
-		   if((sb[x] = calloc (cols, sizeof(char))) == NULL)
+		   if((sb[x] = calloc ((unsigned) cols, sizeof(char))) == NULL)
 			SysError(ERROR_RESIZROW3);
-		   if((sb[x + 1] = calloc (cols, sizeof(char))) == NULL)
+		   if((sb[x + 1] = calloc ((unsigned) cols, sizeof(char))) == NULL)
 			SysError(ERROR_RESIZROW4);
 		}
 
-		/* reinstall status line */
-		sb[x] = sl0;
-		sb[x + 1] = sl1;
-	
 		screen->max_row = rows - 1;
 		screen->max_col = cols - 1;
 	
@@ -493,27 +468,19 @@ unsigned *flags;
 		screen->bot_marg = screen->max_row;
 		*flags &= ~ORIGIN;
 	
-		if (screen->instatus)
-			screen->cur_row = screen->max_row + 1;
-		else if (screen->cur_row > screen->max_row)
+		if (screen->cur_row > screen->max_row)
 			screen->cur_row = screen->max_row;
 		if (screen->cur_col > screen->max_col)
 			screen->cur_col = screen->max_col;
 	
-		screen->fullVwin.height = height - border - extra;
+		screen->fullVwin.height = height - border;
 		screen->fullVwin.width = width - border - screen->scrollbar;
-
-		if (screen->active_icon)
-		    SetIconSize( screen );
 
 	} else if(FullHeight(screen) == height && FullWidth(screen) == width)
 	 	return(0);	/* nothing has changed at all */
 
-	if(screen->sb)
-		ResizeScrollBar(screen->sb, width - SCROLLBARWIDTH,
-		 Titlebar(screen) - 1, height - Titlebar(screen), rows);
-	if(screen->title.tbar && FullWidth(screen) != width)
-		VTTitleResize(width);
+	if(screen->scrollWindow)
+		ResizeScrollBar(screen->scrollWindow, -1, -1, height);
 	
 	screen->fullVwin.fullheight = height;
 	screen->fullVwin.fullwidth = width;
@@ -535,10 +502,10 @@ unsigned *flags;
 	ws.ws_col = cols;
 	ws.ws_xpixel = width;
 	ws.ws_ypixel = height;
-	ioctl (screen->respond, TIOCSWINSZ, &ws);
+	ioctl (screen->respond, TIOCSWINSZ, (char *)&ws);
 #ifdef SIGWINCH
 	if(screen->pid > 1)
-		killpg(getpgrp(screen->pid), SIGWINCH);
+		killpg(getpgrp((int)screen->pid), SIGWINCH);
 #endif SIGWINCH
 #endif TIOCSWINSZ
 #endif sun
@@ -546,23 +513,3 @@ unsigned *flags;
 }
 
 
-SetIconSize( screen )
-  Screen *screen;
-{
-	if (screen->active_icon) {
-	    screen->iconVwin.width = (screen->max_col + 1)
-				     * screen->iconVwin.f_width
-	    			     + screen->border * 2;
-	    screen->iconVwin.height = (screen->max_row + 1)
-				      * screen->iconVwin.f_height
-	    			      + screen->border * 2;
-	    XChangeWindow( screen->iconVwin.window,
-			   screen->iconVwin.width,
-			   screen->iconVwin.height );
-	} else {
-	    IconRecalc( screen );
-	}
-
-	screen->iconVwin.fullwidth = screen->iconVwin.width;
-	screen->iconVwin.fullheight = screen->iconVwin.height;
-}

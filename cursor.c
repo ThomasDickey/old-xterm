@@ -1,37 +1,58 @@
 /*
- *	@Source: /u1/X/xterm/RCS/cursor.c,v @
- *	@Header: cursor.c,v 10.100 86/12/01 14:43:54 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/cursor.c,v @
+ *	@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @
  */
 
 #ifndef lint
-static char *rcsid_cursor_c = "@Header: cursor.c,v 10.100 86/12/01 14:43:54 jg Rel @";
+static char *rcsid_cursor_c = "@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @";
 #endif	lint
 
-#include <X/mit-copyright.h>
+#include <X11/copyright.h>
 
-/* Copyright 1984, 1985   Massachusetts Institute of Technology		*/
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
+ */
 
 /* cursor.c */
 
 
 #ifndef lint
-static char sccs_id[] = "@(#)cursor.c\tX10/6.6\t11/6/86";
+static char rcs_id[] = "@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @";
 #endif	lint
 
-#include <X/Xlib.h>
+#include <X11/Xlib.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
-#include "scrollbar.h"
 #include "ptyx.h"
+
+extern void bcopy();
 
 /*
  * Moves the cursor to the specified position, checking for bounds.
  * (this includes scrolling regions)
  * The origin is considered to be 0, 0 for this procedure.
- * In the status line, the cursor moves only horizontally.
  */
 CursorSet(screen, row, col, flags)
-register Screen	*screen;
+register TScreen	*screen;
 register int	row, col;
 unsigned	flags;
 {
@@ -39,15 +60,13 @@ unsigned	flags;
 
 	col = (col < 0 ? 0 : col);
 	screen->cur_col = (col <= screen->max_col ? col : screen->max_col);
-	if(!screen->instatus) {
-		maxr = screen->max_row;
-		if (flags & ORIGIN) {
-			row += screen->top_marg;
-			maxr = screen->bot_marg;
-		}
-		row = (row < 0 ? 0 : row);
-		screen->cur_row = (row <= maxr ? row : maxr);
+	maxr = screen->max_row;
+	if (flags & ORIGIN) {
+		row += screen->top_marg;
+		maxr = screen->bot_marg;
 	}
+	row = (row < 0 ? 0 : row);
+	screen->cur_row = (row <= maxr ? row : maxr);
 	screen->do_wrap = 0;
 }
 
@@ -55,7 +74,7 @@ unsigned	flags;
  * moves the cursor left n, no wrap around
  */
 CursorBack(screen, n)
-register Screen	*screen;
+register TScreen	*screen;
 int		n;
 {
 	register int i, j, k, rev;
@@ -83,7 +102,7 @@ int		n;
  * moves the cursor forward n, no wraparound
  */
 CursorForward(screen, n)
-register Screen	*screen;
+register TScreen	*screen;
 int		n;
 {
 	screen->cur_col += n;
@@ -97,7 +116,7 @@ int		n;
  * Won't pass bottom margin or bottom of screen.
  */
 CursorDown(screen, n)
-register Screen	*screen;
+register TScreen	*screen;
 int		n;
 {
 	register int max;
@@ -116,7 +135,7 @@ int		n;
  * Won't pass top margin or top of screen.
  */
 CursorUp(screen, n)
-register Screen	*screen;
+register TScreen	*screen;
 int		n;
 {
 	register int min;
@@ -135,13 +154,10 @@ int		n;
  * Won't leave scrolling region. No carriage return.
  */
 Index(screen, amount)
-register Screen	*screen;
+register TScreen	*screen;
 register int	amount;
 {
-	register int lines, j;
-	register char *str;
-	int n;
-	XEvent ev;
+	register int j;
 
 	/* 
 	 * indexing when below scrolling region is cursor down.
@@ -149,76 +165,12 @@ register int	amount;
 	 */
 	if (screen->cur_row > screen->bot_marg
 	 || screen->cur_row + amount <= screen->bot_marg) {
-		if(screen->pagemode)
-			screen->pagecnt += amount;
 		CursorDown(screen, amount);
 		return;
 	}
 
 	CursorDown(screen, j = screen->bot_marg - screen->cur_row);
-	amount -= j;
-	if((lines = screen->bot_marg - screen->top_marg - screen->pageoverlap)
-	 <= 0)
-		lines = 1;
-	if(!screen->pagemode || (amount + screen->pagecnt) <= lines) {
-		if(screen->pagemode)
-			screen->pagecnt += amount;
-		Scroll(screen, amount);
-		return;
-	}
-	ioctl(screen->respond, TIOCSTOP, NULL);
-	if(screen->cursor_state)
-		HideCursor();
-	if((j = lines - screen->pagecnt) > 0) {
-		Scroll(screen, j);
-		amount -= j;
-	}
-	do {
-		if(screen->scroll_amt)
-			FlushScroll(screen);
-		j = FALSE;
-		do {
-			XNextEvent(&ev);
-			switch((int)ev.type) {
-			 case KeyPressed:
-				str = XLookupMapping(&ev, &n);
-				if(n > 0) {
-					if(*str == '\r')
-						screen->pagecnt = (lines - 1);
-					else if(*str < ' ' || *str == '\177') {
-						screen->pagecnt = 0;
-						Input(&term.keyboard, screen,
-						 &ev);
-						ioctl(screen->respond, TIOCSTOP,
-						 NULL);
-					} else
-						screen->pagecnt = 0;
-				} else
-					screen->pagecnt = 0;
-				j = TRUE;
-				break;
-			 case ButtonPressed:
-			 case ButtonReleased:
-				screen->pagecnt = amount;
-				xeventpass(&ev);
-				if(!screen->pagemode) {
-					Scroll(screen, amount);
-					ioctl(screen->respond, TIOCSTART, NULL);
-					return;
-				}
-				break;
-			 default:
-				xeventpass(&ev);
-				break;
-			}
-		} while(!j);
-		j = lines - screen->pagecnt;
-		if(j > amount)
-			j = amount;
-		Scroll(screen, j);
-		screen->pagecnt += j;
-	} while((amount -= j) > 0);
-	ioctl(screen->respond, TIOCSTART, NULL);
+	Scroll(screen, amount - j);
 }
 
 /*
@@ -226,7 +178,7 @@ register int	amount;
  * Won't leave scrolling region. No carriage return.
  */
 RevIndex(screen, amount)
-register Screen	*screen;
+register TScreen	*screen;
 register int	amount;
 {
 	/*
@@ -247,7 +199,7 @@ register int	amount;
  * Moves Cursor To First Column In Line
  */
 CarriageReturn(screen)
-register Screen *screen;
+register TScreen *screen;
 {
 	screen->cur_col = 0;
 	screen->do_wrap = 0;
@@ -260,7 +212,7 @@ CursorSave(term, sc)
 register Terminal *term;
 register SavedCursor *sc;
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term->screen;
 
 	sc->row = screen->cur_row;
 	sc->col = screen->cur_col;
@@ -277,7 +229,7 @@ CursorRestore(term, sc)
 register Terminal *term;
 register SavedCursor *sc;
 {
-	register Screen *screen = &term->screen;
+	register TScreen *screen = &term->screen;
 
 	bcopy(sc->gsets, screen->gsets, sizeof(screen->gsets));
 	screen->curgl = sc->curgl;

@@ -1,6 +1,32 @@
 /*
- *	@Source: /u1/X/xterm/RCS/VTparse.h,v @
- *	@Header: VTparse.h,v 10.101 86/12/01 21:49:38 jg Rel @
+ *	@Source: /u1/X11/clients/xterm/RCS/VTparse.h,v @
+ *	@Header: VTparse.h,v 1.5 87/09/11 08:17:06 toddb Exp @
+ */
+
+
+#include <X11/copyright.h>
+
+/*
+ * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
+ *
+ *                         All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and its
+ * documentation for any purpose and without fee is hereby granted,
+ * provided that the above copyright notice appear in all copies and that
+ * both that copyright notice and this permission notice appear in
+ * supporting documentation, and that the name of Digital Equipment
+ * Corporation not be used in advertising or publicity pertaining to
+ * distribution of the software without specific, written prior permission.
+ *
+ *
+ * DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+ * ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
+ * DIGITAL BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+ * WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
+ * SOFTWARE.
  */
 
 /* @(#)VTparse.h	X10/6.6	11/6/86 */
@@ -37,18 +63,17 @@
 #define	CASE_DL			(CASE_IL+1)
 #define	CASE_DCH		(CASE_DL+1)
 #define	CASE_DA1		(CASE_DCH+1)
-#define	CASE_TBC		(CASE_DA1+1)
+#define CASE_TRACK_MOUSE	(CASE_DA1+1)
+#define	CASE_TBC		(CASE_TRACK_MOUSE+1)
 #define	CASE_SET		(CASE_TBC+1)
 #define	CASE_RST		(CASE_SET+1)
 #define	CASE_SGR		(CASE_RST+1)
 #define	CASE_CPR		(CASE_SGR+1)
 #define	CASE_DECSTBM		(CASE_CPR+1)
-#define	CASE_SUN_EMU		(CASE_DECSTBM+1)
-#define	CASE_DECREQTPARM	(CASE_SUN_EMU+1)
+#define	CASE_DECREQTPARM	(CASE_DECSTBM+1)
 #define	CASE_DECSET		(CASE_DECREQTPARM+1)
-#define	CASE_DECRST		(CASE_DECSET+1)
-#define	CASE_HIDDEN		(CASE_DECRST+1)
-#define	CASE_DECALN		(CASE_HIDDEN+1)
+#define CASE_DECRST             (CASE_DECSET+1)
+#define	CASE_DECALN		(CASE_DECRST+1)
 #define	CASE_GSETS		(CASE_DECALN+1)
 #define	CASE_DECSC		(CASE_GSETS+1)
 #define	CASE_DECRC		(CASE_DECSC+1)
@@ -69,10 +94,6 @@
 #define	CASE_LS2R		(CASE_LS3R+1)
 #define	CASE_LS1R		(CASE_LS2R+1)
 #define	CASE_PRINT		(CASE_LS1R+1)
-#define	CASE_TO_STATUS		(CASE_PRINT+1)
-#define	CASE_FROM_STATUS	(CASE_TO_STATUS+1)
-#define	CASE_SHOW_STATUS	(CASE_FROM_STATUS+1)
-#define	CASE_HIDE_STATUS	(CASE_SHOW_STATUS+1)
-#define	CASE_ERASE_STATUS	(CASE_HIDE_STATUS+1)
-#define	CASE_XTERM_SAVE		(CASE_ERASE_STATUS+1)
+#define	CASE_XTERM_SAVE		(CASE_PRINT+1)
 #define	CASE_XTERM_RESTORE	(CASE_XTERM_SAVE+1)
+#define CASE_XTERM_TITLE	(CASE_XTERM_RESTORE+1)

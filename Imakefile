@@ -1,0 +1,19 @@
+        DEFINES = -DMODEMENU -DUTMP -DLIBDIR=\"$(LIBDIR)\"
+          SRCS1 = button.c charproc.c cursor.c data.c input.c \
+		  main.c menu.c misc.c screen.c scrollbar.c tabs.c \
+		  TekPrsTbl.c Tekproc.c util.c VTPrsTbl.c
+          OBJS1 = main.o input.o charproc.o cursor.o util.o tabs.o \
+		  screen.o scrollbar.o button.o Tekproc.o misc.o \
+		  VTPrsTbl.o TekPrsTbl.o data.o menu.o
+          SRCS2 = resize.c
+          OBJS2 = resize.o
+       PROGRAMS = resize xterm
+   INSTALLFLAGS = -m 4755
+       INCLUDES = -I$(OLDXRMSRC) -I$(OLDTOOLKITSRC) -I$(TOP)
+
+ComplexProgramTarget_1(xterm,$(OLDXTOOLLIB) $(OLDXRMLIB) $(XLIB),-ltermcap)
+
+SingleProgramTarget(resize,$(OBJS2),,-lc -ltermcap)
+
+install:: resize
+	$(INSTALL) -c resize $(BINDIR)
