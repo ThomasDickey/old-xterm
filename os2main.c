@@ -1,3 +1,5 @@
+/* $XTermId: os2main.c,v 1.170 2004/07/20 01:14:41 tom Exp $ */
+
 /* removed all foreign stuff to get the code more clear (hv)
  * and did some rewrite for the obscure OS/2 environment
  */
@@ -5,7 +7,7 @@
 #ifndef lint
 static char *rid = "$XConsortium: main.c,v 1.227.1.2 95/06/29 18:13:15 kaleb Exp $";
 #endif /* lint */
-/* $XFree86: xc/programs/xterm/os2main.c,v 3.61 2003/05/19 00:47:33 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/os2main.c,v 3.70 2004/07/20 01:14:41 dickey Exp $ */
 
 /***********************************************************
 
@@ -64,7 +66,6 @@ SOFTWARE.
 
 #define RES_OFFSET(field)	XtOffsetOf(XTERM_RESOURCE, field)
 
-#include <version.h>
 #include <xterm.h>
 
 #include <X11/cursorfont.h>
@@ -272,6 +273,9 @@ static XtResource application_resources[] =
 #if OPT_HP_FUNC_KEYS
     Bres("hpFunctionKeys", "HpFunctionKeys", hpFunctionKeys, FALSE),
 #endif
+#if OPT_SCO_FUNC_KEYS
+    Bres("scoFunctionKeys", "ScoFunctionKeys", scoFunctionKeys, FALSE),
+#endif
     Bres("waitForMap", "WaitForMap", wait_for_map, FALSE),
     Bres("useInsertMode", "UseInsertMode", useInsertMode, FALSE),
 #if OPT_ZICONBEEP
@@ -342,8 +346,9 @@ static XrmOptionDescRec optionDescList[] = {
 #ifndef NO_ACTIVE_ICON
 {"-fi",		"*iconFont",	XrmoptionSepArg,	(caddr_t) NULL},
 #endif /* NO_ACTIVE_ICON */
-#ifdef XRENDERFONT
+#if OPT_RENDERFONT
 {"-fa",		"*faceName",	XrmoptionSepArg,	(caddr_t) NULL},
+{"-fd",		"*faceNameDoublesize", XrmoptionSepArg,	(caddr_t) NULL},
 {"-fs",		"*faceSize",	XrmoptionSepArg,	(caddr_t) NULL},
 #endif
 #if OPT_WIDE_CHARS
@@ -482,8 +487,9 @@ static OptionHelp xtermOptions[] = {
 { "-fb fontname",          "bold text font" },
 { "-/+fbb",                "turn on/off normal/bold font comparison inhibit"},
 { "-/+fbx",                "turn off/on linedrawing characters"},
-#ifdef XRENDERFONT
+#if OPT_RENDERFONT
 { "-fa pattern",           "FreeType font-selection pattern" },
+{ "-fd pattern",           "FreeType Doublesize font-selection pattern" },
 { "-fs size",              "FreeType font-size" },
 #endif
 #if OPT_WIDE_CHARS
@@ -750,7 +756,7 @@ Syntax(char *badOption)
 static void
 Version(void)
 {
-    printf("%s(%d)\n", X_VERSION, XTERM_PATCH);
+    printf("%s\n", xtermVersion());
     fflush(stdout);
 }
 
@@ -761,21 +767,18 @@ Help(void)
     OptionHelp *list = sortedOpts(xtermOptions, optionDescList, XtNumber(optionDescList));
     char **cpp;
 
-    fprintf(stderr,
-	    "%s(%d) usage:\n    %s [-options ...] [-e command args]\n\n",
-	    X_VERSION, XTERM_PATCH, ProgramName);
-    fprintf(stderr, "where options include:\n");
+    printf("%s usage:\n    %s [-options ...] [-e command args]\n\n",
+	   xtermVersion(), ProgramName);
+    printf("where options include:\n");
     for (opt = list; opt->opt; opt++) {
-	fprintf(stderr, "    %-28s %s\n", opt->opt, opt->desc);
+	printf("    %-28s %s\n", opt->opt, opt->desc);
     }
 
-    putc('\n', stderr);
-    for (cpp = message; *cpp; cpp++) {
-	fputs(*cpp, stderr);
-	putc('\n', stderr);
-    }
-    putc('\n', stderr);
-    fflush(stderr);
+    putchar('\n');
+    for (cpp = message; *cpp; cpp++)
+	puts(*cpp);
+    putchar('\n');
+    fflush(stdout);
 }
 
 /* ARGSUSED */
@@ -962,6 +965,7 @@ main(int argc, char **argv ENVP_ARG)
     XtGetApplicationResources(toplevel, (XtPointer) & resource,
 			      application_resources,
 			      XtNumber(application_resources), NULL, 0);
+    TRACE_XRES();
 
     waiting_for_initial_map = resource.wait_for_map;
 
@@ -1082,7 +1086,7 @@ main(int argc, char **argv ENVP_ARG)
 		++argv;
 		winToEmbedInto = (Window) strtol(argv[0], &endPtr, 10);
 	    }
-	    break;
+	    continue;
 
 	default:
 	    Syntax(*argv);
@@ -1100,6 +1104,7 @@ main(int argc, char **argv ENVP_ARG)
 						 XtNfromVert, menu_top,
 						 XtNleft, XawChainLeft,
 						 XtNright, XawChainRight,
+						 XtNtop, XawChainTop,
 						 XtNbottom, XawChainBottom,
 #endif
 						 (XtPointer) 0);
@@ -1350,8 +1355,8 @@ get_terminal(void)
     register TScreen *screen = &term->screen;
 
     screen->arrow = make_colored_cursor(XC_left_ptr,
-					screen->mousecolor,
-					screen->mousecolorback);
+					T_COLOR(screen, MOUSE_FG),
+					T_COLOR(screen, MOUSE_BG));
 }
 
 /*
@@ -2022,7 +2027,7 @@ ptioctl(int fd, int func, void *data)
 
     switch (func) {
     case TCGETA:
-	rc = DosDevIOCtl(fd, XFREE86_PTY, func,
+	rc = DosDevIOCtl(fd, XFREE86_PTY, XTY_TIOCGETA,
 			 NULL, 0, NULL,
 			 (ULONG *) & pt, sizeof(struct pt_termios), &len);
 	if (rc)

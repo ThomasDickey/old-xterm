@@ -1,4 +1,4 @@
-/* $XFree86$
+/* $XFree86: xc/programs/xterm/keysym2ucs.c,v 1.5 2001/06/18 19:09:26 dickey Exp $
  * This module converts keysym values into the corresponding ISO 10646
  * (UCS, Unicode) values.
  *

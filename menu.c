@@ -1,7 +1,9 @@
+/* $XTermId: menu.c,v 1.145 2004/05/30 23:59:41 tom Exp $ */
+
 /* $Xorg: menu.c,v 1.4 2001/02/09 02:06:03 xorgcvs Exp $ */
 /*
 
-Copyright 1999-2002,2003 by Thomas E. Dickey
+Copyright 1999-2003,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -45,7 +47,7 @@ used in advertising or otherwise to promote the sale, use or other dealings
 in this Software without prior written authorization from The Open Group.
 
 */
-/* $XFree86: xc/programs/xterm/menu.c,v 3.52 2003/05/21 22:59:13 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/menu.c,v 3.56 2004/06/06 22:15:25 dickey Exp $ */
 
 #include <xterm.h>
 #include <data.h>
@@ -182,6 +184,10 @@ static void do_num_lock        PROTO_XT_CALLBACK_ARGS;
 static void do_meta_esc        PROTO_XT_CALLBACK_ARGS;
 #endif
 
+#if OPT_RENDERFONT
+static void do_font_renderfont PROTO_XT_CALLBACK_ARGS;
+#endif
+
 #if OPT_SCO_FUNC_KEYS
 static void do_sco_fkeys       PROTO_XT_CALLBACK_ARGS;
 #endif
@@ -208,6 +214,10 @@ static void do_vtonoff         PROTO_XT_CALLBACK_ARGS;
 static void do_vtshow          PROTO_XT_CALLBACK_ARGS;
 static void handle_tekshow     (Widget gw, Bool allowswitch);
 static void handle_vtshow      (Widget gw, Bool allowswitch);
+#endif
+
+#if OPT_WIDE_CHARS
+static void do_font_utf8_mode  PROTO_XT_CALLBACK_ARGS;
 #endif
 
 /*
@@ -300,6 +310,7 @@ MenuEntry fontMenuEntries[] = {
     { "fontescape",	do_vtfont,	NULL },
     { "fontsel",	do_vtfont,	NULL },
     /* down to here should match NMENUFONTS in ptyx.h */
+
 #if OPT_DEC_CHRSET || OPT_BOX_CHARS || OPT_DEC_SOFTFONT
     { "line1",		NULL,		NULL },
 #if OPT_BOX_CHARS
@@ -311,7 +322,18 @@ MenuEntry fontMenuEntries[] = {
 #if OPT_DEC_SOFTFONT
     { "font-loadable",	do_font_loadable,NULL },
 #endif
-#endif /* toggles for font extensions */
+#endif /* toggles for DEC font extensions */
+
+#if OPT_RENDERFONT || OPT_WIDE_CHARS
+    { "line2",		NULL,		NULL },
+#if OPT_RENDERFONT
+    { "render-font",	do_font_renderfont,NULL },
+#endif
+#if OPT_WIDE_CHARS
+    { "utf8-mode",	do_font_utf8_mode,NULL },
+#endif
+#endif /* toggles for other font extensions */
+
     };
 
 #if OPT_TEK4014
@@ -629,6 +651,21 @@ domenu(Widget w GCC_UNUSED,
 				fontMenuEntries[fontMenu_font_doublesize].widget,
 				False);
 #endif
+#if OPT_RENDERFONT
+	    update_font_renderfont();
+	    if (term->misc.face_name == 0) {
+		set_sensitivity(mw,
+				fontMenuEntries[fontMenu_render_font].widget,
+				False);
+	    }
+#endif
+#if OPT_WIDE_CHARS
+	    update_font_utf8_mode();
+	    if (term->screen.utf8_mode > 1)
+		set_sensitivity(mw,
+				fontMenuEntries[fontMenu_wide_chars].widget,
+				False);
+#endif
 	}
 	FindFontSelection(NULL, True);
 	set_sensitivity(mw,
@@ -654,7 +691,7 @@ domenu(Widget w GCC_UNUSED,
 
 void
 HandleCreateMenu(Widget w,
-		 XEvent * event,	/* unused */
+		 XEvent * event,
 		 String * params,	/* mainMenu, vtMenu, or tekMenu */
 		 Cardinal * param_count)	/* 0 or 1 */
 {
@@ -663,7 +700,7 @@ HandleCreateMenu(Widget w,
 
 void
 HandlePopupMenu(Widget w,
-		XEvent * event,	/* unused */
+		XEvent * event,
 		String * params,	/* mainMenu, vtMenu, or tekMenu */
 		Cardinal * param_count)		/* 0 or 1 */
 {
@@ -1309,6 +1346,43 @@ do_font_loadable(Widget gw GCC_UNUSED,
 }
 #endif
 
+#if OPT_RENDERFONT
+static void
+do_font_renderfont(Widget gw GCC_UNUSED,
+		   XtPointer closure GCC_UNUSED,
+		   XtPointer data GCC_UNUSED)
+{
+    TScreen *screen = &term->screen;
+    int fontnum = screen->menu_font_number;
+    String name = term->screen.menu_font_names[fontnum];
+
+    term->misc.render_font = !term->misc.render_font;
+    update_font_renderfont();
+    xtermLoadFont(screen, xtermFontName(name), True, fontnum);
+    ScrnRefresh(screen, 0, 0,
+		screen->max_row + 1,
+		screen->max_col + 1, True);
+}
+#endif
+
+#if OPT_WIDE_CHARS
+static void
+do_font_utf8_mode(Widget gw GCC_UNUSED,
+		  XtPointer closure GCC_UNUSED,
+		  XtPointer data GCC_UNUSED)
+{
+    TScreen *screen = &term->screen;
+
+    switchPtyData(screen, !screen->utf8_mode);
+    update_font_utf8_mode();
+    /*
+     * We don't repaint the screen when switching UTF-8 on/off.  When switching
+     * on - the Latin-1 codes should paint as-is.  When switching off, that's
+     * hard to do properly.
+     */
+}
+#endif
+
 /*
  * tek menu
  */
@@ -1944,6 +2018,30 @@ HandleFontLoading(Widget w,
 }
 #endif
 
+#if OPT_RENDERFONT
+void
+HandleRenderFont(Widget w,
+		 XEvent * event GCC_UNUSED,
+		 String * params,
+		 Cardinal * param_count)
+{
+    handle_toggle(do_font_renderfont, term->misc.render_font,
+		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+}
+#endif
+
+#if OPT_WIDE_CHARS
+void
+HandleUTF8Mode(Widget w,
+	       XEvent * event GCC_UNUSED,
+	       String * params,
+	       Cardinal * param_count)
+{
+    handle_toggle(do_font_utf8_mode, term->screen.utf8_mode,
+		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+}
+#endif
+
 #if OPT_TEK4014
 void
 HandleSetTerminalType(Widget w,
@@ -2212,6 +2310,25 @@ SetupMenus(Widget shell, Widget * forms, Widget * menus)
     TRACE(("...forms=%#lx\n", (long) *forms));
     TRACE(("...menus=%#lx\n", (long) *menus));
 }
+
+#if OPT_TOOLBAR
+void
+SetupToolbar(Widget shell)
+{
+    int n;
+    if (shell == toplevel) {	/* vt100 */
+	for (n = mainMenu; n <= fontMenu; n++) {
+	    InitPopup(vt_shell[n].w, menu_names[n].internal_name, 0);
+	}
+    }
+#if OPT_TEK4014
+    else {			/* tek4014 */
+	InitPopup(tek_shell[mainMenu].w, menu_names[mainMenu].internal_name, 0);
+	InitPopup(tek_shell[tekMenu].w, menu_names[tekMenu].internal_name, 0);
+    }
+#endif
+}
+#endif
 
 void
 update_securekbd(void)
@@ -2518,6 +2635,26 @@ update_font_loadable(void)
     update_menu_item(term->screen.fontMenu,
 		     fontMenuEntries[fontMenu_font_loadable].widget,
 		     term->misc.font_loadable);
+}
+#endif
+
+#if OPT_RENDERFONT
+void
+update_font_renderfont(void)
+{
+    update_menu_item(term->screen.fontMenu,
+		     fontMenuEntries[fontMenu_render_font].widget,
+		     term->misc.render_font);
+}
+#endif
+
+#if OPT_WIDE_CHARS
+void
+update_font_utf8_mode(void)
+{
+    update_menu_item(term->screen.fontMenu,
+		     fontMenuEntries[fontMenu_wide_chars].widget,
+		     term->screen.utf8_mode);
 }
 #endif
 

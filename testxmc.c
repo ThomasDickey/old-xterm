@@ -1,10 +1,12 @@
+/* $XTermId: testxmc.c,v 1.23 2004/04/18 20:49:43 tom Exp $ */
+
 /*
- * $XFree86: xc/programs/xterm/testxmc.c,v 3.8 2000/06/13 02:28:41 dawes Exp $
+ * $XFree86: xc/programs/xterm/testxmc.c,v 3.10 2004/04/18 20:49:43 dickey Exp $
  */
 
 /************************************************************
 
-Copyright 1997-2000,2002 by Thomas E. Dickey
+Copyright 1997-2002,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -212,7 +214,7 @@ Resolve_XMC(register TScreen * screen)
 
     TRACE(("XMC %s (%s:%d/%d) from %d,%d to %d,%d\n",
 	   changed ? "Ripple" : "Nochange",
-	   term->flags & my_attrs ? "on" : "off",
+	   BtoS(term->flags & my_attrs),
 	   my_attrs, start,
 	   screen->cur_row, screen->cur_col,
 	   row, col));

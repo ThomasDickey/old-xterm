@@ -1,5 +1,5 @@
 #!/bin/sh
-# $XFree86: xc/programs/xterm/minstall.sh,v 1.3 2002/08/17 19:52:26 dickey Exp $
+# $XFree86: xc/programs/xterm/minstall.sh,v 1.4 2002/12/27 21:05:22 dickey Exp $
 #
 # Install manpages, substituting a reasonable section value since XFree86 4.x
 # doesn't use constants...

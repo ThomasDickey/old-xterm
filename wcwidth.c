@@ -1,4 +1,4 @@
-/* $XFree86: xc/programs/xterm/wcwidth.c,v 1.5 2002/09/30 00:39:06 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/wcwidth.c,v 1.6 2003/10/13 00:58:23 dickey Exp $ */
 /*
  * This is an implementation of wcwidth() and wcswidth() (defined in
  * IEEE Std 1002.1-2001) for Unicode.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# $XFree86: xc/programs/xterm/vttests/acolors.sh,v 1.1 2002/09/30 00:39:08 dickey Exp $
+# $XFree86: xc/programs/xterm/vttests/acolors.sh,v 1.2 2003/05/19 00:52:30 dickey Exp $
 #
 # -- Thomas Dickey (1999/3/27)
 # Demonstrate the use of the control sequence for changing ANSI colors.

@@ -1,4 +1,4 @@
-/* $XFree86$ */
+/* $XFree86: xc/programs/xterm/xutf8.h,v 1.1 2001/06/18 19:09:28 dickey Exp $ */
 /*
 Copyright (c) 2001 by Juliusz Chroboczek
 

@@ -1,9 +1,9 @@
 /*
- * $XFree86: xc/programs/xterm/xterm_io.h,v 1.12 2003/12/25 22:04:05 dickey Exp $
+ * $XFree86: xc/programs/xterm/xterm_io.h,v 1.15 2004/04/03 22:26:26 dawes Exp $
  */
 
 /*
- * Copyright 2000-2002,2003 by Thomas E. Dickey
+ * Copyright 2000-2003,2004 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *
@@ -68,7 +68,7 @@
 #define USE_TERMIOS
 #endif
 
-#ifdef SCO325
+#ifdef __SCO__
 #define USE_TERMIOS
 #define _SVID3
 #endif
@@ -160,7 +160,7 @@
 #ifdef SYSV
 #ifdef USE_USG_PTYS
 #include <sys/stream.h>			/* get typedef used in ptem.h */
-#if !defined(SVR4) || defined(SCO325)
+#if !defined(SVR4) || defined(__SCO__)
 #include <sys/ptem.h>			/* get struct winsize */
 #endif
 #endif /* USE_USG_PTYS */

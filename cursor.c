@@ -2,7 +2,7 @@
  *	$Xorg: cursor.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/cursor.c,v 3.14 2001/01/17 23:46:36 dawes Exp $ */
+/* $XFree86: xc/programs/xterm/cursor.c,v 3.15 2002/04/28 19:04:20 dickey Exp $ */
 
 /*
  * Copyright 2002 by Thomas E. Dickey

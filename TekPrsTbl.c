@@ -25,7 +25,7 @@
  * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
  * SOFTWARE.
  */
-/* $XFree86: xc/programs/xterm/TekPrsTbl.c,v 3.2 1998/10/25 12:48:07 dawes Exp $ */
+/* $XFree86: xc/programs/xterm/TekPrsTbl.c,v 3.3 2001/01/17 23:46:33 dawes Exp $ */
 
 #include <Tekparse.h>
 

@@ -1,8 +1,10 @@
-/* $XFree86: xc/programs/xterm/xterm.h,v 3.93 2003/12/18 21:12:16 dickey Exp $ */
+/* $XTermId: xterm.h,v 1.291 2004/07/13 00:41:30 tom Exp $ */
+
+/* $XFree86: xc/programs/xterm/xterm.h,v 3.102 2004/07/13 00:41:30 dickey Exp $ */
 
 /************************************************************
 
-Copyright 1999-2002,2003 by Thomas E. Dickey
+Copyright 1999-2003,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -89,8 +91,20 @@ authorization.
 #define USE_POSIX_TERMIOS 1
 #endif
 
+#ifdef __NetBSD__
+#include <sys/param.h>
+#if __NetBSD_Version__ >= 106030000	/* 1.6C */
+#define BSD_UTMPX 1
+#define ut_xtime ut_tv.tv_sec
+#endif
+#endif
+
 #if defined(hpux) && !defined(__hpux)
 #define __hpux 1		/* HPUX 11.0 does not define this */
+#endif
+
+#if !defined(__SCO__) && (defined(SCO) || defined(sco) || defined(SCO325))
+#define __SCO__ 1
 #endif
 
 #ifdef USE_POSIX_TERMIOS
@@ -98,7 +112,7 @@ authorization.
 #define HAVE_TCGETATTR 1
 #endif
 
-#if defined(__UNIXOS2__) || defined(SCO) || defined(sco)
+#if defined(__UNIXOS2__) || defined(__SCO__)
 #define USE_TERMCAP 1
 #endif
 
@@ -106,7 +120,7 @@ authorization.
 #define HAVE_UTMP 1
 #endif
 
-#if (defined(__MVS__) || defined(SVR4) || defined(SCO325)) && !defined(__CYGWIN__)
+#if (defined(__MVS__) || defined(SVR4) || defined(__SCO__) || defined(BSD_UTMPX)) && !defined(__CYGWIN__)
 #define UTMPX_FOR_UTMP 1
 #endif
 
@@ -122,7 +136,7 @@ authorization.
 #define ut_xstatus ut_exit.e_exit
 #endif
 
-#if defined(SVR4) || defined(SCO325) || (defined(linux) && defined(__GLIBC__) && (__GLIBC__ >= 2) && !(defined(__powerpc__) && (__GLIBC__ == 2) && (__GLIBC_MINOR__ == 0)))
+#if defined(SVR4) || defined(__SCO__) || defined(BSD_UTMPX) || (defined(linux) && defined(__GLIBC__) && (__GLIBC__ >= 2) && !(defined(__powerpc__) && (__GLIBC__ == 2) && (__GLIBC_MINOR__ == 0)))
 #define HAVE_UTMP_UT_XTIME 1
 #endif
 
@@ -130,19 +144,29 @@ authorization.
 #define USE_LASTLOG
 #define HAVE_LASTLOG_H
 #elif defined(BSD) && (BSD >= 199103)
+#ifdef BSD_UTMPX
+#define USE_LASTLOGX
+#else
 #define USE_LASTLOG
 #endif
+#endif
 
-#if defined(SCO)
+#if defined(__OpenBSD__)
+#define DEFDELETE_DEL TRUE
+#define DEF_BACKARO_ERASE TRUE
+#define DEF_INITIAL_ERASE TRUE
+#endif
+
+#if defined(__SCO__)
 #define DEFDELETE_DEL TRUE
 #define OPT_SCO_FUNC_KEYS 1
 #endif
 
-#if defined(SCO) || defined(SVR4) || defined(_POSIX_SOURCE) || defined(__QNX__) || defined(__hpux) || (defined(BSD) && (BSD >= 199103)) || defined(__CYGWIN__)
+#if defined(__SCO__) || defined(SVR4) || defined(_POSIX_SOURCE) || defined(__QNX__) || defined(__hpux) || (defined(BSD) && (BSD >= 199103)) || defined(__CYGWIN__)
 #define USE_POSIX_WAIT
 #endif
 
-#if defined(AIXV3) || defined(CRAY) || defined(SCO) || defined(SVR4) || (defined(SYSV) && defined(i386)) || defined(__MVS__) || defined(__hpux) || defined(__osf__) || defined(linux) || defined(macII)
+#if defined(AIXV3) || defined(CRAY) || defined(__SCO__) || defined(SVR4) || (defined(SYSV) && defined(i386)) || defined(__MVS__) || defined(__hpux) || defined(__osf__) || defined(linux) || defined(macII) || defined(BSD_UTMPX)
 #define USE_SYSV_UTMP
 #endif
 
@@ -317,6 +341,7 @@ extern int errno;
 #define XtNeightBitInput	"eightBitInput"
 #define XtNeightBitOutput	"eightBitOutput"
 #define XtNfaceName		"faceName"
+#define XtNfaceNameDoublesize	"faceNameDoublesize"
 #define XtNfaceSize		"faceSize"
 #define XtNfont1		"font1"
 #define XtNfont2		"font2"
@@ -362,6 +387,7 @@ extern int errno;
 #define XtNprinterControlMode	"printerControlMode"
 #define XtNprinterExtent	"printerExtent"
 #define XtNprinterFormFeed	"printerFormFeed"
+#define XtNrenderFont		"renderFont"
 #define XtNresizeGravity	"resizeGravity"
 #define XtNreverseWrap		"reverseWrap"
 #define XtNrightScrollBar	"rightScrollBar"
@@ -372,6 +398,8 @@ extern int errno;
 #define XtNscrollPos		"scrollPos"
 #define XtNscrollTtyOutput	"scrollTtyOutput"
 #define XtNshiftFonts		"shiftFonts"
+#define XtNshowBlinkAsBold	"showBlinkAsBold"
+#define XtNshowMissingGlyphs	"showMissingGlyphs"
 #define XtNsignalInhibit	"signalInhibit"
 #define XtNtekGeometry		"tekGeometry"
 #define XtNtekInhibit		"tekInhibit"
@@ -433,6 +461,7 @@ extern int errno;
 #define XtCEightBitInput	"EightBitInput"
 #define XtCEightBitOutput	"EightBitOutput"
 #define XtCFaceName		"FaceName"
+#define XtCFaceNameDoublesize	"FaceNameDoublesize"
 #define XtCFaceSize		"FaceSize"
 #define XtCFont1		"Font1"
 #define XtCFont2		"Font2"
@@ -442,6 +471,8 @@ extern int errno;
 #define XtCFont6		"Font6"
 #define XtCFontDoublesize	"FontDoublesize"
 #define XtCFontStyle		"FontStyle"
+#define XtCForceBoxChars	"ForceBoxChars"
+#define XtCFreeBoldBox		"FreeBoldBox"
 #define XtCHighlightSelection	"HighlightSelection"
 #define XtCHpLowerleftBugCompat	"HpLowerleftBugCompat"
 #define XtCI18nSelections	"I18nSelections"
@@ -470,6 +501,7 @@ extern int errno;
 #define XtCPrinterControlMode	"PrinterControlMode"
 #define XtCPrinterExtent	"PrinterExtent"
 #define XtCPrinterFormFeed	"PrinterFormFeed"
+#define XtCRenderFont		"RenderFont"
 #define XtCResizeGravity	"ResizeGravity"
 #define XtCReverseWrap		"ReverseWrap"
 #define XtCRightScrollBar	"RightScrollBar"
@@ -479,6 +511,8 @@ extern int errno;
 #define XtCScrollLines		"ScrollLines"
 #define XtCScrollPos		"ScrollPos"
 #define XtCShiftFonts		"ShiftFonts"
+#define XtCShowBlinkAsBold	"ShowBlinkAsBold"
+#define XtCShowMissingGlyphs	"ShowMissingGlyphs"
 #define XtCSignalInhibit	"SignalInhibit"
 #define XtCTekInhibit		"TekInhibit"
 #define XtCTekSmall		"TekSmall"
@@ -524,7 +558,7 @@ extern "C" {
 
 /* Tekproc.c */
 extern int TekInit (void);
-extern int TekPtyData (void);
+extern int TekPtyData(void);
 extern void ChangeTekColors (TScreen *screen, ScrnColors *pNew);
 extern void TCursorToggle (int toggle);
 extern void TekCopy (void);
@@ -668,12 +702,14 @@ extern void do_hangup          PROTO_XT_CALLBACK_ARGS;
 extern void show_8bit_control  (Bool value);
 
 /* misc.c */
+extern Boolean AllocateTermColor(XtermWidget, ScrnColors *, int, const char *);
 extern Cursor make_colored_cursor (unsigned cursorindex, unsigned long fg, unsigned long bg);
 extern OptionHelp * sortedOpts(OptionHelp *, XrmOptionDescRec *, Cardinal);
 extern Window WMFrameWindow(XtermWidget termw);
 extern XrmOptionDescRec * sortedOptDescs(XrmOptionDescRec *, Cardinal);
 extern char *SysErrorMsg (int n);
 extern char *udk_lookup (int keycode, int *len);
+extern char *xtermVersion(void);
 extern int XStrCmp (char *s1, char *s2);
 extern int creat_as (int uid, int gid, Boolean append, char *pathname, int mode);
 extern int open_userfile (int uid, int gid, char *path, Boolean append);
@@ -713,6 +749,10 @@ extern void xevents (void);
 extern void xt_error (String message);
 extern void xtermSetenv (char *var, char *value);
 
+#if OPT_DABBREV
+extern void HandleDabbrevExpand      PROTO_XT_ACTIONS_ARGS;
+#endif
+
 #if OPT_MAXIMIZE
 extern int QueryMaximize (TScreen *screen, unsigned *width, unsigned *height);
 extern void HandleDeIconify          PROTO_XT_ACTIONS_ARGS;
@@ -739,17 +779,29 @@ extern void xtermMediaControl (int param, int private_seq);
 extern void xtermPrintScreen (Boolean use_DECPEX);
 
 /* ptydata.c */
-extern int getPtyData (TScreen *screen, fd_set *select_mask, PtyData *data);
-extern unsigned usedPtyData(PtyData *data);
-extern void initPtyData (PtyData *data);
+#ifdef VMS
+#define PtySelect int
+#else
+#define PtySelect fd_set
+#endif
 
-#define nextPtyData(data) ((data)->cnt)--, (*((data)->ptr)++)
-#define morePtyData(data) ((data)->cnt > 0)
+extern int readPtyData (TScreen *screen, PtySelect *select_mask, PtyData *data);
+extern void fillPtyData (TScreen *screen, PtyData *data, char *value, int length);
+extern void initPtyData (PtyData *data);
+extern void trimPtyData (TScreen *screen, PtyData *data);
 
 #if OPT_WIDE_CHARS
-extern Char * convertToUTF8(Char *lp, unsigned c);
-extern void writePtyData(int f, IChar *d, unsigned len);
+extern Boolean morePtyData (TScreen *screen, PtyData *data);
+extern Char *convertToUTF8 (Char *lp, unsigned c);
+extern IChar nextPtyData (TScreen *screen, PtyData *data);
+extern void switchPtyData (TScreen *screen, int f);
+extern void writePtyData (int f, IChar *d, unsigned len);
 #else
+#define morePtyData(screen, data) ((data)->last > (data)->next)
+#define nextPtyData(screen, data) (*((data)->next++) & \
+					(screen->output_eight_bits \
+					? 0xff \
+					: 0x7f))
 #define writePtyData(f,d,len) v_write(f,d,len)
 #endif
 
@@ -766,16 +818,28 @@ extern void ScrnInsertChar (TScreen *screen, int n);
 extern void ScrnInsertLine (TScreen *screen, ScrnBuf sb, int last, int where, int n, int size);
 extern void ScrnRefresh (TScreen *screen, int toprow, int leftcol, int nrows, int ncols, Bool force);
 
-#define ScrnClrWrapped(screen, row) \
+#define ScrnClrFlag(screen, row, flag) \
 	SCRN_BUF_FLAGS(screen, row + screen->topline) = \
-		(Char *)((long)SCRN_BUF_FLAGS(screen, row + screen->topline) & ~ LINEWRAPPED)
+		(Char *)((long)SCRN_BUF_FLAGS(screen, row + screen->topline) & ~ (flag))
 
-#define ScrnSetWrapped(screen, row) \
+#define ScrnSetFlag(screen, row, flag) \
 	SCRN_BUF_FLAGS(screen, row + screen->topline) = \
-		(Char *)(((long)SCRN_BUF_FLAGS(screen, row + screen->topline) | LINEWRAPPED))
+		(Char *)(((long)SCRN_BUF_FLAGS(screen, row + screen->topline) | (flag)))
 
-#define ScrnTstWrapped(screen, row) \
-	((row + screen->savelines + screen->topline) >= 0 && ((long)SCRN_BUF_FLAGS(screen, row + screen->topline) & LINEWRAPPED) != 0)
+#define ScrnTstFlag(screen, row, flag) \
+	((row + screen->savelines + screen->topline) >= 0 && ((long)SCRN_BUF_FLAGS(screen, row + screen->topline) & (flag)) != 0)
+
+#define ScrnClrBlinked(screen, row) ScrnClrFlag(screen, row, BLINK)
+#define ScrnSetBlinked(screen, row) ScrnSetFlag(screen, row, BLINK)
+#define ScrnTstBlinked(screen, row) ScrnTstFlag(screen, row, BLINK)
+
+#define ScrnClrWrapped(screen, row) ScrnClrFlag(screen, row, LINEWRAPPED)
+#define ScrnSetWrapped(screen, row) ScrnSetFlag(screen, row, LINEWRAPPED)
+#define ScrnTstWrapped(screen, row) ScrnTstFlag(screen, row, LINEWRAPPED)
+
+#if OPT_WIDE_CHARS
+extern void ChangeToWide(TScreen * screen);
+#endif
 
 /* scrollbar.c */
 extern void DoResizeScreen (XtermWidget xw);
@@ -842,20 +906,22 @@ extern void ClearCurBackground (TScreen *screen, int top, int left, unsigned hei
 #define getXtermForeground(flags, color) \
 	(((flags) & FG_COLOR) && ((color) >= 0 && (color) < MAXCOLORS) \
 			? GET_COLOR_RES(term->screen.Acolors[color]) \
-			: term->screen.foreground)
+			: T_COLOR(&(term->screen), TEXT_FG))
 
 #define getXtermBackground(flags, color) \
 	(((flags) & BG_COLOR) && ((color) >= 0 && (color) < MAXCOLORS) \
 			? GET_COLOR_RES(term->screen.Acolors[color]) \
-			: term->core.background_pixel)
+			: T_COLOR(&(term->screen), TEXT_BG))
 
 #if OPT_COLOR_RES
-#define GET_COLOR_RES(res) xtermGetColorRes(&res)
-#define SET_COLOR_RES(res,color) res->value = color
+#define GET_COLOR_RES(res) xtermGetColorRes(&(res))
+#define SET_COLOR_RES(res,color) (res)->value = color
+#define T_COLOR(v,n) (v)->Tcolors[n].value
 extern Pixel xtermGetColorRes(ColorRes *res);
 #else
 #define GET_COLOR_RES(res) res
 #define SET_COLOR_RES(res,color) *res = color
+#define T_COLOR(v,n) (v)->Tcolors[n]
 #endif
 
 #if OPT_EXT_COLORS
@@ -889,8 +955,9 @@ extern Pixel xtermGetColorRes(ColorRes *res);
 #define extract_bg(color, flags) term->cur_background
 
 		/* FIXME: Reverse-Video? */
-#define getXtermBackground(flags, color) term->core.background_pixel
-#define getXtermForeground(flags, color) term->screen.foreground
+#define T_COLOR(v,n) (v)->Tcolors[n]
+#define getXtermBackground(flags, color) T_COLOR(&(term->screen), TEXT_BG)
+#define getXtermForeground(flags, color) T_COLOR(&(term->screen), TEXT_FG)
 #define makeColorPair(fg, bg) 0
 #define xtermColorPair() 0
 
@@ -929,6 +996,9 @@ int visual_width(PAIRED_CHARS(Char *str, Char *str2), Cardinal len);
 #else
 #define visual_width(a, b) (b)
 #endif
+
+#define BtoS(b)    ((b) ? "on" : "off")
+#define NonNull(s) ((s) ? (s) : "<null>")
 
 #ifdef __cplusplus
 	}

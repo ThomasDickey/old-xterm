@@ -1,11 +1,13 @@
+/* $XTermId: data.h,v 1.79 2004/06/06 22:15:25 tom Exp $ */
+
 /*
  *	$Xorg: data.h,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/data.h,v 3.30 2003/03/23 02:01:40 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/data.h,v 3.34 2004/06/06 22:15:25 dickey Exp $ */
 
 /*
- * Copyright 2002,2003 by Thomas E. Dickey
+ * Copyright 2002-2003,2004 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *
@@ -82,7 +84,6 @@ extern struct q_head read_queue;
 #if OPT_TEK4014
 extern Char *Tpushb;
 extern Char *Tpushback;
-extern PtyData *Tbuffer;
 extern TekLink *TekRefresh;
 extern TekWidget tekWidget;
 extern Widget tekshellwidget;
@@ -116,15 +117,9 @@ extern jmp_buf VTend;
 extern int debug;
 #endif /* DEBUG */
 
-#ifdef VMS
-extern int Select_mask;
-extern int X_mask;
-extern int pty_mask;
-#else /* VMS */
-extern fd_set Select_mask;
-extern fd_set X_mask;
-extern fd_set pty_mask;
-#endif /* VMS */
+extern PtySelect Select_mask;
+extern PtySelect X_mask;
+extern PtySelect pty_mask;
 
 extern int waitingForTrackInfo;
 
@@ -167,6 +162,9 @@ typedef struct {
 #endif
 #if OPT_HP_FUNC_KEYS
     Boolean hpFunctionKeys;
+#endif
+#if OPT_SCO_FUNC_KEYS
+    Boolean scoFunctionKeys;
 #endif
 #if OPT_INITIAL_ERASE
     Boolean ptyInitialErase;	/* if true, use pty's sense of erase char */

@@ -1,4 +1,4 @@
-/* $XFree86: xc/programs/xterm/xutf8.c,v 1.2tsi Exp $ */
+/* $XFree86: xc/programs/xterm/xutf8.c,v 1.3 2002/10/09 16:38:20 tsi Exp $ */
 /*
 Copyright (c) 2001 by Juliusz Chroboczek
 

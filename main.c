@@ -1,3 +1,5 @@
+/* $XTermId: main.c,v 1.396 2004/08/15 21:07:59 tom Exp $ */
+
 #if !defined(lint) && 0
 static char *rid = "$Xorg: main.c,v 1.7 2001/02/09 02:06:02 xorgcvs Exp $";
 #endif /* lint */
@@ -17,7 +19,7 @@ static char *rid = "$Xorg: main.c,v 1.7 2001/02/09 02:06:02 xorgcvs Exp $";
 
 /***********************************************************
 
-Copyright 2002,2003 by Thomas E. Dickey
+Copyright 2002-2003,2004 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -89,13 +91,12 @@ SOFTWARE.
 
 ******************************************************************/
 
-/* $XFree86: xc/programs/xterm/main.c,v 3.173 2003/11/25 01:54:43 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/main.c,v 3.185 2004/08/15 21:07:59 dickey Exp $ */
 
 /* main.c */
 
 #define RES_OFFSET(field)	XtOffsetOf(XTERM_RESOURCE, field)
 
-#include <version.h>
 #include <xterm.h>
 
 #include <X11/cursorfont.h>
@@ -144,7 +145,7 @@ SOFTWARE.
 static Bool IsPts = False;
 #endif
 
-#if defined(SCO) || defined(SVR4) || defined(_POSIX_SOURCE)
+#if defined(__SCO__) || defined(SVR4) || defined(_POSIX_SOURCE)
 #define USE_POSIX_SIGNALS
 #endif
 
@@ -179,7 +180,7 @@ static Bool IsPts = False;
 #define WTMP
 #endif
 
-#ifdef SCO325
+#ifdef __SCO__
 #ifndef _SVID3
 #define _SVID3
 #endif
@@ -405,7 +406,7 @@ extern struct utmp *getutid __((struct utmp * _Id));
 
 #include <signal.h>
 
-#if defined(sco) || (defined(ISC) && !defined(_POSIX_SOURCE))
+#if defined(__SCO__) || (defined(ISC) && !defined(_POSIX_SOURCE))
 #undef SIGTSTP			/* defined, but not the BSD way */
 #endif
 
@@ -457,7 +458,7 @@ static Bool added_utmp_entry = False;
 static gid_t utmpGid = -1;
 #endif
 
-#ifdef USE_SYSV_UTMP
+#if defined(USE_SYSV_UTMP) && !defined(USE_UTEMPTER)
 static Bool xterm_exiting = False;
 #endif
 
@@ -585,48 +586,53 @@ static struct jtchars d_jtc =
  * SVR4 has only termio.c_cc, but it includes everything from ltchars.
  * POSIX termios has termios.c_cc, which is similar to SVR4.
  */
+#define TTYMODE(name) { name, sizeof(name)-1, 0, 0 }
 static int override_tty_modes = 0;
 /* *INDENT-OFF* */
 struct _xttymodes {
     char *name;
     size_t len;
     int set;
-    char value;
+    Char value;
 } ttymodelist[] = {
-    { "intr",	4, 0, '\0' },	/* tchars.t_intrc ; VINTR */
-#define XTTYMODE_intr 0
-    { "quit",	4, 0, '\0' },	/* tchars.t_quitc ; VQUIT */
-#define XTTYMODE_quit 1
-    { "erase",	5, 0, '\0' },	/* sgttyb.sg_erase ; VERASE */
-#define XTTYMODE_erase 2
-    { "kill",	4, 0, '\0' },	/* sgttyb.sg_kill ; VKILL */
-#define XTTYMODE_kill 3
-    { "eof",	3, 0, '\0' },	/* tchars.t_eofc ; VEOF */
-#define XTTYMODE_eof 4
-    { "eol",	3, 0, '\0' },	/* VEOL */
-#define XTTYMODE_eol 5
-    { "swtch",	5, 0, '\0' },	/* VSWTCH */
-#define XTTYMODE_swtch 6
-    { "start",	5, 0, '\0' },	/* tchars.t_startc */
-#define XTTYMODE_start 7
-    { "stop",	4, 0, '\0' },	/* tchars.t_stopc */
-#define XTTYMODE_stop 8
-    { "brk",	3, 0, '\0' },	/* tchars.t_brkc */
-#define XTTYMODE_brk 9
-    { "susp",	4, 0, '\0' },	/* ltchars.t_suspc ; VSUSP */
-#define XTTYMODE_susp 10
-    { "dsusp",	5, 0, '\0' },	/* ltchars.t_dsuspc ; VDSUSP */
-#define XTTYMODE_dsusp 11
-    { "rprnt",	5, 0, '\0' },	/* ltchars.t_rprntc ; VREPRINT */
-#define XTTYMODE_rprnt 12
-    { "flush",	5, 0, '\0' },	/* ltchars.t_flushc ; VDISCARD */
-#define XTTYMODE_flush 13
-    { "weras",	5, 0, '\0' },	/* ltchars.t_werasc ; VWERASE */
-#define XTTYMODE_weras 14
-    { "lnext",	5, 0, '\0' },	/* ltchars.t_lnextc ; VLNEXT */
-#define XTTYMODE_lnext 15
-    { "status", 6, 0, '\0' },	/* VSTATUS */
-#define XTTYMODE_status 16
+    TTYMODE("intr"),		/* tchars.t_intrc ; VINTR */
+#define XTTYMODE_intr	0
+    TTYMODE("quit"),		/* tchars.t_quitc ; VQUIT */
+#define XTTYMODE_quit	1
+    TTYMODE("erase"),		/* sgttyb.sg_erase ; VERASE */
+#define XTTYMODE_erase	2
+    TTYMODE("kill"),		/* sgttyb.sg_kill ; VKILL */
+#define XTTYMODE_kill	3
+    TTYMODE("eof"),		/* tchars.t_eofc ; VEOF */
+#define XTTYMODE_eof	4
+    TTYMODE("eol"),		/* VEOL */
+#define XTTYMODE_eol	5
+    TTYMODE("swtch"),		/* VSWTCH */
+#define XTTYMODE_swtch	6
+    TTYMODE("start"),		/* tchars.t_startc ; VSTART */
+#define XTTYMODE_start	7
+    TTYMODE("stop"),		/* tchars.t_stopc ; VSTOP */
+#define XTTYMODE_stop	8
+    TTYMODE("brk"),		/* tchars.t_brkc */
+#define XTTYMODE_brk	9
+    TTYMODE("susp"),		/* ltchars.t_suspc ; VSUSP */
+#define XTTYMODE_susp	10
+    TTYMODE("dsusp"),		/* ltchars.t_dsuspc ; VDSUSP */
+#define XTTYMODE_dsusp	11
+    TTYMODE("rprnt"),		/* ltchars.t_rprntc ; VREPRINT */
+#define XTTYMODE_rprnt	12
+    TTYMODE("flush"),		/* ltchars.t_flushc ; VDISCARD */
+#define XTTYMODE_flush	13
+    TTYMODE("weras"),		/* ltchars.t_werasc ; VWERASE */
+#define XTTYMODE_weras	14
+    TTYMODE("lnext"),		/* ltchars.t_lnextc ; VLNEXT */
+#define XTTYMODE_lnext	15
+    TTYMODE("status"),		/* VSTATUS */
+#define XTTYMODE_status	16
+    TTYMODE("erase2"),		/* VERASE2 */
+#define XTTYMODE_erase2	17
+    TTYMODE("eol2"),		/* VEOL2 */
+#define XTTYMODE_eol2	18
     { NULL,	0, 0, '\0' },	/* end of data */
 };
 /* *INDENT-ON* */
@@ -644,6 +650,7 @@ extern struct utmp *getutid();
 static char etc_utmp[] = UTMP_FILENAME;
 #endif /* USE_SYSV_UTMP */
 
+#ifndef USE_UTEMPTER
 #ifdef USE_LASTLOG
 static char etc_lastlog[] = LASTLOG_FILENAME;
 #endif
@@ -651,6 +658,7 @@ static char etc_lastlog[] = LASTLOG_FILENAME;
 #ifdef WTMP
 static char etc_wtmp[] = WTMP_FILENAME;
 #endif
+#endif /* !USE_UTEMPTER */
 
 /*
  * Some people with 4.3bsd /bin/login seem to like to use login -p -f user
@@ -701,9 +709,12 @@ static XtResource application_resources[] =
 #if OPT_HP_FUNC_KEYS
     Bres("hpFunctionKeys", "HpFunctionKeys", hpFunctionKeys, FALSE),
 #endif
+#if OPT_SCO_FUNC_KEYS
+    Bres("scoFunctionKeys", "ScoFunctionKeys", scoFunctionKeys, FALSE),
+#endif
 #if OPT_INITIAL_ERASE
-    Bres("ptyInitialErase", "PtyInitialErase", ptyInitialErase, FALSE),
-    Bres("backarrowKeyIsErase", "BackarrowKeyIsErase", backarrow_is_erase, FALSE),
+    Bres("ptyInitialErase", "PtyInitialErase", ptyInitialErase, DEF_INITIAL_ERASE),
+    Bres("backarrowKeyIsErase", "BackarrowKeyIsErase", backarrow_is_erase, DEF_BACKARO_ERASE),
 #endif
     Bres("waitForMap", "WaitForMap", wait_for_map, FALSE),
     Bres("useInsertMode", "UseInsertMode", useInsertMode, FALSE),
@@ -778,8 +789,9 @@ static XrmOptionDescRec optionDescList[] = {
 #ifndef NO_ACTIVE_ICON
 {"-fi",		"*iconFont",	XrmoptionSepArg,	(caddr_t) NULL},
 #endif /* NO_ACTIVE_ICON */
-#ifdef XRENDERFONT
+#if OPT_RENDERFONT
 {"-fa",		"*faceName",	XrmoptionSepArg,	(caddr_t) NULL},
+{"-fd",		"*faceNameDoublesize", XrmoptionSepArg,	(caddr_t) NULL},
 {"-fs",		"*faceSize",	XrmoptionSepArg,	(caddr_t) NULL},
 #endif
 #if OPT_WIDE_CHARS
@@ -858,8 +870,8 @@ static XrmOptionDescRec optionDescList[] = {
 {"+u8",		"*utf8",	XrmoptionNoArg,		(caddr_t) "0"},
 #endif
 #if OPT_LUIT_PROG
-{"-lc",		"*locale",	XrmoptionNoArg,		(caddr_t) "True"},
-{"+lc",		"*locale",	XrmoptionNoArg,		(caddr_t) "False"},
+{"-lc",		"*locale",	XrmoptionNoArg,		(caddr_t) "on"},
+{"+lc",		"*locale",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-lcc",	"*localeFilter",XrmoptionSepArg,	(caddr_t) NULL},
 {"-en",		"*locale",	XrmoptionSepArg,	(caddr_t) NULL},
 #endif
@@ -925,8 +937,9 @@ static OptionHelp xtermOptions[] = {
 { "-fb fontname",          "bold text font" },
 { "-/+fbb",                "turn on/off normal/bold font comparison inhibit"},
 { "-/+fbx",                "turn off/on linedrawing characters"},
-#ifdef XRENDERFONT
+#if OPT_RENDERFONT
 { "-fa pattern",           "FreeType font-selection pattern" },
+{ "-fd pattern",           "FreeType Doublesize font-selection pattern" },
 { "-fs size",              "FreeType font-size" },
 #endif
 #if OPT_WIDE_CHARS
@@ -1192,7 +1205,7 @@ Syntax(char *badOption)
 static void
 Version(void)
 {
-    printf("%s(%d)\n", X_VERSION, XTERM_PATCH);
+    printf("%s\n", xtermVersion());
     fflush(stdout);
 }
 
@@ -1203,21 +1216,18 @@ Help(void)
     OptionHelp *list = sortedOpts(xtermOptions, optionDescList, XtNumber(optionDescList));
     char **cpp;
 
-    fprintf(stderr,
-	    "%s(%d) usage:\n    %s [-options ...] [-e command args]\n\n",
-	    X_VERSION, XTERM_PATCH, ProgramName);
-    fprintf(stderr, "where options include:\n");
+    printf("%s usage:\n    %s [-options ...] [-e command args]\n\n",
+	   xtermVersion(), ProgramName);
+    printf("where options include:\n");
     for (opt = list; opt->opt; opt++) {
-	fprintf(stderr, "    %-28s %s\n", opt->opt, opt->desc);
+	printf("    %-28s %s\n", opt->opt, opt->desc);
     }
 
-    putc('\n', stderr);
-    for (cpp = message; *cpp; cpp++) {
-	fputs(*cpp, stderr);
-	putc('\n', stderr);
-    }
-    putc('\n', stderr);
-    fflush(stderr);
+    putchar('\n');
+    for (cpp = message; *cpp; cpp++)
+	puts(*cpp);
+    putchar('\n');
+    fflush(stdout);
 }
 
 #if defined(TIOCCONS) || defined(SRIOCSREDIR)
@@ -1383,17 +1393,14 @@ ParseSccn(char *option)
 
     if (leaf != option) {
 	if (leaf - option > 1
-	    && leaf - option <= PTYCHARLEN
+	    && isdigit(CharOf(*leaf))
 	    && sscanf(leaf, "%d", &am_slave) == 1) {
 	    size_t len = leaf - option - 1;
 	    /*
-	     * If the given length is less than PTYCHARLEN, that is
-	     * all right because the calling application may be
-	     * giving us a path for /dev/pts, which would be
-	     * followed by one or more decimal digits.
-	     *
-	     * For fixed-width fields, it is up to the calling
-	     * application to provide leading 0's, if needed.
+	     * If we have a slash, we only care about the part after the slash,
+	     * which is a file-descriptor.  The part before the slash can be
+	     * the /dev/pts/XXX value, but since we do not need to reopen it,
+	     * it is useful mainly for display in a "ps -ef".
 	     */
 	    strncpy(passedPty, option, len);
 	    passedPty[len] = 0;
@@ -1818,6 +1825,7 @@ main(int argc, char *argv[]ENVP_ARG)
 	XtGetApplicationResources(toplevel, (XtPointer) & resource,
 				  application_resources,
 				  XtNumber(application_resources), NULL, 0);
+	TRACE_XRES();
 
 #ifdef HAS_SAVED_IDS_AND_SETEUID
 	if (seteuid(euid) == -1) {
@@ -1970,7 +1978,7 @@ main(int argc, char *argv[]ENVP_ARG)
 		++argv;
 		winToEmbedInto = (Window) strtol(argv[0], &endPtr, 10);
 	    }
-	    break;
+	    continue;
 
 	default:
 	    Syntax(*argv);
@@ -1988,10 +1996,14 @@ main(int argc, char *argv[]ENVP_ARG)
 						 XtNfromVert, menu_top,
 						 XtNleft, XawChainLeft,
 						 XtNright, XawChainRight,
+						 XtNtop, XawChainTop,
 						 XtNbottom, XawChainBottom,
 #endif
 						 (XtPointer) 0);
     /* this causes the initialize method to be called */
+#if OPT_TOOLBAR
+    SetupToolbar(toplevel);
+#endif
 
 #if OPT_HP_FUNC_KEYS
     init_keyboard_type(keyboardIsHP, resource.hpFunctionKeys);
@@ -2175,6 +2187,15 @@ main(int argc, char *argv[]ENVP_ARG)
 	SysError(ERROR_FIONBIO);
 #endif /* USE_ANY_SYSV_TERMIO, etc */
 
+    /* The erase character is used to delete the current completion */
+#if OPT_DABBREV
+#if defined(USE_ANY_SYSV_TERMIO) || defined(USE_POSIX_TERMIOS)
+    screen->dabbrev_erase_char = d_tio.c_cc[VERASE];
+#else
+    screen->dabbrev_erase_char = d_sg.sg_erase;
+#endif
+#endif
+
     FD_ZERO(&pty_mask);
     FD_ZERO(&X_mask);
     FD_ZERO(&Select_mask);
@@ -2321,7 +2342,7 @@ get_pty(int *pty, char *from GCC_UNUSED)
 #endif
 	result = ((*pty = open("/dev/ptmx", O_RDWR)) < 0);
 #endif
-#if defined(SVR4) || defined(SCO325) || defined(USE_ISPTS_FLAG)
+#if defined(SVR4) || defined(__SCO__) || defined(USE_ISPTS_FLAG)
 	if (!result)
 	    strcpy(ttydev, ptsname(*pty));
 #ifdef USE_ISPTS_FLAG
@@ -2468,17 +2489,17 @@ pty_search(int *pty)
 }
 #endif /* USE_PTY_SEARCH */
 
-static void
-get_terminal(void)
 /*
  * sets up X and initializes the terminal structure except for term.buf.fildes.
  */
+static void
+get_terminal(void)
 {
     register TScreen *screen = &term->screen;
 
     screen->arrow = make_colored_cursor(XC_left_ptr,
-					screen->mousecolor,
-					screen->mousecolorback);
+					T_COLOR(screen, MOUSE_FG),
+					T_COLOR(screen, MOUSE_BG));
 }
 
 /*
@@ -2634,6 +2655,37 @@ set_owner(char *device, int uid, int gid, int mode)
     chmod(device, mode);
 }
 
+#if defined(HAVE_UTMP) && defined(USE_SYSV_UTMP) && !defined(USE_UTEMPTER)
+/*
+ * getutid() only looks at ut_type and ut_id.
+ * But we'll also check ut_line in find_utmp().
+ */
+static void
+init_utmp(int type, struct UTMP_STR *tofind)
+{
+    memset(tofind, 0, sizeof(*tofind));
+    tofind->ut_type = type;
+    (void) strncpy(tofind->ut_id, my_utmp_id(ttydev), sizeof(tofind->ut_id));
+    (void) strncpy(tofind->ut_line, my_pty_name(ttydev), sizeof(tofind->ut_line));
+}
+
+/*
+ * We could use getutline() if we didn't support old systems.
+ */
+static struct UTMP_STR *
+find_utmp(struct UTMP_STR *tofind)
+{
+    struct UTMP_STR *result;
+
+    while ((result = getutid(tofind)) != 0) {
+	if (!strcmp(result->ut_line, tofind->ut_line)) {
+	    break;
+	}
+    }
+    return result;
+}
+#endif /* HAVE_UTMP... */
+
 static int
 spawn(void)
 /*
@@ -2688,6 +2740,7 @@ spawn(void)
 #endif
     struct passwd *pw = NULL;
     char *login_name = NULL;
+#ifndef USE_UTEMPTER
 #ifdef HAVE_UTMP
     struct UTMP_STR utmp;
 #ifdef USE_SYSV_UTMP
@@ -2695,12 +2748,16 @@ spawn(void)
 #endif
 #ifdef USE_LASTLOG
     struct lastlog lastlog;
+#endif
+#ifdef USE_LASTLOGX
+    struct lastlogx lastlog;
 #endif /* USE_LASTLOG */
 #endif /* HAVE_UTMP */
+#endif /* !USE_UTEMPTER */
 
-    /* Noisy compilers */
+    /* Noisy compilers (suppress some unused-variable warnings) */
     (void) rc;
-#if defined(HAVE_UTMP) && defined(USE_SYSV_UTMP)
+#if defined(HAVE_UTMP) && defined(USE_SYSV_UTMP) && !defined(USE_UTEMPTER)
     (void) utret;
 #endif
 
@@ -2990,7 +3047,16 @@ spawn(void)
 #if defined(USE_UTEMPTER)
 #undef UTMP
     if (!resource.utmpInhibit) {
-	addToUtmp(ttydev, NULL, screen->respond);
+	struct UTMP_STR dummy;
+	char host[sizeof(dummy.ut_host) + 1], *endptr;
+
+	(void) strncpy(host, DisplayString(screen->display), sizeof host);
+	host[sizeof(host) - 1] = '\0';
+	endptr = strrchr(host, ':');
+	if (endptr) {
+	    *endptr = '\0';
+	}
+	addToUtmp(ttydev, host, screen->respond);
 	added_utmp_entry = True;
     }
 #endif
@@ -3009,7 +3075,7 @@ spawn(void)
 	     * now in child process
 	     */
 	    TRACE_CHILD
-#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(SCO325) || defined(__QNX__)
+#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(__SCO__) || defined(__QNX__)
 		int pgrp = setsid();	/* variable may not be used... */
 #else
 		int pgrp = getpid();
@@ -3387,6 +3453,12 @@ spawn(void)
 #ifdef VSTATUS
 		    TMODE(XTTYMODE_status, tio.c_cc[VSTATUS]);
 #endif
+#ifdef VERASE2
+		    TMODE(XTTYMODE_erase2, tio.c_cc[VERASE2]);
+#endif
+#ifdef VEOL2
+		    TMODE(XTTYMODE_eol2, tio.c_cc[VEOL2]);
+#endif
 #ifdef HAS_LTCHARS
 		    /* both SYSV and BSD have ltchars */
 		    TMODE(XTTYMODE_susp, ltc.t_suspc);
@@ -3679,6 +3751,7 @@ spawn(void)
 	    if (login_name != NULL) {
 		xtermSetenv("LOGNAME=", login_name);	/* for POSIX */
 	    }
+#ifndef USE_UTEMPTER
 #ifdef USE_SYSV_UTMP
 	    /* Set up our utmp entry now.  We need to do it here
 	     * for the following reasons:
@@ -3690,18 +3763,14 @@ spawn(void)
 	     *     user and group id's.
 	     */
 	    (void) setutent();
-	    /* set up entry to search for */
-	    bzero((char *) &utmp, sizeof(utmp));
-	    (void) strncpy(utmp.ut_id, my_utmp_id(ttydev), sizeof(utmp.ut_id));
-
-	    utmp.ut_type = DEAD_PROCESS;
+	    init_utmp(DEAD_PROCESS, &utmp);
 
 	    /* position to entry in utmp file */
 	    /* Test return value: beware of entries left behind: PSz 9 Mar 00 */
-	    if (!(utret = getutid(&utmp))) {
+	    if (!(utret = find_utmp(&utmp))) {
 		(void) setutent();
-		utmp.ut_type = USER_PROCESS;
-		if (!(utret = getutid(&utmp))) {
+		init_utmp(USER_PROCESS, &utmp);
+		if (!(utret = find_utmp(&utmp))) {
 		    (void) setutent();
 		}
 	    }
@@ -3757,12 +3826,14 @@ spawn(void)
 	    if (!resource.utmpInhibit) {
 		errno = 0;
 		pututline(&utmp);
-		TRACE(("pututline: %d %d %s\n",
-		       resource.utmpInhibit,
+		TRACE(("pututline: id %s, line %s, pid %ld, errno %d %s\n",
+		       utmp.ut_id,
+		       utmp.ut_line,
+		       (long) utmp.ut_pid,
 		       errno, (errno != 0) ? strerror(errno) : ""));
 	    }
 #ifdef WTMP
-#if defined(WTMPX_FILE) && (defined(SVR4) || defined(SCO325))
+#if defined(WTMPX_FILE) && (defined(SVR4) || defined(__SCO__))
 	    if (term->misc.login_shell)
 		updwtmpx(WTMPX_FILE, &utmp);
 #elif defined(linux) && defined(__GLIBC__) && (__GLIBC__ >= 2) && !(defined(__powerpc__) && (__GLIBC__ == 2) && (__GLIBC_MINOR__ == 0))
@@ -3835,6 +3906,20 @@ spawn(void)
 #endif /* OPT_PTY_HANDSHAKE */
 #endif /* USE_SYSV_UTMP */
 
+#ifdef USE_LASTLOGX
+	    if (term->misc.login_shell) {
+		bzero((char *) &lastlog, sizeof(lastlog));
+		(void) strncpy(lastlog.ll_line,
+			       my_pty_name(ttydev),
+			       sizeof(lastlog.ll_line));
+		X_GETTIMEOFDAY(&lastlog.ll_tv);
+		(void) strncpy(lastlog.ll_host,
+			       XDisplayString(screen->display),
+			       sizeof(lastlog.ll_host));
+		updlastlogx(_PATH_LASTLOGX, screen->uid, &lastlog);
+	    }
+#endif
+
 #ifdef USE_LASTLOG
 	    if (term->misc.login_shell &&
 		(i = open(etc_lastlog, O_WRONLY)) >= 0) {
@@ -3872,6 +3957,7 @@ spawn(void)
 		(void) write(cp_pipe[1], (char *) &handshake, sizeof(handshake));
 	    }
 #endif /* OPT_PTY_HANDSHAKE */
+#endif /* USE_UTEMPTER */
 #endif /* HAVE_UTMP */
 
 	    (void) setgid(screen->gid);
@@ -4225,44 +4311,48 @@ Exit(int n)
 	    setegid(utmpGid);
 	}
 #endif
-	utmp.ut_type = USER_PROCESS;
-	(void) strncpy(utmp.ut_id, my_utmp_id(ttydev), sizeof(utmp.ut_id));
+	init_utmp(USER_PROCESS, &utmp);
 	(void) setutent();
-	utptr = getutid(&utmp);
-	/* write it out only if it exists, and the pid's match */
-	if (utptr && (utptr->ut_pid == screen->pid)) {
-	    utptr->ut_type = DEAD_PROCESS;
+
+	/*
+	 * We could use getutline() if we didn't support old systems.
+	 */
+	while ((utptr = find_utmp(&utmp)) != 0) {
+	    if (utptr->ut_pid == screen->pid) {
+		utptr->ut_type = DEAD_PROCESS;
 #if defined(HAVE_UTMP_UT_XTIME)
 #if defined(HAVE_UTMP_UT_SESSION)
-	    utptr->ut_session = getsid(0);
+		utptr->ut_session = getsid(0);
 #endif
-	    utptr->ut_xtime = time((time_t *) 0);
-	    utptr->ut_tv.tv_usec = 0;
+		utptr->ut_xtime = time((time_t *) 0);
+		utptr->ut_tv.tv_usec = 0;
 #else
-	    *utptr->ut_user = 0;
-	    utptr->ut_time = time((time_t *) 0);
+		*utptr->ut_user = 0;
+		utptr->ut_time = time((time_t *) 0);
 #endif
-	    (void) pututline(utptr);
+		(void) pututline(utptr);
 #ifdef WTMP
-#if defined(WTMPX_FILE) && (defined(SVR4) || defined(SCO325))
-	    if (term->misc.login_shell)
-		updwtmpx(WTMPX_FILE, utptr);
+#if defined(WTMPX_FILE) && (defined(SVR4) || defined(__SCO__))
+		if (term->misc.login_shell)
+		    updwtmpx(WTMPX_FILE, utptr);
 #elif defined(linux) && defined(__GLIBC__) && (__GLIBC__ >= 2) && !(defined(__powerpc__) && (__GLIBC__ == 2) && (__GLIBC_MINOR__ == 0))
-	    strncpy(utmp.ut_line, utptr->ut_line, sizeof(utmp.ut_line));
-	    if (term->misc.login_shell)
-		updwtmp(etc_wtmp, utptr);
+		strncpy(utmp.ut_line, utptr->ut_line, sizeof(utmp.ut_line));
+		if (term->misc.login_shell)
+		    updwtmp(etc_wtmp, utptr);
 #else
-	    /* set wtmp entry if wtmp file exists */
-	    if (term->misc.login_shell) {
-		int fd;
-		if ((fd = open(etc_wtmp, O_WRONLY | O_APPEND)) >= 0) {
-		    write(fd, utptr, sizeof(*utptr));
-		    close(fd);
+		/* set wtmp entry if wtmp file exists */
+		if (term->misc.login_shell) {
+		    int fd;
+		    if ((fd = open(etc_wtmp, O_WRONLY | O_APPEND)) >= 0) {
+			write(fd, utptr, sizeof(*utptr));
+			close(fd);
+		    }
 		}
+#endif
+#endif
+		break;
 	    }
-#endif
-#endif
-
+	    memset(utptr, 0, sizeof(*utptr));	/* keep searching */
 	}
 	(void) endutent();
     }
@@ -4470,13 +4560,17 @@ parse_tty_modes(char *s, struct _xttymodes *modelist)
 
     TRACE(("parse_tty_modes\n"));
     while (1) {
+	size_t len;
+
 	while (*s && isascii(CharOf(*s)) && isspace(CharOf(*s)))
 	    s++;
 	if (!*s)
 	    return count;
 
+	for (len = 0; isalnum(CharOf(s[len])); ++len) ;
 	for (mp = modelist; mp->name; mp++) {
-	    if (strncmp(s, mp->name, mp->len) == 0)
+	    if (len == mp->len
+		&& strncmp(s, mp->name, mp->len) == 0)
 		break;
 	}
 	if (!mp->name)
@@ -4502,7 +4596,7 @@ int
 GetBytesAvailable(int fd)
 {
 #if defined(FIONREAD)
-    long arg;
+    int arg;
     ioctl(fd, FIONREAD, (char *) &arg);
     return (int) arg;
 #elif defined(__CYGWIN__)
@@ -4512,7 +4606,7 @@ GetBytesAvailable(int fd)
 
     FD_ZERO(&set);
     FD_SET(fd, &set);
-    if (select(fd + 1, &set, NULL, NULL, &timeout) > 0)
+    if (Select(fd + 1, &set, NULL, NULL, &timeout) > 0)
 	return 1;
     else
 	return 0;

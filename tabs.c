@@ -1,5 +1,5 @@
 /*
- *	$XFree86: xc/programs/xterm/tabs.c,v 3.9 2001/01/17 23:46:39 dawes Exp $
+ *	$XFree86: xc/programs/xterm/tabs.c,v 3.10 2002/03/26 01:46:40 dickey Exp $
  */
 
 /* $Xorg: tabs.c,v 1.3 2000/08/17 19:55:09 cpqbld Exp $ */
