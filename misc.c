@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: misc.c,v 1.95.1.1 93/11/04 08:56:48 gildea Exp $
+ *	$XConsortium: misc.c,v 1.102 94/03/28 18:27:08 gildea Exp $
  */
 
 /*
@@ -56,9 +56,6 @@ extern jmp_buf VTend;
 extern char *malloc();
 extern char *getenv();
 #endif
-#if defined(macII) && !defined(__STDC__)  /* stdlib.h fails to define these */
-char *malloc();
-#endif /* macII */
 
 static void DoSpecialEnterNotify();
 static void DoSpecialLeaveNotify();
@@ -328,7 +325,7 @@ Bell()
 		return;
 	    }
 	}
-	gettimeofday(&curtime, NULL);
+	X_GETTIMEOFDAY(&curtime);
 	now_msecs = 1000*curtime.tv_sec + curtime.tv_usec/1000;
 	if(lastBellTime != 0  &&  now_msecs - lastBellTime >= 0  &&
 	   now_msecs - lastBellTime < screen->bellSuppressTime) {
@@ -856,7 +853,7 @@ register char	*s1, *s2;
 	register char	*s3;
 	int s2len = strlen (s2);
 
-	while ((s3=index(s1, *s2)) != NULL) {
+	while ((s3=strchr(s1, *s2)) != NULL) {
 		if (strncmp(s3, s2, s2len) == 0)
 			return (s3);
 		s1 = ++s3;
@@ -884,6 +881,15 @@ Display *dpy;
 		    DisplayString (dpy));
 
     Exit(ERROR_XIOERROR);
+}
+
+void xt_error(message)
+    String message;
+{
+    extern char *ProgramName;
+
+    (void) fprintf (stderr, "%s Xt error: %s\n", ProgramName, message);
+    exit(1);
 }
 
 XStrCmp(s1, s2)

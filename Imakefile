@@ -1,4 +1,4 @@
-XCOMM $XConsortium: Imakefile,v 1.56 92/03/11 17:35:22 gildea Exp $
+XCOMM $XConsortium: Imakefile,v 1.62 94/04/10 16:02:56 rws Exp $
 XCOMM
 XCOMM                         Attention xterm porters
 XCOMM
@@ -12,10 +12,10 @@ XCOMM
  * add -DWTMP and -DLASTLOG if you want them; make sure that bcopy can
  * handle overlapping copies before using it.
  */
-#ifdef SetTtyGroup			/* turn on in config/machine.cf */
+#if SetTtyGroup			/* turn on in config/machine.cf */
    TTYGROUPDEF = -DUSE_TTY_GROUP
 #endif
-#ifdef UsePUCCPtyd			/* turn on in config/site.def */
+#if UsePUCCPtyd			/* turn on in config/site.def */
     PUCCPTYDDEF = -DPUCC_PTYD		/* does not need to be setuid */
          PTYLIB = -lpucc
 #endif
@@ -59,9 +59,9 @@ XCOMM
 
 AllTarget($(PROGRAMS))
 
-SpecialObjectRule(main.o,NullParameter,$(MAIN_DEFINES))
-SpecialObjectRule(misc.o,NullParameter,$(MISC_DEFINES))
-SpecialObjectRule(charproc.o,NullParameter,$(MISC_DEFINES))
+SpecialCObjectRule(main,$(_NOOP_),$(MAIN_DEFINES))
+SpecialCObjectRule(misc,$(_NOOP_),$(MISC_DEFINES))
+SpecialCObjectRule(charproc,$(_NOOP_),$(MISC_DEFINES))
 
 #if InstallXtermSetUID
 SetUIDProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTYLIB))
@@ -69,9 +69,9 @@ SetUIDProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTY
 NormalProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTYLIB))
 #endif
 
-#if InstallXtermSetUID && defined(SunArchitecture) && HasSharedLibraries
+#if InstallXtermSetUID && defined(SunArchitecture) && HasSharedLibraries && OSMajorVersion < 5
 #if AlternateUsrLibDir
-#if OSMajorVersion > 4 || (OSMajorVersion == 4 && OSMinorVersion >= 1)
+#if OSMajorVersion == 4 && OSMinorVersion >= 1
 LDOVERRIDE = -L$(DESTDIR)$(USRLIBDIR)
 #else
 #if HasGcc
@@ -84,10 +84,10 @@ LDRESUME = -Bdynamic
 #endif
 install:: xterm
 	MakeDir($(DESTDIR)$(BINDIR))
-	$(RM) xterm.inst
-	$(CC) -o xterm.inst $(OBJS1) $(LDOPTIONS) $(LDOVERRIDE) -lXaw -lXmu -lXt -lXext -lX11 $(LDRESUME) $(LDLIBS) $(TERMCAPLIB) $(PTYLIB) $(EXTRA_LOAD_FLAGS)
+	RemoveFile(xterm.inst)
+	LinkRule(xterm.inst,$(CDEBUGFLAGS) $(CCOPTIONS) $(EXTRA_LDOPTIONS) $(LOCAL_LDFLAGS),$(OBJS1),$(LDOVERRIDE) XawClientLibs $(LDRESUME) $(LDLIBS) $(TERMCAPLIB) $(PTYLIB))
 	$(INSTALL) -c $(INSTPGMFLAGS) $(INSTUIDFLAGS) xterm.inst $(DESTDIR)$(BINDIR)/xterm
-	$(RM) xterm.inst
+	RemoveFile(xterm.inst)
 #else
 #if InstallXtermSetUID
 InstallProgramWithFlags(xterm,$(BINDIR),$(INSTUIDFLAGS))

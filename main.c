@@ -1,5 +1,5 @@
 #ifndef lint
-static char *rid="$XConsortium: main.c,v 1.200.1.1 93/11/02 17:14:14 gildea Exp $";
+static char *rid="$XConsortium: main.c,v 1.225.1.1 95/01/13 21:13:04 kaleb Exp $";
 #endif /* lint */
 
 /*
@@ -16,9 +16,33 @@ static char *rid="$XConsortium: main.c,v 1.200.1.1 93/11/02 17:14:14 gildea Exp 
  */
 
 /***********************************************************
-Copyright 1987, 1988 by Digital Equipment Corporation, Maynard,
-Massachusetts, and the Massachusetts Institute of Technology,
-Cambridge, Massachusetts.
+
+
+Copyright (c) 1987, 1988  X Consortium
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+X CONSORTIUM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Except as contained in this notice, the name of the X Consortium shall not be
+used in advertising or otherwise to promote the sale, use or other dealings
+in this Software without prior written authorization from the X Consortium.
+
+
+Copyright 1987, 1988 by Digital Equipment Corporation, Maynard.
 
                         All Rights Reserved
 
@@ -26,9 +50,9 @@ Permission to use, copy, modify, and distribute this software and its
 documentation for any purpose and without fee is hereby granted, 
 provided that the above copyright notice appear in all copies and that
 both that copyright notice and this permission notice appear in 
-supporting documentation, and that the names of Digital or MIT not be
-used in advertising or publicity pertaining to distribution of the
-software without specific, written prior permission.  
+supporting documentation, and that the name of Digital not be used in 
+advertising or publicity pertaining to distribution of the software 
+without specific, written prior permission.  
 
 DIGITAL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
 ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO EVENT SHALL
@@ -62,12 +86,20 @@ SOFTWARE.
 
 #ifdef SVR4
 #define SYSV			/* SVR4 is (approx) superset of SVR3 */
-#define USE_SYSV_UTMP
 #define ATT
+#define USE_SYSV_UTMP
 #define USE_TERMIOS
+#define HAS_UTMP_UT_HOST
 #endif
-  
-#ifdef SYSV386
+
+#if defined(sgi) && OSMAJORVERSION >= 5
+#define SVR4			/* close enough for xterm */
+#define USE_SYSV_UTMP
+#define USE_TERMIOS
+#define HAS_UTMP_UT_HOST
+#endif
+
+#if defined(SYSV) && defined(i386) && !defined(SVR4)
 #define USE_SYSV_UTMP
 #define ATT
 #define USE_HANDSHAKE
@@ -89,6 +121,17 @@ static Bool IsPts = False;
 #if defined(sony) && defined(bsd43) && !defined(KANJI)
 #define KANJI
 #endif
+
+#ifdef linux
+#define USE_SYSV_TERMIO
+#define USE_SYSV_PGRP
+#define USE_SYSV_UTMP
+#define USE_SYSV_SIGNALS
+#define HAS_UTMP_UT_HOST
+#define LASTLOG
+#define WTMP
+#endif
+
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 
@@ -111,11 +154,17 @@ static Bool IsPts = False;
 #undef TIOCSLTC				/* defined, but not useable */
 #endif
 
-#ifdef SYSV
+#if defined(sgi) && OSMAJORVERSION >= 5
+#undef TIOCLSET				/* defined, but not useable */
+#endif
+
+#ifdef SYSV /* { */
 #ifdef USE_USG_PTYS			/* AT&T SYSV has no ptyio.h */
 #include <sys/stream.h>			/* get typedef used in ptem.h */
-#include <sys/ptem.h>			/* get struct winsize */
 #include <sys/stropts.h>		/* for I_PUSH */
+#ifndef SVR4
+#include <sys/ptem.h>			/* get struct winsize */
+#endif
 #include <poll.h>			/* for POLLIN */
 #endif /* USE_USG_PTYS */
 #define USE_SYSV_TERMIO
@@ -131,6 +180,7 @@ static Bool IsPts = False;
 #define HAS_BSD_GROUPS
 #endif
 #ifdef macII
+#define USE_SYSV_UTMP
 #define HAS_UTMP_UT_HOST
 #define HAS_BSD_GROUPS
 #include <sys/ttychars.h>
@@ -143,19 +193,32 @@ static Bool IsPts = False;
 #endif
 #ifdef hpux
 #define HAS_BSD_GROUPS
+#define USE_SYSV_UTMP
+#define HAS_UTMP_UT_HOST
 #include <sys/ptyio.h>
 #endif /* hpux */
 #ifdef sgi
 #include <sys/sysmacros.h>
 #endif /* sgi */
-#endif /* SYSV */
-
-#ifndef SYSV				/* BSD systems */
+#ifdef sun
+#include <sys/strredir.h>
+#endif
+#ifdef AIXV3
+#define USE_SYSV_UTMP
+#define HAS_UTMP_UT_HOST
+#endif
+#else /* } !SYSV { */			/* BSD systems */
+#ifndef linux
 #include <sgtty.h>
+#endif
 #include <sys/resource.h>
 #define HAS_UTMP_UT_HOST
 #define HAS_BSD_GROUPS
-#endif	/* !SYSV */
+#ifdef __osf__
+#define USE_SYSV_UTMP
+#define setpgrp setpgid
+#endif
+#endif	/* } !SYSV */
 
 #ifdef _POSIX_SOURCE
 #define USE_POSIX_WAIT
@@ -168,15 +231,37 @@ static Bool IsPts = False;
 #include <errno.h>
 #include <setjmp.h>
 
+#ifdef X_NOT_STDC_ENV
+extern int errno;
+#define Time_t long
+extern Time_t time ();
+#else
+#include <time.h>
+#define Time_t time_t
+#endif
+
 #ifdef hpux
 #include <sys/utsname.h>
 #endif /* hpux */
 
-#ifdef apollo
+#if defined(apollo) && OSMAJORVERSION == 10 && OSMINORVERSION < 4
 #define ttyslot() 1
 #endif /* apollo */
 
+#ifdef SVR4
+#include <utmpx.h>
+#define setutent setutxent
+#define getutent getutxent
+#define getutid getutxid
+#define endutent endutxent
+#define pututline pututxline
+#else
 #include <utmp.h>
+#if defined(_CRAY) && OSMAJORVERSION < 8
+extern struct utmp *getutid __((struct utmp *_Id));
+#endif
+#endif
+
 #ifdef LASTLOG
 #include <lastlog.h>
 #endif
@@ -192,16 +277,26 @@ int	Ptyfd;
 #endif
 
 #ifndef UTMP_FILENAME
+#ifdef UTMP_FILE
+#define UTMP_FILENAME UTMP_FILE
+#else
 #define UTMP_FILENAME "/etc/utmp"
 #endif
+#endif
+
 #ifndef LASTLOG_FILENAME
 #define LASTLOG_FILENAME "/usr/adm/lastlog"  /* only on BSD systems */
 #endif
+
 #ifndef WTMP_FILENAME
-#if defined(SYSV)
+#ifdef WTMP_FILE
+#define WTMP_FILENAME WTMP_FILE
+#else
+#ifdef SYSV
 #define WTMP_FILENAME "/etc/wtmp"
 #else
 #define WTMP_FILENAME "/usr/adm/wtmp"
+#endif
 #endif
 #endif
 
@@ -251,10 +346,6 @@ extern void exit();
 #ifdef X_NOT_POSIX
 extern char *ttyname();
 #endif
-#if defined(macII) && !defined(__STDC__)  /* stdlib.h fails to define these */
-char *malloc(), *realloc(), *calloc();
-char *ttyname(); /* and we don't get this from unistd.h */
-#endif /* macII */
 
 #ifdef SYSV
 extern char *ptsname();
@@ -353,7 +444,7 @@ struct _xttymodes {
 };
 
 #ifdef USE_SYSV_UTMP
-#ifndef SVR4			/* otherwise declared in utmp.h */
+#if defined(X_NOT_STDC_ENV) || defined(AIXV3)
 extern struct utmp *getutent();
 extern struct utmp *getutid();
 extern struct utmp *getutline();
@@ -363,7 +454,7 @@ extern void endutent();
 extern void utmpname();
 #endif /* !SVR4 */
 
-#ifndef SYSV386			/* could remove paragraph unconditionally? */
+#ifdef X_NOT_STDC_ENV		/* could remove paragraph unconditionally? */
 extern struct passwd *getpwent();
 extern struct passwd *getpwuid();
 extern struct passwd *getpwnam();
@@ -398,7 +489,7 @@ static char bin_login[] = LOGIN_FILENAME;
 static int inhibit;
 static char passedPty[2];	/* name if pty if slave */
 
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 static int Console;
 #include <X11/Xmu/SysUtil.h>	/* XmuGetHostname */
 #define MIT_CONSOLE_LEN	12
@@ -604,7 +695,7 @@ static struct _options {
 { "#geom",                 "icon window geometry" },
 { "-T string",             "title name for window" },
 { "-n string",             "icon name for window" },
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 { "-C",                    "intercept console messages" },
 #else
 { "-C",                    "intercept console messages (not supported)" },
@@ -669,7 +760,7 @@ static void Help ()
     exit (0);
 }
 
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 /* ARGSUSED */
 static Boolean
 ConvertConsoleSelection(w, selection, target, type, value, length, format)
@@ -698,6 +789,7 @@ Widget toplevel;
 Bool waiting_for_initial_map;
 
 extern void do_hangup();
+extern void xt_error();
 
 /*
  * DeleteWindow(): Action proc to implement ICCCM delete_window.
@@ -820,11 +912,19 @@ char **argv;
     	d_tio.c_cflag = B9600|CS8|CREAD|PARENB|HUPCL;
 #endif	/* !BAUD_0 */
     	d_tio.c_lflag = ISIG|ICANON|ECHO|ECHOE|ECHOK;
+#ifndef sgi
 	d_tio.c_line = 0;
+#endif
+#ifndef linux
 	d_tio.c_cc[VINTR] = 0x7f;		/* DEL  */
-	d_tio.c_cc[VQUIT] = '\\' & 0x3f;	/* '^\'	*/
 	d_tio.c_cc[VERASE] = '#';		/* '#'	*/
 	d_tio.c_cc[VKILL] = '@';		/* '@'	*/
+#else
+	d_tio.c_cc[VINTR] = 'C' & 0x3f;		/* '^C'	*/
+	d_tio.c_cc[VERASE] = 0x7f;		/* DEL	*/
+	d_tio.c_cc[VKILL] = 'U' & 0x3f;		/* '^U'	*/
+#endif
+	d_tio.c_cc[VQUIT] = '\\' & 0x3f;	/* '^\'	*/
     	d_tio.c_cc[VEOF] = 'D' & 0x3f;		/* '^D'	*/
 	d_tio.c_cc[VEOL] = '@' & 0x3f;		/* '^@'	*/
 #ifdef VSWTCH
@@ -859,7 +959,11 @@ char **argv;
         d_ltc.t_lnextc = '\377';
 #endif	/* TIOCSLTC */
 #ifdef USE_TERMIOS
+#ifndef linux
 	d_tio.c_cc[VSUSP] = '\000';
+#else
+	d_tio.c_cc[VSUSP] = 'Z' & 0x3f;
+#endif
 	d_tio.c_cc[VDSUSP] = '\000';
 	d_tio.c_cc[VREPRINT] = '\377';
 	d_tio.c_cc[VDISCARD] = '\377';
@@ -873,6 +977,7 @@ char **argv;
 #endif	/* USE_SYSV_TERMIO */
 
 	/* Init the Toolkit. */
+	XtSetErrorHandler(xt_error);
 	toplevel = XtAppInitialize (&app_con, "XTerm", 
 				    optionDescList, XtNumber(optionDescList), 
 				    &argc, argv, fallback_resources, NULL, 0);
@@ -935,7 +1040,7 @@ char **argv;
 		Help ();
 		/* NOTREACHED */
 	     case 'C':
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 		{
 		    struct stat sbuf;
 
@@ -1060,17 +1165,26 @@ char **argv;
 		i = open ("xterm.debug.log", O_WRONLY | O_TRUNC, 0666);
 	}
 	if(i >= 0) {
-#if defined(USE_SYSV_TERMIO) && !defined(SVR4)
+#if defined(USE_SYSV_TERMIO) && !defined(SVR4) && !defined(linux)
 		/* SYSV has another pointer which should be part of the
 		** FILE structure but is actually a seperate array.
 		*/
 		unsigned char *old_bufend;
 
 		old_bufend = (unsigned char *) _bufend(stderr);
+#ifdef hpux
+		stderr->__fileH = (i >> 8);
+		stderr->__fileL = i;
+#else
 		stderr->_file = i;
+#endif
 		_bufend(stderr) = old_bufend;
 #else	/* USE_SYSV_TERMIO */
+#ifndef linux
 		stderr->_file = i;
+#else
+		setfileno(stderr, i);
+#endif
 #endif	/* USE_SYSV_TERMIO */
 
 		/* mark this file as close on exec */
@@ -1163,7 +1277,7 @@ char *name;
 {
 	register char *cp;
 
-	cp = rindex(name, '/');
+	cp = strrchr(name, '/');
 	return(cp ? cp + 1 : name);
 }
 
@@ -1177,7 +1291,7 @@ char *name;
 get_pty (pty)
     int *pty;
 {
-#if defined(SYSV) && defined(SYSV386)
+#if defined(SYSV) && defined(i386) && !defined(SVR4)
         /*
 	  The order of this code is *important*.  On SYSV/386 we want to open
 	  a /dev/ttyp? first if at all possible.  If none are available, then
@@ -1203,14 +1317,14 @@ get_pty (pty)
 	  */
         if (pty_search(pty) == 0)
 	    return 0;
-#endif /* SYSV && SYSV386 */
+#endif /* SYSV && i386 && !SVR4 */
 #ifdef ATT
 	if ((*pty = open ("/dev/ptmx", O_RDWR)) < 0) {
 	    return 1;
 	}
-#if defined(SVR4) || defined(SYSV386)
+#if defined(SVR4) || defined(i386)
 	strcpy(ttydev, ptsname(*pty));
-#if defined (SYSV) && defined(SYSV386)
+#if defined (SYSV) && defined(i386) && !defined(SVR4)
 	IsPts = True;
 #endif
 #endif
@@ -1310,14 +1424,22 @@ int pty_search(pty)
 	while (PTYCHAR2[devindex]) {
 	    ttydev [strlen(ttydev) - 1] = ptydev [strlen(ptydev) - 1] =
 		PTYCHAR2 [devindex];
+	    /* for next time around loop or next entry to this function */
+	    devindex++;
 	    if ((*pty = open (ptydev, O_RDWR)) >= 0) {
-		/* We need to set things up for our next entry
-		 * into this function!
+#ifdef sun
+		/* Need to check the process group of the pty.
+		 * If it exists, then the slave pty is in use,
+		 * and we need to get another one.
 		 */
-		(void) devindex++;
+		int pgrp_rtn;
+		if (ioctl(*pty, TIOCGPGRP, &pgrp_rtn) == 0 || errno != EIO) {
+		    close(*pty);
+		    continue;
+		}
+#endif /* sun */
 		return 0;
 	    }
-	    devindex++;
 	}
 	devindex = 0;
 	(void) letter++;
@@ -1519,7 +1641,7 @@ spawn ()
 	char buf[64];
 	char *TermName = NULL;
 	int ldisc = 0;
-#ifdef sun
+#if defined(sun) && !defined(SVR4)
 #ifdef TIOCSSIZE
 	struct ttysize ts;
 #endif	/* TIOCSSIZE */
@@ -1530,7 +1652,11 @@ spawn ()
 #endif	/* sun */
 	struct passwd *pw = NULL;
 #ifdef UTMP
+#ifdef SVR4
+	struct utmpx utmp;
+#else
 	struct utmp utmp;
+#endif
 #ifdef LASTLOG
 	struct lastlog lastlog;
 #endif	/* LASTLOG */
@@ -1538,6 +1664,11 @@ spawn ()
 
 	screen->uid = getuid();
 	screen->gid = getgid();
+
+#ifdef linux
+	bzero(termcap, sizeof termcap);
+	bzero(newtc, sizeof newtc);
+#endif
 
 #ifdef SIGTTOU
 	/* so that TIOCSWINSZ || TIOCSIZE doesn't block */
@@ -1676,7 +1807,7 @@ spawn ()
 				       False);
 	if (!screen->TekEmu)
 	    VTInit();		/* realize now so know window size for tty driver */
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 	if (Console) {
 	    /*
 	     * Inform any running xconsole program
@@ -1725,7 +1856,7 @@ spawn ()
 	    }
 	}
 
-#ifdef sun
+#if defined(sun) && !defined(SVR4)
 #ifdef TIOCSSIZE
 	/* tell tty how big window is */
 	if(screen->TekEmu) {
@@ -1773,15 +1904,15 @@ spawn ()
 #endif
 #ifdef USE_SYSV_TERMIO
 		char numbuf[12];
+#endif	/* USE_SYSV_TERMIO */
 #if defined(UTMP) && defined(USE_SYSV_UTMP)
 		char *ptyname;
 #endif
-#endif	/* USE_SYSV_TERMIO */
 
 #ifdef USE_USG_PTYS
-#if defined(SYSV) && defined(SYSV386)
+#if defined(SYSV) && defined(i386) && !defined(SVR4)
                 if (IsPts) {	/* SYSV386 supports both, which did we open? */
-#endif /* SYSV && SYSV386 */
+#endif /* SYSV && i386 && !SVR4 */
 		int ptyfd;
 
 		setpgrp();
@@ -1793,7 +1924,7 @@ spawn ()
 		if (ioctl (ptyfd, I_PUSH, "ptem") < 0) {
 		    SysError (2);
 		}
-#if !defined(SVR4) && !defined(SYSV386)
+#if !defined(SVR4) && !(defined(SYSV) && defined(i386))
 		if (!getenv("CONSEM") && ioctl (ptyfd, I_PUSH, "consem") < 0) {
 		    SysError (3);
 		}
@@ -1822,9 +1953,9 @@ spawn ()
                         ws.ws_ypixel = FullHeight(screen);
                 }
 #endif
-#if defined(SYSV) && defined(SYSV386)
+#if defined(SYSV) && defined(i386) && !defined(SVR4)
                 } else {	/* else pty, not pts */
-#endif /* SYSV && SYSV386 */
+#endif /* SYSV && i386 && !SVR4 */
 #endif /* USE_USG_PTYS */
 
 #ifdef USE_HANDSHAKE		/* warning, goes for a long ways */
@@ -1930,9 +2061,9 @@ spawn ()
 			ttydev = realloc (ttydev, (unsigned) (strlen(ptr) + 1));
 			(void) strcpy(ttydev, ptr);
 		}
-#if defined(SYSV) && defined(SYSV386)
+#if defined(SYSV) && defined(i386) && !defined(SVR4)
                 } /* end of IsPts else clause */
-#endif /* SYSV && SYSV386 */
+#endif /* SYSV && i386 && !SVR4 */
 
 #endif /* USE_HANDSHAKE -- from near fork */
 
@@ -1965,7 +2096,7 @@ spawn ()
 		 */
 		{
 #ifdef USE_SYSV_TERMIO
-#if defined(umips) || defined(CRAY)
+#if defined(umips) || defined(CRAY) || defined(linux)
 		    /* If the control tty had its modes screwed around with,
 		       eg. by lineedit in the shell, or emacs, etc. then tio
 		       will have bad values.  Let's just get termio from the
@@ -2091,12 +2222,21 @@ spawn ()
 			    HsSysError (cp_pipe[1], ERROR_TIOCKSETC);
 #endif /* sony */
 #endif	/* !USE_SYSV_TERMIO */
-#ifdef TIOCCONS
+#if defined(TIOCCONS) || defined(SRIOCSREDIR)
 		    if (Console) {
+#ifdef TIOCCONS
 			int on = 1;
 			if (ioctl (tty, TIOCCONS, (char *)&on) == -1)
 			    fprintf(stderr, "%s: cannot open console\n",
 				    xterm_name);
+#endif
+#ifdef SRIOCSREDIR
+			int fd = open("/dev/console",O_RDWR);
+			if (fd == -1 || ioctl (fd, SRIOCSREDIR, tty) == -1)
+			    fprintf(stderr, "%s: cannot open console\n",
+				    xterm_name);
+			(void) close (fd);
+#endif
 		    }
 #endif	/* TIOCCONS */
 		}
@@ -2133,7 +2273,7 @@ spawn ()
 		envsize += 1;	/* TERMCAP */
 #endif /* USE_SYSV_ENVVARS */
 		envnew = (char **) calloc ((unsigned) i + envsize, sizeof(char *));
-		bcopy((char *)environ, (char *)envnew, i * sizeof(char *));
+		memmove( (char *)envnew, (char *)environ, i * sizeof(char *));
 		environ = envnew;
 		Setenv ("TERM=", TermName);
 		if(!TermName)
@@ -2222,7 +2362,9 @@ spawn ()
 
 		/* set up the new entry */
 		utmp.ut_type = USER_PROCESS;
+#ifndef linux
 		utmp.ut_exit.e_exit = 2;
+#endif
 		(void) strncpy(utmp.ut_user,
 			       (pw && pw->pw_name) ? pw->pw_name : "????",
 			       sizeof(utmp.ut_user));
@@ -2235,28 +2377,41 @@ spawn ()
 #ifdef HAS_UTMP_UT_HOST
 		(void) strncpy(buf, DisplayString(screen->display),
 			       sizeof(buf));
+#ifndef linux
 	        {
-		    char *disfin = rindex(buf, ':');
+		    char *disfin = strrchr(buf, ':');
 		    if (disfin)
 			*disfin = '\0';
 		}
+#endif
 		(void) strncpy(utmp.ut_host, buf, sizeof(utmp.ut_host));
 #endif
 		(void) strncpy(utmp.ut_name, pw->pw_name, 
 			       sizeof(utmp.ut_name));
 
 		utmp.ut_pid = getpid();
-		utmp.ut_time = time ((long *) 0);
+#ifdef SVR4
+		utmp.ut_session = getsid(0);
+		utmp.ut_xtime = time ((Time_t *) 0);
+		utmp.ut_tv.tv_usec = 0;
+#else
+		utmp.ut_time = time ((Time_t *) 0);
+#endif
 
 		/* write out the entry */
 		if (!resource.utmpInhibit)
 		    (void) pututline(&utmp);
 #ifdef WTMP
-		if ( term->misc.login_shell &&
+#ifdef SVR4
+		if (term->misc.login_shell)
+		    updwtmpx(WTMPX_FILE, &utmp);
+#else
+		if (term->misc.login_shell &&
 		     (i = open(etc_wtmp, O_WRONLY|O_APPEND)) >= 0) {
 		    write(i, (char *)&utmp, sizeof(struct utmp));
 		    close(i);
 		}
+#endif
 #endif
 		/* close the file */
 		(void) endutent();
@@ -2369,7 +2524,7 @@ spawn ()
 		    if(handshake.rows > 0 && handshake.cols > 0) {
 			screen->max_row = handshake.rows;
 			screen->max_col = handshake.cols;
-#ifdef sun
+#if defined(sun) && !defined(SVR4)
 #ifdef TIOCSSIZE
 			ts.ts_lines = screen->max_row + 1;
 			ts.ts_cols = screen->max_col + 1;
@@ -2387,12 +2542,10 @@ spawn ()
 #endif /* USE_HANDSHAKE */
 
 #ifdef USE_SYSV_ENVVARS
-#ifndef TIOCSWINSZ		/* window size not stored in driver? */
 		sprintf (numbuf, "%d", screen->max_col + 1);
 		Setenv("COLUMNS=", numbuf);
 		sprintf (numbuf, "%d", screen->max_row + 1);
 		Setenv("LINES=", numbuf);
-#endif /* TIOCSWINSZ */
 #ifdef UTMP
 		if (pw) {	/* SVR4 doesn't provide these */
 		    if (!getenv("HOME"))
@@ -2425,7 +2578,7 @@ spawn ()
 
 
 		/* need to reset after all the ioctl bashing we did above */
-#ifdef sun
+#if defined(sun) && !defined(SVR4)
 #ifdef TIOCSSIZE
 		ioctl  (0, TIOCSSIZE, &ts);
 #endif	/* TIOCSSIZE */
@@ -2458,7 +2611,7 @@ spawn ()
 		 *(ptr = pw->pw_shell) == 0))
 #endif	/* UTMP */
 			ptr = "/bin/sh";
-		if(shname = rindex(ptr, '/'))
+		if(shname = strrchr(ptr, '/'))
 			shname++;
 		else
 			shname = ptr;
@@ -2590,8 +2743,8 @@ spawn ()
 #ifdef SYSV
 	/* if we were spawned by a jobcontrol smart shell (like ksh or csh),
 	 * then our pgrp and pid will be the same.  If we were spawned by
-	 * a jobcontrol dump shell (like /bin/sh), then we will be in out
-	 * parents pgrp, and we must ignore keyboard signals, or will will
+	 * a jobcontrol dumb shell (like /bin/sh), then we will be in our
+	 * parent's pgrp, and we must ignore keyboard signals, or we will
 	 * tank on everything.
 	 */
 	if (getpid() == getpgrp()) {
@@ -2612,7 +2765,7 @@ spawn ()
 #endif	/* SYSV */
 #endif /* USE_SYSV_SIGNALS and not SIGTSTP */
 
-	return;
+	return 0;
 }							/* end spawn */
 
 SIGNAL_T
@@ -2623,10 +2776,15 @@ Exit(n)
         int pty = term->screen.respond;  /* file descriptor of pty */
 #ifdef UTMP
 #ifdef USE_SYSV_UTMP
+#ifdef SVR4
+	struct utmpx utmp;
+	struct utmpx *utptr;
+#else
 	struct utmp utmp;
 	struct utmp *utptr;
+#endif
 	char *ptyname;
-#ifdef WTMP
+#if defined(WTMP) && !defined(SVR4)
 	int fd;			/* for /etc/wtmp */
 	int i;
 #endif
@@ -2650,14 +2808,24 @@ Exit(n)
 	    /* write it out only if it exists, and the pid's match */
 	    if (utptr && (utptr->ut_pid == screen->pid)) {
 		    utptr->ut_type = DEAD_PROCESS;
-		    utptr->ut_time = time((long *) 0);
+#ifdef SVR4
+		    utmp.ut_session = getsid(0);
+		    utmp.ut_xtime = time ((Time_t *) 0);
+		    utmp.ut_tv.tv_usec = 0;
+#else
+		    utptr->ut_time = time((Time_t *) 0);
+#endif
 		    (void) pututline(utptr);
 #ifdef WTMP
+#ifdef SVR4
+		    updwtmpx(WTMPX_FILE, &utmp);
+#else
 		    /* set wtmp entry if wtmp file exists */
 		    if ((fd = open(etc_wtmp, O_WRONLY | O_APPEND)) >= 0) {
 		      i = write(fd, utptr, sizeof(utmp));
 		      i = close(fd);
 		    }
+#endif
 #endif
 
 	    }
@@ -2743,12 +2911,12 @@ register char *oldtc, *newtc;
 	sprintf (newtc, "%d", li_first ? screen->max_row + 1 :
 	 screen->max_col + 1);
 	newtc += strlen(newtc);
-	ptr1 = index (ptr1, ':');
+	ptr1 = strchr(ptr1, ':');
 	strncpy (newtc, ptr1, i = ptr2 - ptr1);
 	newtc += i;
 	sprintf (newtc, "%d", li_first ? screen->max_col + 1 :
 	 screen->max_row + 1);
-	ptr2 = index (ptr2, ':');
+	ptr2 = strchr(ptr2, ':');
 	strcat (newtc, ptr2);
 #endif /* USE_SYSV_ENVVARS */
 }
@@ -2810,7 +2978,6 @@ static SIGNAL_T reapchild (n)
 consolepr(fmt,x0,x1,x2,x3,x4,x5,x6,x7,x8,x9)
 char *fmt;
 {
-	extern int errno;
 	extern char *SysErrorMsg();
 	int oerrno;
 	int f;
@@ -2842,7 +3009,7 @@ remove_termcap_entry (buf, str)
 
     strinbuf = strindex (buf, str);
     if (strinbuf) {
-        register char *colonPtr = index (strinbuf+1, ':');
+        register char *colonPtr = strchr(strinbuf+1, ':');
         if (colonPtr) {
             while (*colonPtr) {
                 *strinbuf++ = *colonPtr++;      /* copy down */
@@ -2852,7 +3019,7 @@ remove_termcap_entry (buf, str)
             strinbuf[1] = '\0';
         }
     }
-    return;
+    return 0;
 }
 
 /*
