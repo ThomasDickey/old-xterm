@@ -1,4 +1,4 @@
-# $XConsortium: termcap,v 1.12 94/04/12 15:01:29 gildea Exp $
+# $XConsortium: termcap,v 1.13 94/10/13 21:24:32 gildea Exp $
 #
 vs|xterm|xterm-24|xterms|vs100|xterm terminal emulator (X Window System):\
 	:is=\E7\E[r\E[m\E[?7h\E[?1;3;4;6l\E[4l\E8\E>:\
@@ -33,6 +33,8 @@ v2|xterm-65|xterm with tall window 65x80 (X Window System):\
 	:li#65:tc=xterm:
 vb|xterm-bold|xterm with bold instead of underline (X Window System):\
 	:us=\E[1m:tc=xterm:
+vb|xterm-boldso|xterm with bold for standout (X Window System):\
+	:so=\E[1m:tc=xterm:
 #
 # vi may work better with this entry, because vi
 # doesn't use insert mode much

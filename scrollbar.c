@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: scrollbar.c,v 1.44 94/04/02 12:42:01 gildea Exp $
+ *	$XConsortium: scrollbar.c /main/45 1996/01/14 16:53:05 kaleb $
  */
 
 /*
@@ -320,7 +320,7 @@ ScrollBarOn (xw, init, doalloc)
 	    /* make it a dummy size and resize later */
 	    if ((screen->scrollWidget = CreateScrollBar (xw, -1, - 1, 5))
 		== NULL) {
-		Bell();
+		Bell(XkbBI_MinorError,0);
 		return;
 	    }
 
@@ -329,8 +329,8 @@ ScrollBarOn (xw, init, doalloc)
 	}
 
 	if (!screen->scrollWidget) {
-	    Bell ();
-	    Bell ();
+	    Bell (XkbBI_MinorError,0);
+	    Bell (XkbBI_MinorError,0);
 	    return;
 	}
 
