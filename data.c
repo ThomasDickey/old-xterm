@@ -1,8 +1,6 @@
 /*
- *	$XConsortium: data.c,v 1.8 89/05/26 18:10:43 jim Exp $
+ *	$XConsortium: data.c,v 1.11 93/02/25 17:21:27 gildea Exp $
  */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -27,15 +25,9 @@
  * SOFTWARE.
  */
 
-#include <setjmp.h>
-#include <X11/Xlib.h>
-#include <X11/Intrinsic.h>
-#include "ptyx.h"
+#include "ptyx.h"		/* gets Xt stuff, too */
 #include "data.h"
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: data.c,v 1.8 89/05/26 18:10:43 jim Exp $";
-#endif	/* lint */
+#include <setjmp.h>
 
 XPoint T_boxlarge[NBOX] = {
 	{0, 0},
@@ -97,7 +89,9 @@ int Select_mask;
 int X_mask;
 char *ptydev;
 char *ttydev;
+#ifdef ALLOWLOGGING
 char log_def_name[] = "XtermLog.XXXXX";
+#endif
 int T_lastx = -1;
 int T_lasty = -1;
 

@@ -1,12 +1,6 @@
 /*
- *	$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $
+ *	$XConsortium: cursor.c,v 1.13 91/05/10 16:57:14 gildea Exp $
  */
-
-#ifndef lint
-static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $";
-#endif	/* lint */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -33,17 +27,7 @@ static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 ji
 
 /* cursor.c */
 
-
-#ifndef lint
-static char rcs_id[] = "$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $";
-#endif	/* lint */
-
-#include <X11/Xlib.h>
-#include <stdio.h>
-#include <sys/ioctl.h>
-#include "ptyx.h"
-
-extern void bcopy();
+#include "ptyx.h"		/* also gets Xlib.h */
 
 static void _CheckSelection(screen)
 register TScreen *screen;

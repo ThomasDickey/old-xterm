@@ -1,9 +1,6 @@
 /*
- *	$XConsortium: VTPrsTbl.c,v 1.4 89/03/01 19:59:43 jim Exp $
+ *	$XConsortium: VTPrsTbl.c,v 1.8 91/05/29 18:06:08 gildea Exp $
  */
-
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -28,21 +25,21 @@
  * SOFTWARE.
  */
 
-#ifndef lint
-static char *rcsid_VTparsetable_c = "$XConsortium: VTPrsTbl.c,v 1.4 89/03/01 19:59:43 jim Exp $";
-#endif	/* lint */
-
 #include "VTparse.h"
-#ifndef lint
-static char rcs_id[] = "$XConsortium: VTPrsTbl.c,v 1.4 89/03/01 19:59:43 jim Exp $";
-#endif	/* lint */
+
+#if __STDC__
+#define Const const
+#else
+#define Const /**/
+#endif
 
 /*
  * Stupid Apollo C preprocessor can't handle long lines.  So... To keep
  * it happy, we put each onto a seperate line....  Sigh...
  */
 
-int groundtable[] = {
+Const int groundtable[] =
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -365,7 +362,8 @@ CASE_PRINT,
 CASE_PRINT,
 };
 
-int csitable[] = {
+Const int csitable[] =		/* ESC [ */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -688,7 +686,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int dectable[] = {
+Const int dectable[] =		/* ESC [ ? */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1011,7 +1010,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int eigtable[] = {
+Const int eigtable[] =		/* CASE_ESC_IGNORE */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1335,7 +1335,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int esctable[] = {
+Const int esctable[] =		/* ESC */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -1658,7 +1659,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int iestable[] = {
+Const int iestable[] =		/* CASE_IGNORE_ESC */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE_STATE,
 CASE_IGNORE_STATE,
@@ -1981,7 +1983,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int igntable[] = {
+Const int igntable[] =		/* CASE_IGNORE_STATE */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -2304,7 +2307,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int scrtable[] = {
+Const int scrtable[] =		/* ESC # */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,
@@ -2627,7 +2631,8 @@ CASE_GROUND_STATE,
 CASE_GROUND_STATE,
 };
 
-int scstable[] = {
+Const int scstable[] =		/* ESC ( etc. */
+{
 /*	NUL		SOH		STX		ETX	*/
 CASE_IGNORE,
 CASE_IGNORE,

@@ -1,12 +1,6 @@
 /*
- *	$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $
+ *	$XConsortium: input.c,v 1.16 91/05/10 16:57:16 gildea Exp $
  */
-
-#ifndef lint
-static char *rcsid_input_c = "$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $";
-#endif	/* lint */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -33,27 +27,21 @@ static char *rcsid_input_c = "$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim 
 
 /* input.c */
 
-#ifndef lint
-static char rcs_id[] = "$XConsortium: input.c,v 1.8 89/12/10 20:44:48 jim Exp $";
-#endif	/* lint */
-
-#include <X11/Xlib.h>
+#include "ptyx.h"		/* gets Xt headers, too */
 #include <X11/keysym.h>
 #include <X11/DECkeysym.h>
-#include <X11/Intrinsic.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
-#include "ptyx.h"
 
 static XComposeStatus compose_status = {NULL, 0};
-static char *kypd_num = " XXXXXXXX\tXXX\rXXXxxxxXXXXXXXXXXXXXXXXXXXXX*+,-.\\0123456789XXX=";
+static char *kypd_num = " XXXXXXXX\tXXX\rXXXxxxxXXXXXXXXXXXXXXXXXXXXX*+,-./0123456789XXX=";
 static char *kypd_apl = " ABCDEFGHIJKLMNOPQRSTUVWXYZ??????abcdefghijklmnopqrstuvwxyzXXX";
 static char *cur = "DACB";
 
 static int funcvalue(), sunfuncvalue();
 extern Boolean sunFunctionKeys;
 
-void
+static void
 AdjustAfterInput (screen)
 register TScreen *screen;
 {
@@ -63,38 +51,62 @@ register TScreen *screen;
 		int col = screen->max_col - screen->nmarginbell;
 		if(screen->bellarmed >= 0) {
 			if(screen->bellarmed == screen->cur_row) {
-				if(screen->cur_col >= col) {
-					if(screen->cur_col == col)
-						Bell();
-					screen->bellarmed = -1;
-				}
+			    if(screen->cur_col >= col) {
+				Bell();
+				screen->bellarmed = -1;
+			    }
 			} else
-				screen->bellarmed = screen->cur_col <
-				 col ? screen->cur_row : -1;
+			    screen->bellarmed =
+				screen->cur_col < col ? screen->cur_row : -1;
 		} else if(screen->cur_col < col)
 			screen->bellarmed = screen->cur_row;
 	}
 }
 
 Input (keyboard, screen, event, eightbit)
-register TKeyboard	*keyboard;
-register TScreen		*screen;
-register XKeyPressedEvent *event;
-Bool eightbit;
+    register TKeyboard	*keyboard;
+    register TScreen	*screen;
+    register XKeyEvent *event;
+    Bool eightbit;
 {
 
 #define STRBUFSIZE 100
 
-	 char strbuf[STRBUFSIZE];
+	char strbuf[STRBUFSIZE];
 	register char *string;
 	register int key = FALSE;
 	int	pty	= screen->respond;
 	int	nbytes;
 	KeySym  keysym;
 	ANSI	reply;
+	char	tmp[STRBUFSIZE];
+	char	*bp = strbuf;
+	int	count;
+	XEvent	ev;
 
-	nbytes = XLookupString ((XKeyEvent *)event, strbuf, STRBUFSIZE, 
-		&keysym, &compose_status);
+	count = XLookupString (event, tmp, STRBUFSIZE,
+			       &keysym, &compose_status);
+	strncpy(bp, tmp, count);
+	bp += count;
+	nbytes = count;
+	/*
+	 * Make sure we get every keystroke available
+	 * before we start doing the update, so can issue a single
+	 * DrawString instead of several.
+	 */
+	while (nbytes < STRBUFSIZE && 
+	       XCheckMaskEvent(screen->display, KeyPressMask, &ev))	{
+	    count = XLookupString ((XKeyEvent *)&ev, tmp, STRBUFSIZE,
+				   &keysym, &compose_status);
+	    if (nbytes + count <= STRBUFSIZE) {
+		strncpy(bp, tmp, count);
+		bp += count;
+		nbytes += count;
+	    } else {
+		XPutBackEvent(screen->display, &ev);
+		break;
+	    }
+	}
 
 	string = &strbuf[0];
 	reply.a_pintro = 0;
@@ -149,7 +161,7 @@ Bool eightbit;
 			nbytes--;
 		}
 		if ((nbytes == 1) && eightbit) {
-		    if (screen->eight_bits)
+		    if (screen->input_eight_bits)
 		      *string |= 0x80;	/* turn on eighth bit */
 		    else
 		      unparseputc (033, pty);  /* escape */
@@ -166,14 +178,13 @@ Bool eightbit;
 	return;
 }
 
-StringInput (screen, string)
-register TScreen	*screen;
-register char *string;
+StringInput (screen, string, nbytes)
+    register TScreen	*screen;
+    register char *string;
+    int nbytes;
 {
 	int	pty	= screen->respond;
-	int	nbytes;
 
-	nbytes = strlen(string);
 	if(nbytes && screen->TekGIN) {
 		TekEnqMouse(*string++);
 		TekGINoff();

@@ -1,9 +1,7 @@
 /*
- *	$XConsortium: error.h,v 1.6 89/05/26 13:34:16 jim Exp $
+ *	$XConsortium: error.h,v 1.9 93/02/25 17:21:29 gildea Exp $
  */
 
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -62,6 +60,10 @@
 #define	ERROR_BORDER	39	/* get_terminal: can't make border tile */
 #define	ERROR_BACK	40	/* get_terminal: can't make background tile */
 #define ERROR_NOX3      43      /* get_terminal: bad pty from display server */
+#define	ERROR_TIOCKGET	44	/* spawn: ioctl() failed on TIOCKGET */
+#define	ERROR_TIOCKGETC	45	/* spawn: ioctl() failed on TIOCKGETC */
+#define	ERROR_TIOCKSET	46	/* spawn: ioctl() failed on TIOCKSET */
+#define	ERROR_TIOCKSETC	47	/* spawn: ioctl() failed on TIOCKSETC */
 /* charproc.c */
 #define	ERROR_SELECT	50	/* in_put: select() failed */
 #define	ERROR_VINIT	54	/* VTInit: can't initialize window */
@@ -75,7 +77,11 @@
 #define	ERROR_BMALLOC2	71	/* SaltTextAway: malloc() failed */
 
 /* misc.c */
+#ifdef ALLOWLOGGING
+#ifdef ALLOWLOGFILEEXEC
 #define	ERROR_LOGEXEC	80	/* StartLog: exec() failed */
+#endif
+#endif
 #define	ERROR_XERROR	83	/* xerror: XError event */
 #define	ERROR_XIOERROR	84	/* xioerror: X I/O error */
 #define ERROR_WINNAME   85      /* get_terminal: malloc failed */

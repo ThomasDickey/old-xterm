@@ -1,12 +1,6 @@
 /*
- *	$XConsortium: tabs.c,v 1.2 88/09/06 17:08:36 jim Exp $
+ *	$XConsortium: tabs.c,v 1.4 91/05/06 17:12:18 gildea Exp $
  */
-
-#ifndef lint
-static char *rcsid_tabs_c = "$XConsortium: tabs.c,v 1.2 88/09/06 17:08:36 jim Exp $";
-#endif	/* lint */
-
-#include <X11/copyright.h>
 
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -33,12 +27,8 @@ static char *rcsid_tabs_c = "$XConsortium: tabs.c,v 1.2 88/09/06 17:08:36 jim Ex
 
 /* tabs.c */
 
-#ifndef lint
-static char rcs_id[] = "$XConsortium: tabs.c,v 1.2 88/09/06 17:08:36 jim Exp $";
-#endif	/* lint */
-
-#include <X11/Xlib.h>
 #include "ptyx.h"
+
 /*
  * This file presumes 32bits/word.  This is somewhat of a crock, and should
  * be fixed sometime.
@@ -64,7 +54,8 @@ Tabs	tabs;
  * places a tabstop at col
  */
 TabSet(tabs, col)
-Tabs	tabs;
+    Tabs	tabs;
+    int		col;
 {
 	tabs[col >> 5] |= (1 << (col & 31));
 }
@@ -73,7 +64,8 @@ Tabs	tabs;
  * clears a tabstop at col
  */
 TabClear(tabs, col)
-Tabs	tabs;
+    Tabs	tabs;
+    int		col;
 {
 	tabs[col >> 5] &= ~(1 << (col & 31));
 }
@@ -84,7 +76,8 @@ Tabs	tabs;
  * A tabstop at col is ignored.
  */
 TabNext (tabs, col)
-Tabs	tabs;
+    Tabs	tabs;
+    int		col;
 {
 	extern XtermWidget term;
 	register TScreen *screen = &term->screen;

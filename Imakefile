@@ -1,17 +1,12 @@
-/**/###########################################################################
-/**/#                                                                         #
-/**/#                         Attention xterm porters                         #
-/**/#                                                                         #
-/**/#                                                                         #
-/**/# Xterm assumes that bcopy can handle overlapping arguments.  If your     #
-/**/# bcopy (or memcpy) can't, write a routine called bcopy and link it in    #
-/**/# or add -Dbcopy=mybcopy to the DEFINES list below.                       #
-/**/#                                                                         #
-/**/###########################################################################
-
-#ifdef BandAidCompiler
-#include BandAidCompiler
-#endif
+XCOMM $XConsortium: Imakefile,v 1.56 92/03/11 17:35:22 gildea Exp $
+XCOMM
+XCOMM                         Attention xterm porters
+XCOMM
+XCOMM
+XCOMM Xterm assumes that bcopy can handle overlapping arguments.  If your
+XCOMM bcopy (or memcpy) cannot, write a routine called bcopy and link it in
+XCOMM or add -Dbcopy=mybcopy to the DEFINES list below.
+XCOMM
 
 /*
  * add -DWTMP and -DLASTLOG if you want them; make sure that bcopy can
@@ -20,20 +15,18 @@
 #ifdef SetTtyGroup			/* turn on in config/machine.cf */
    TTYGROUPDEF = -DUSE_TTY_GROUP
 #endif
-/*
- *	[PUCC = Purdue University Computer Center]
- *	If you use PUCC's ptyd, add "-DPUCC_PTYD" to the DEFINES
- *	and dink the -DUTMP (also don't define WTMP or LASTLOG - since
- *	ptyd does all that logging for you)  You will need to add
- *	the right library load line (we use -lpucc) to the 
- *	ComplexProgramTarget (right next to -ltermcap)
- */
 #ifdef UsePUCCPtyd			/* turn on in config/site.def */
     PUCCPTYDDEF = -DPUCC_PTYD		/* does not need to be setuid */
          PTYLIB = -lpucc
 #endif
 
-   MAIN_DEFINES = -DUTMP $(TTYGROUPDEF) $(PUCCPTYDDEF)
+ OSMAJORVERSION = OSMajorVersion
+ OSMINORVERSION = OSMinorVersion
+
+   MAIN_DEFINES = -DUTMP $(TTYGROUPDEF) $(PUCCPTYDDEF) \
+		  -DOSMAJORVERSION=$(OSMAJORVERSION) \
+		  -DOSMINORVERSION=$(OSMINORVERSION)
+   MISC_DEFINES = /* -DALLOWLOGFILEEXEC */
 
           SRCS1 = button.c charproc.c cursor.c data.c input.c \
 		  main.c menu.c misc.c screen.c scrollbar.c tabs.c \
@@ -50,21 +43,61 @@
        DEPLIBS2 = 
        PROGRAMS = xterm resize
 
-#ifdef CrayArchitecture
-     TERMCAPLIB = -lcurses
+#ifndef TermcapLibrary
+#if SystemV && !defined(MacIIArchitecture)
+#if defined(CrayArchitecture) || defined(HPArchitecture) || defined(RsArchitecture)
+#define TermcapLibrary -lcurses		/* special cases of System V */
 #else
-     TERMCAPLIB = -ltermcap
+#define TermcapLibrary -ltermlib	/* usually in here */
 #endif
+#else
+#define TermcapLibrary -ltermcap	/* bsd puts it here */
+#endif
+#endif
+
+     TERMCAPLIB = TermcapLibrary
 
 AllTarget($(PROGRAMS))
 
-SpecialObjectRule(main.o, ,$(MAIN_DEFINES))
+SpecialObjectRule(main.o,NullParameter,$(MAIN_DEFINES))
+SpecialObjectRule(misc.o,NullParameter,$(MISC_DEFINES))
+SpecialObjectRule(charproc.o,NullParameter,$(MISC_DEFINES))
 
+#if InstallXtermSetUID
+SetUIDProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTYLIB))
+#else
 NormalProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTYLIB))
-InstallProgramWithFlags(xterm, $(BINDIR), $(INSTUIDFLAGS))
+#endif
 
-NormalProgramTarget(resize,$(OBJS2),$(DEPLIBS2), ,$(TERMCAPLIB))
-InstallProgramWithFlags(resize, $(BINDIR), )
+#if InstallXtermSetUID && defined(SunArchitecture) && HasSharedLibraries
+#if AlternateUsrLibDir
+#if OSMajorVersion > 4 || (OSMajorVersion == 4 && OSMinorVersion >= 1)
+LDOVERRIDE = -L$(DESTDIR)$(USRLIBDIR)
+#else
+#if HasGcc
+LDOVERRIDE = -static -L$(DESTDIR)$(USRLIBDIR)
+#else
+LDOVERRIDE = -Bstatic -L$(DESTDIR)$(USRLIBDIR)
+LDRESUME = -Bdynamic
+#endif
+#endif
+#endif
+install:: xterm
+	MakeDir($(DESTDIR)$(BINDIR))
+	$(RM) xterm.inst
+	$(CC) -o xterm.inst $(OBJS1) $(LDOPTIONS) $(LDOVERRIDE) -lXaw -lXmu -lXt -lXext -lX11 $(LDRESUME) $(LDLIBS) $(TERMCAPLIB) $(PTYLIB) $(EXTRA_LOAD_FLAGS)
+	$(INSTALL) -c $(INSTPGMFLAGS) $(INSTUIDFLAGS) xterm.inst $(DESTDIR)$(BINDIR)/xterm
+	$(RM) xterm.inst
+#else
+#if InstallXtermSetUID
+InstallProgramWithFlags(xterm,$(BINDIR),$(INSTUIDFLAGS))
+#else
+InstallProgramWithFlags(xterm,$(BINDIR),NullParameter)
+#endif
+#endif
+
+NormalProgramTarget(resize,$(OBJS2),$(DEPLIBS2),NullParameter,$(TERMCAPLIB))
+InstallProgramWithFlags(resize,$(BINDIR),NullParameter)
 
 InstallAppDefaults(XTerm)
 InstallManPage(xterm,$(MANDIR))
