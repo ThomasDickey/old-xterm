@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: misc.c /main/106 1996/02/02 14:27:57 kaleb $
+ *	$XConsortium: misc.c /main/112 1996/11/29 10:34:07 swick $
  */
 
 /*
@@ -440,7 +440,7 @@ Redraw()
 		event.width = term->core.width;
 		event.height = term->core.height;
 		(*term->core.widget_class->core_class.expose)((Widget)term, (XEvent *)&event, NULL);
-		if(screen->scrollbar) 
+		if(Scrollbar(screen)) 
 			(*screen->scrollWidget->core.widget_class->core_class.expose)(screen->scrollWidget, (XEvent *)&event, NULL);
 		}
 
@@ -875,7 +875,7 @@ xerror(d, ev)
 Display *d;
 register XErrorEvent *ev;
 {
-    fprintf (stderr, "%s:  warning, error event receieved:\n", xterm_name);
+    fprintf (stderr, "%s:  warning, error event received:\n", xterm_name);
     (void) XmuPrintDefaultErrorMessage (d, ev, stderr);
     Exit (ERROR_XERROR);
 }
@@ -890,15 +890,6 @@ Display *dpy;
 		    DisplayString (dpy));
 
     Exit(ERROR_XIOERROR);
-}
-
-void xt_error(message)
-    String message;
-{
-    extern char *ProgramName;
-
-    (void) fprintf (stderr, "%s Xt error: %s\n", ProgramName, message);
-    exit(1);
 }
 
 XStrCmp(s1, s2)

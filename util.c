@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: util.c,v 1.31 91/06/20 18:34:47 gildea Exp $
+ *	$XConsortium: util.c /main/33 1996/12/01 23:47:10 swick $
  */
 
 /*
@@ -111,7 +111,7 @@ register TScreen *screen;
 		XClearArea (
 		    screen->display,
 		    TextWindow(screen),
-		    (int) screen->border + screen->scrollbar,
+		    (int) screen->border + Scrollbar(screen),
 		    (int) refreshtop * FontHeight(screen) + screen->border,
 		    (unsigned) Width(screen),
 		    (unsigned) refreshheight * FontHeight(screen),
@@ -231,7 +231,7 @@ register int amount;
 		XClearArea (
 		   screen->display,
 		   TextWindow(screen),
-		   (int) screen->border + screen->scrollbar,
+		   (int) screen->border + Scrollbar(screen),
 		   (int) refreshtop * FontHeight(screen) + screen->border,
 		   (unsigned) Width(screen),
 		   (unsigned) refreshheight * FontHeight(screen),
@@ -311,7 +311,7 @@ register int amount;
 		XClearArea (
 		    screen->display,
 		    TextWindow(screen),
-		    (int) screen->border + screen->scrollbar,
+		    (int) screen->border + Scrollbar(screen),
 		    (int) refreshtop * FontHeight(screen) + screen->border,
 		    (unsigned) Width(screen),
 		    (unsigned) refreshheight * FontHeight(screen),
@@ -372,7 +372,7 @@ register int n;
 		XClearArea (
 		    screen->display,
 		    TextWindow(screen),
-		    (int) screen->border + screen->scrollbar,
+		    (int) screen->border + Scrollbar(screen),
 		    (int) refreshtop * FontHeight(screen) + screen->border,
 		    (unsigned) Width(screen),
 		    (unsigned) refreshheight * FontHeight(screen),
@@ -449,7 +449,7 @@ register int n;
 		XClearArea (
 		    screen->display,
 		    TextWindow(screen),
-		    (int) screen->border + screen->scrollbar,
+		    (int) screen->border + Scrollbar(screen),
 		    (int) refreshtop * FontHeight(screen) + screen->border,
 		    (unsigned) Width(screen),
 		    (unsigned) refreshheight * FontHeight(screen),
@@ -497,7 +497,7 @@ InsertChar (screen, n)
 		XFillRectangle(
 		    screen->display,
 		    TextWindow(screen), 
-		    screen->reverseGC,
+		    ReverseGC(screen),
 		    cx, cy,
 		    (unsigned) n * FontWidth(screen), (unsigned) FontHeight(screen));
 	    }
@@ -533,8 +533,8 @@ DeleteChar (screen, n)
 	
 		XFillRectangle
 		    (screen->display, TextWindow(screen),
-		     screen->reverseGC,
-		     screen->border + screen->scrollbar
+		     ReverseGC(screen),
+		     screen->border + Scrollbar(screen)
 		       + Width(screen) - n*FontWidth(screen),
 		     CursorY (screen, screen->cur_row), n * FontWidth(screen),
 		     FontHeight(screen));
@@ -563,7 +563,7 @@ register TScreen *screen;
 			height = screen->max_row;
 		if((height -= top) > 0)
 			XClearArea(screen->display, TextWindow(screen),
-			 screen->border + screen->scrollbar, top *
+			 screen->border + Scrollbar(screen), top *
 			 FontHeight(screen) + screen->border,
 			 Width(screen), height * FontHeight(screen), FALSE);
 
@@ -587,7 +587,7 @@ register TScreen *screen;
 			FlushScroll(screen);
 		if(++top <= screen->max_row)
 			XClearArea(screen->display, TextWindow(screen),
-			 screen->border + screen->scrollbar, top *
+			 screen->border + Scrollbar(screen), top *
 			 FontHeight(screen) + screen->border,
 			 Width(screen), (screen->max_row - top + 1) *
 			 FontHeight(screen), FALSE);
@@ -609,7 +609,7 @@ register TScreen *screen;
 	if(screen->scroll_amt)
 		FlushScroll(screen);
 		XFillRectangle(screen->display, TextWindow(screen),
-		  screen->reverseGC,
+		  ReverseGC(screen),
 		 CursorX(screen, screen->cur_col),
 		 CursorY(screen, screen->cur_row),
 		 Width(screen) - screen->cur_col * FontWidth(screen),
@@ -641,8 +641,8 @@ ClearLeft (screen)
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 		XFillRectangle (screen->display, TextWindow(screen),
-		     screen->reverseGC,
-		     screen->border + screen->scrollbar,
+		     ReverseGC(screen),
+		     screen->border + Scrollbar(screen),
 		      CursorY (screen, screen->cur_row),
 		     (screen->cur_col + 1) * FontWidth(screen),
 		     FontHeight(screen));
@@ -673,8 +673,8 @@ register TScreen *screen;
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 		XFillRectangle (screen->display, TextWindow(screen), 
-		     screen->reverseGC,
-		     screen->border + screen->scrollbar,
+		     ReverseGC(screen),
+		     screen->border + Scrollbar(screen),
 		      CursorY (screen, screen->cur_row),
 		     Width(screen), FontHeight(screen));
 	    }
@@ -698,7 +698,7 @@ register TScreen *screen;
 			XClearWindow(screen->display, TextWindow(screen));
 		else
 			XClearArea(screen->display, TextWindow(screen),
-			 screen->border + screen->scrollbar, 
+			 screen->border + Scrollbar(screen), 
 			 top * FontHeight(screen) + screen->border,	
 		 	 Width(screen), (screen->max_row - top + 1) *
 			 FontHeight(screen), FALSE);
@@ -770,7 +770,7 @@ copy_area(screen, src_x, src_y, width, height, dest_x, dest_y)
 
     XCopyArea(screen->display, 
 	      TextWindow(screen), TextWindow(screen),
-	      screen->normalGC,
+	      NormalGC(screen),
 	      src_x, src_y, width, height, dest_x, dest_y);
 }
 
@@ -803,7 +803,7 @@ vertical_copy_area(screen, firstline, nlines, amount)
     int amount;			/* number of lines to move up (neg=down) */
 {
     if(nlines > 0) {
-	int src_x = screen->border + screen->scrollbar;
+	int src_x = screen->border + Scrollbar(screen);
 	int src_y = firstline * FontHeight(screen) + screen->border;
 
 	copy_area(screen, src_x, src_y,
@@ -836,6 +836,13 @@ HandleExposure (screen, event)
     register XEvent *event;
 {
     register XExposeEvent *reply = (XExposeEvent *)event;
+
+#ifndef NO_ACTIVE_ICON
+    if (reply->window == screen->iconVwin.window)
+	screen->whichVwin = &screen->iconVwin;
+    else
+	screen->whichVwin = &screen->fullVwin;
+#endif /* NO_ACTIVE_ICON */
 
     /* if not doing CopyArea or if this is a GraphicsExpose, don't translate */
     if(!screen->incopy  ||  event->type != Expose)
@@ -887,14 +894,14 @@ handle_translated_exposure (screen, rect_x, rect_y, rect_width, rect_height)
 	toprow = (rect_y - screen->border) / FontHeight(screen);
 	if(toprow < 0)
 		toprow = 0;
-	leftcol = (rect_x - screen->border - screen->scrollbar)
+	leftcol = (rect_x - screen->border - Scrollbar(screen))
 	    / FontWidth(screen);
 	if(leftcol < 0)
 		leftcol = 0;
 	nrows = (rect_y + rect_height - 1 - screen->border) / 
 		FontHeight(screen) - toprow + 1;
 	ncols =
-	 (rect_x + rect_width - 1 - screen->border - screen->scrollbar) /
+	 (rect_x + rect_width - 1 - screen->border - Scrollbar(screen)) /
 			FontWidth(screen) - leftcol + 1;
 	toprow -= screen->scrolls;
 	if (toprow < 0) {
@@ -939,13 +946,23 @@ ReverseVideo (termw)
 	screen->mousecolorback = screen->mousecolor;
 	screen->mousecolor = tmp;
 
-	tmpGC = screen->normalGC;
-	screen->normalGC = screen->reverseGC;
-	screen->reverseGC = tmpGC;
+	tmpGC = screen->fullVwin.normalGC;
+	screen->fullVwin.normalGC = screen->fullVwin.reverseGC;
+	screen->fullVwin.reverseGC = tmpGC;
 
-	tmpGC = screen->normalboldGC;
-	screen->normalboldGC = screen->reverseboldGC;
-	screen->reverseboldGC = tmpGC;
+	tmpGC = screen->fullVwin.normalboldGC;
+	screen->fullVwin.normalboldGC = screen->fullVwin.reverseboldGC;
+	screen->fullVwin.reverseboldGC = tmpGC;
+
+#ifndef NO_ACTIVE_ICON
+	tmpGC = screen->iconVwin.normalGC;
+	screen->iconVwin.normalGC = screen->iconVwin.reverseGC;
+	screen->iconVwin.reverseGC = tmpGC;
+
+	tmpGC = screen->iconVwin.normalboldGC;
+	screen->iconVwin.normalboldGC = screen->iconVwin.reverseboldGC;
+	screen->iconVwin.reverseboldGC = tmpGC;
+#endif /* NO_ACTIVE_ICON */
 
 	recolor_cursor (screen->pointer_cursor, 
 			screen->mousecolor, screen->mousecolorback);

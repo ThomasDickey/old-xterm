@@ -1,5 +1,5 @@
 #ifndef lint
-static char *rid="$XConsortium: main.c /main/239 1995/12/10 17:21:49 gildea $";
+static char *rid="$XConsortium: main.c /main/247 1996/11/29 10:33:51 swick $";
 #endif /* lint */
 
 /*
@@ -367,10 +367,6 @@ extern void exit();
 extern char *ttyname();
 #endif
 
-#ifdef __sgi
-#include <locale.h>
-#endif
-
 #ifdef SYSV
 extern char *ptsname();
 #endif
@@ -590,9 +586,6 @@ static struct _resource {
     Boolean sunFunctionKeys;	/* %%% should be widget resource? */
     Boolean wait_for_map;
     Boolean useInsertMode;
-#ifdef __sgi
-    Boolean useLocale;
-#endif
 } resource;
 
 /* used by VT (charproc.c) */
@@ -620,10 +613,6 @@ static XtResource application_resources[] = {
         offset(wait_for_map), XtRString, "false"},
     {"useInsertMode", "UseInsertMode", XtRBoolean, sizeof (Boolean),
         offset(useInsertMode), XtRString, "false"},
-#ifdef __sgi
-    {"useLocale", "UseLocale", XtRBoolean, sizeof(Boolean),
-	offset(useLocale), XtRString, "true"},
-#endif
 };
 #undef offset
 
@@ -648,6 +637,10 @@ static XrmOptionDescRec optionDescList[] = {
 {"+132",	"*c132",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-ah",		"*alwaysHighlight", XrmoptionNoArg,	(caddr_t) "on"},
 {"+ah",		"*alwaysHighlight", XrmoptionNoArg,	(caddr_t) "off"},
+#ifndef NO_ACTIVE_ICON
+{"-ai",		"*activeIcon",	XrmoptionNoArg,		(caddr_t) "off"},
+{"+ai",		"*activeIcon",	XrmoptionNoArg,		(caddr_t) "on"},
+#endif /* NO_ACTIVE_ICON */
 {"-b",		"*internalBorder",XrmoptionSepArg,	(caddr_t) NULL},
 {"-cb",		"*cutToBeginningOfLine", XrmoptionNoArg, (caddr_t) "off"},
 {"+cb",		"*cutToBeginningOfLine", XrmoptionNoArg, (caddr_t) "on"},
@@ -659,6 +652,9 @@ static XrmOptionDescRec optionDescList[] = {
 {"+cu",		"*curses",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-e",		NULL,		XrmoptionSkipLine,	(caddr_t) NULL},
 {"-fb",		"*boldFont",	XrmoptionSepArg,	(caddr_t) NULL},
+#ifndef NO_ACTIVE_ICON
+{"-fi",		"*iconFont",	XrmoptionSepArg,	(caddr_t) NULL},
+#endif /* NO_ACTIVE_ICON */
 {"-j",		"*jumpScroll",	XrmoptionNoArg,		(caddr_t) "on"},
 {"+j",		"*jumpScroll",	XrmoptionNoArg,		(caddr_t) "off"},
 /* parse logging options anyway for compatibility */
@@ -691,10 +687,6 @@ static XrmOptionDescRec optionDescList[] = {
 {"+t",		"*tekStartup",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-tm",		"*ttyModes",	XrmoptionSepArg,	(caddr_t) NULL},
 {"-tn",		"*termName",	XrmoptionSepArg,	(caddr_t) NULL},
-#ifdef __sgi
-{"-ul",		"*useLocale",	XrmoptionNoArg,		(caddr_t) "on"},
-{"+ul",		"*useLocale",	XrmoptionNoArg,		(caddr_t) "off"},
-#endif
 {"-ut",		"*utmpInhibit",	XrmoptionNoArg,		(caddr_t) "on"},
 {"+ut",		"*utmpInhibit",	XrmoptionNoArg,		(caddr_t) "off"},
 {"-im",		"*useInsertMode", XrmoptionNoArg,	(caddr_t) "on"},
@@ -735,6 +727,10 @@ static struct _options {
 { "-xrm resourcestring",   "additional resource specifications" },
 { "-/+132",                "turn on/off column switch inhibiting" },
 { "-/+ah",                 "turn on/off always highlight" },
+#ifndef NO_ACTIVE_ICON
+{ "-/+ai",		   "turn on/off active icon" },
+{ "-fi fontname",	   "icon font for active icon" },
+#endif /* NO_ACTIVE_ICON */
 { "-b number",             "internal border in pixels" },
 { "-/+cb",                 "turn on/off cut-to-beginning-of-line inhibit" },
 { "-cc classrange",        "specify additional character classes" },
@@ -767,9 +763,6 @@ static struct _options {
 { "-/+t",                  "turn on/off Tek emulation window" },
 { "-tm string",            "terminal mode keywords and characters" },
 { "-tn name",              "TERM environment variable name" },
-#ifdef __sgi
-{ "-/+ul",                 "use/don't use locale for character input" },
-#endif
 #ifdef UTMP
 { "-/+ut",                 "turn on/off utmp inhibit" },
 #else
@@ -876,7 +869,6 @@ Widget toplevel;
 Bool waiting_for_initial_map;
 
 extern void do_hangup();
-extern void xt_error();
 
 /*
  * DeleteWindow(): Action proc to implement ICCCM delete_window.
@@ -1145,7 +1137,6 @@ char **argv;
 #endif	/* } USE_SYSV_TERMIO */
 
 	/* Init the Toolkit. */
-	XtSetErrorHandler(xt_error);
 	toplevel = XtAppInitialize (&app_con, "XTerm", 
 				    optionDescList, XtNumber(optionDescList), 
 				    &argc, argv, fallback_resources, NULL, 0);
@@ -1153,11 +1144,6 @@ char **argv;
 	XtGetApplicationResources(toplevel, (XtPointer) &resource,
 				  application_resources,
 				  XtNumber(application_resources), NULL, 0);
-
-#ifdef __sgi
-	if (resource.useLocale)
-	    setlocale(LC_ALL,"");
-#endif
 
 	waiting_for_initial_map = resource.wait_for_map;
 
@@ -2639,12 +2625,11 @@ spawn ()
 		    ptynameptr = ptyname;
 		else
 		    ptynameptr = ptyname + strlen(ptyname) - PTYCHARLEN;
-		(void) strncpy(utmp.ut_id, ptynameptr, sizeof (utmp.ut_id));
 #else
-		(void) strncpy(utmp.ut_id,ptyname + sizeof("/dev/tty")-1,
-			       sizeof (utmp.ut_id));
-
+		ptynameptr = ptyname + sizeof("/dev/tty")-1;
 #endif
+		(void) strncpy(utmp.ut_id, ptynameptr, sizeof (utmp.ut_id));
+
 		utmp.ut_type = DEAD_PROCESS;
 
 		/* position to entry in utmp file */
@@ -2659,6 +2644,7 @@ spawn ()
 			       (pw && pw->pw_name) ? pw->pw_name : "????",
 			       sizeof(utmp.ut_user));
 		    
+		/* why are we copying this string again? look up 16 lines. */
 		(void)strncpy(utmp.ut_id, ptynameptr, sizeof(utmp.ut_id));
 		(void) strncpy (utmp.ut_line,
 			ptyname + strlen("/dev/"), sizeof (utmp.ut_line));
