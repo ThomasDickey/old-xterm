@@ -1,12 +1,36 @@
 /*
- * $XConsortium: Tekproc.c,v 1.112 93/02/25 17:17:40 gildea Exp $
+ * $XConsortium: Tekproc.c,v 1.115 94/04/17 20:23:23 rws Exp $
  *
  * Warning, there be crufty dragons here.
  */
 
 
 /*
- * Copyright 1988 Massachusetts Institute of Technology
+ 
+Copyright (c) 1988  X Consortium
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+X CONSORTIUM BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Except as contained in this notice, the name of the X Consortium shall not be
+used in advertising or otherwise to promote the sale, use or other dealings
+in this Software without prior written authorization from the X Consortium.
+
+
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *
  *                         All Rights Reserved
@@ -47,6 +71,14 @@
 #include <errno.h>
 #include <setjmp.h>
 #include <signal.h>
+#ifdef X_NOT_STDC_ENV
+extern int errno;
+#define Time_t long
+extern Time_t time ();
+#else
+#include <time.h>
+#define Time_t time_t
+#endif
 
 /*
  * Check for both EAGAIN and EWOULDBLOCK, because some supposedly POSIX
@@ -1570,7 +1602,7 @@ TekCopy()
 {
 	register TScreen *screen = &term->screen;
 	register struct tm *tp;
-	long l;
+	Time_t l;
 	char buf[32];
 	int waited;
 	int pid;
