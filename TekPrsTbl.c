@@ -25,14 +25,9 @@
  * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
  * SOFTWARE.
  */
+/* $XFree86: xc/programs/xterm/TekPrsTbl.c,v 3.2 1998/10/25 12:48:07 dawes Exp $ */
 
-#include "Tekparse.h"
-
-#ifdef __STDC__
-#define Const const
-#else
-#define Const /**/
-#endif
+#include <Tekparse.h>
 
 Const int Talptable[] =		/* US (^_) normal alpha mode */
 {

@@ -1,5 +1,9 @@
 ! $Xorg: XTerm.ad,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
-XTerm.JoinSession:False
+!
+!
+!
+!
+! $XFree86: xc/programs/xterm/XTerm.ad,v 3.25 2003/09/21 17:12:44 dickey Exp $
 
 *SimpleMenu*BackingStore: NotUseful
 *SimpleMenu*menuLabel.font: -adobe-helvetica-bold-r-normal--*-120-*-*-*-*-iso8859-*
@@ -8,11 +12,24 @@ XTerm.JoinSession:False
 *SimpleMenu*Sme.height:	16
 
 *SimpleMenu*Cursor: left_ptr
+
 *mainMenu.Label:  Main Options
 *mainMenu*securekbd*Label:  Secure Keyboard
 *mainMenu*allowsends*Label:  Allow SendEvents
-*mainMenu*logging*Label:  Log to File
 *mainMenu*redraw*Label:  Redraw Window
+*mainMenu*logging*Label:  Log to File
+*mainMenu*print*Label:  Print Window
+*mainMenu*print-redir*Label:  Redirect to Printer
+*mainMenu*8-bit control*Label: 8-Bit Controls
+*mainMenu*backarrow key*Label: Backarrow Key (BS/DEL)
+*mainMenu*num-lock*Label: Alt/NumLock Modifiers
+*mainMenu*meta-esc*Label: Meta Sends Escape
+*mainMenu*delete-is-del*Label: Delete is DEL
+*mainMenu*oldFunctionKeys*Label: Old Function-Keys
+*mainMenu*sunFunctionKeys*Label: Sun Function-Keys
+*mainMenu*sunKeyboard*Label: VT220 Keyboard
+*mainMenu*hpFunctionKeys*Label: HP Function-Keys
+*mainMenu*scoFunctionKeys*Label: SCO Function-Keys
 *mainMenu*suspend*Label:  Send STOP Signal
 *mainMenu*continue*Label:  Send CONT Signal
 *mainMenu*interrupt*Label:  Send INT Signal
@@ -35,8 +52,10 @@ XTerm.JoinSession:False
 *vtMenu*allow132*Label: Allow 80/132 Column Switching
 *vtMenu*cursesemul*Label:  Enable Curses Emulation
 *vtMenu*visualbell*Label:  Enable Visual Bell
+*vtMenu*poponbell*Label:  Enable Pop on Bell
 *vtMenu*marginbell*Label:  Enable Margin Bell
-*vtMenu*altscreen*Label:  Show Alternate Screen
+*vtMenu*cursorblink*Label: Enable Blinking Cursor
+*vtMenu*titeInhibit*Label:  Enable Alternate Screen Switching
 *vtMenu*activeicon*Label: Enable Active Icon
 *vtMenu*softreset*Label:  Do Soft Reset
 *vtMenu*hardreset*Label:  Do Full Reset
@@ -44,6 +63,7 @@ XTerm.JoinSession:False
 *vtMenu*tekshow*Label:  Show Tek Window
 *vtMenu*tekmode*Label:  Switch to Tek Mode
 *vtMenu*vthide*Label:  Hide VT Window
+*vtMenu*altscreen*Label:  Show Alternate Screen
 
 *fontMenu.Label:  VT Fonts
 *fontMenu*fontdefault*Label:	Default
@@ -63,6 +83,16 @@ XTerm.JoinSession:False
 *fontMenu*fontescape*Label:	Escape Sequence
 *fontMenu*fontsel*Label:		Selection
 !fontescape and fontsel overridden by application
+*fontMenu*font-linedrawing*Label: Line-Drawing Characters
+*fontMenu*font-doublesize*Label: Doublesized Characters
+*fontMenu*font-loadable*Label:	VT220 Soft Fonts
+
+*VT100.utf8Fonts.font2:	-misc-fixed-medium-r-normal--8-80-75-75-c-50-iso10646-1
+*VT100.utf8Fonts.font:	-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1
+*VT100.utf8Fonts.font3:	-misc-fixed-medium-r-normal--14-130-75-75-c-70-iso10646-1
+*VT100.utf8Fonts.font4:	-misc-fixed-medium-r-normal--13-120-75-75-c-80-iso10646-1
+*VT100.utf8Fonts.font5:	-misc-fixed-medium-r-normal--18-120-100-100-c-90-iso10646-1
+*VT100.utf8Fonts.font6:	-misc-fixed-medium-r-normal--20-200-75-75-c-100-iso10646-1
 
 *tekMenu.Label:  Tek Options
 *tekMenu*tektextlarge*Label:  Large Characters
@@ -80,4 +110,3 @@ XTerm.JoinSession:False
 *tek4014*font2: 8x13
 *tek4014*font3: 6x13
 *tek4014*fontSmall: 6x10
-
