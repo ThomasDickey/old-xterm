@@ -2,6 +2,8 @@
  *	$Xorg: main.h,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
+/* $XFree86: xc/programs/xterm/main.h,v 3.7 2002/08/17 19:52:26 dickey Exp $ */
+
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *
@@ -24,8 +26,31 @@
  * ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS
  * SOFTWARE.
  */
+#ifndef included_main_h
+#define included_main_h
 
-#define	DEFFONT			"fixed"
-#define	DEFBOLDFONT		NULL 	/* no bold font uses overstriking */
-#define	DEFBORDER		2
-#define	DEFBORDERWIDTH		2
+#include <xterm.h>
+
+#define DEFCLASS		"XTerm"
+#define DEFFONT			"fixed"
+#define DEFWIDEFONT		NULL	/* grab one which is 2x as wide */
+#define DEFWIDEBOLDFONT		NULL
+#define DEFXIMFONT		"*"
+#define DEFBOLDFONT		NULL	/* no bold font uses overstriking */
+#define DEFBORDER		2
+#define DEFFACENAME		NULL
+#define DEFFACESIZE		14
+
+#ifndef DEFDELETE_DEL
+#define DEFDELETE_DEL 2
+#endif
+
+#ifndef PROJECTROOT
+#define PROJECTROOT		"/usr/X11R6"
+#endif
+
+#define DEFLOCALEFILTER2(x)	#x
+#define DEFLOCALEFILTER1(x)	DEFLOCALEFILTER2(x)
+#define DEFLOCALEFILTER		DEFLOCALEFILTER1(PROJECTROOT) "/bin/luit"
+
+#endif	/* included_main_h */

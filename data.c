@@ -2,7 +2,37 @@
  *	$Xorg: data.c,v 1.3 2000/08/17 19:55:08 cpqbld Exp $
  */
 
+/* $XFree86: xc/programs/xterm/data.c,v 3.27 2003/10/13 00:58:22 dickey Exp $ */
+
 /*
+ * Copyright 2002,2003 by Thomas E. Dickey
+ *
+ *                         All Rights Reserved
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE ABOVE LISTED COPYRIGHT HOLDER(S) BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * Except as contained in this notice, the name(s) of the above copyright
+ * holders shall not be used in advertising or otherwise to promote the
+ * sale, use or other dealings in this Software without prior written
+ * authorization.
+ *
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *
  *                         All Rights Reserved
@@ -25,83 +55,77 @@
  * SOFTWARE.
  */
 
-#include "ptyx.h"		/* gets Xt stuff, too */
-#include <X11/Xpoll.h>
-#include "data.h"
-#include <setjmp.h>
+#include <data.h>
 
-XPoint T_boxlarge[NBOX] = {
-	{0, 0},
-	{8, 0},
-	{0, 14},
-	{-8, 0},
-	{0, -14},
-};
-XPoint T_box2[NBOX] = {
-	{0, 0},
-	{7, 0},
-	{0, 12},
-	{-7, 0},
-	{0, -12},
-};
-XPoint T_box3[NBOX] = {
-	{0, 0},
-	{5, 0},
-	{0, 12},
-	{-5, 0},
-	{0, -12},
-};
-XPoint T_boxsmall[NBOX] = {
-	{0, 0},
-	{5, 0},
-	{0, 9},
-	{-5, 0},
-	{0, -9},
-};
-jmp_buf Tekend;
-int Tbcnt = 0;
-Char *Tbuffer;
-Char *Tbptr;
-TekLink *TekRefresh;
+Widget toplevel;		/* top-most widget in xterm */
+
+#if OPT_TEK4014
+PtyData *Tbuffer;
 Char *Tpushb;
 Char *Tpushback;
+TekLink *TekRefresh;
+TekWidget tekWidget;
+Widget tekshellwidget;
+int TEKgcFontMask = GCFont;
+int T_lastx = -1;
+int T_lasty = -1;
 int Ttoggled = 0;
-int bcnt = 0;
-Char buffer[BUF_SIZE];
-Char *bptr = buffer;
-jmp_buf VTend;
-XPoint VTbox[NBOX] = {
-	{0, 0},
-	{0, 0},
-	{0, 0},
-	{0, 0},
-	{0, 0},
+jmp_buf Tekend;
+#endif
+
+char *ProgramName;
+
+Arg ourTopLevelShellArgs[] =
+{
+    {XtNallowShellResize, (XtArgVal) TRUE},
+    {XtNinput, (XtArgVal) TRUE},
 };
+int number_ourTopLevelShellArgs = 2;
+
+Bool waiting_for_initial_map;
+
+Atom wm_delete_window;		/* for ICCCM delete window */
+
+XTERM_RESOURCE resource;
+
+PtyData VTbuffer;
+
+jmp_buf VTend;
 
 #ifdef DEBUG
-int debug = 0; 		/* true causes error messages to be displayed */
-#endif	/* DEBUG */
+int debug = 0;			/* true causes error messages to be displayed */
+#endif /* DEBUG */
+
+XtAppContext app_con;
 XtermWidget term;		/* master data structure for client */
-char *xterm_name;	/* argv[0] */
-int am_slave = 0;	/* set to 1 if running as a slave process */
+char *xterm_name;		/* argv[0] */
+int hold_screen;
+
+#if OPT_ZICONBEEP
+int zIconBeep;			/* non-zero means beep; see charproc.c for details -IAN! */
+Boolean zIconBeep_flagged;	/* True if the icon name has been changed */
+#endif /* OPT_ZICONBEEP */
+
+#if OPT_SAME_NAME
+Boolean sameName;		/* Don't change the title or icon name if it
+				   is the same.  This prevents flicker on the
+				   screen at the cost of an extra request to
+				   the server */
+#endif
+
+int am_slave = -1;		/* set to file-descriptor if we're a slave process */
 int max_plus1;
+#ifdef VMS
+int Select_mask;
+int X_mask;
+int pty_mask;
+#else /* VMS */
 fd_set Select_mask;
 fd_set X_mask;
 fd_set pty_mask;
+#endif /* VMS */
 char *ptydev;
 char *ttydev;
-#ifdef ALLOWLOGGING
-char log_def_name[] = "XtermLog.XXXXX";
-#endif
-int T_lastx = -1;
-int T_lasty = -1;
 
 int waitingForTrackInfo = 0;
 EventMode eventMode = NORMAL;
-
-GC visualBellGC;
-
-int VTgcFontMask = GCFont;
-int TEKgcFontMask = GCFont;
-
-TekWidget tekWidget;
