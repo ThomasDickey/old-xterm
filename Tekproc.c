@@ -1,5 +1,5 @@
 /*
- * $Xorg: Tekproc.c,v 1.4 2000/08/17 19:55:07 cpqbld Exp $
+ * $Xorg: Tekproc.c,v 1.5 2001/02/09 02:06:02 xorgcvs Exp $
  *
  * Warning, there be crufty dragons here.
  */
@@ -9,7 +9,11 @@
  
 Copyright 1988, 1998  The Open Group
 
-All Rights Reserved.
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation.
 
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.

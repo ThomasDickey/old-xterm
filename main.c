@@ -1,5 +1,5 @@
 #ifndef lint
-static char *rid="$Xorg: main.c,v 1.6 2000/08/18 11:04:49 xorgcvs Exp $";
+static char *rid="$Xorg: main.c,v 1.7 2001/02/09 02:06:02 xorgcvs Exp $";
 #endif /* lint */
 
 /*
@@ -20,7 +20,11 @@ static char *rid="$Xorg: main.c,v 1.6 2000/08/18 11:04:49 xorgcvs Exp $";
 
 Copyright 1987, 1988, 1998  The Open Group
 
-All Rights Reserved.
+Permission to use, copy, modify, distribute, and sell this software and its
+documentation for any purpose is hereby granted without fee, provided that
+the above copyright notice appear in all copies and that both that
+copyright notice and this permission notice appear in supporting
+documentation.
 
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
