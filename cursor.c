@@ -1,11 +1,10 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/cursor.c,v @
- *	@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @
+ *	@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @
  */
 
 #ifndef lint
-static char *rcsid_cursor_c = "@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @";
-#endif	lint
+static char *rcsid_cursor_c = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @";
+#endif	/* lint */
 
 #include <X11/copyright.h>
 
@@ -36,8 +35,8 @@ static char *rcsid_cursor_c = "@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb E
 
 
 #ifndef lint
-static char rcs_id[] = "@Header: cursor.c,v 1.6 87/09/11 08:17:27 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: cursor.c,v 1.1 88/02/10 13:08:04 jim Exp @";
+#endif	/* lint */
 
 #include <X11/Xlib.h>
 #include <stdio.h>
@@ -78,9 +77,9 @@ register TScreen	*screen;
 int		n;
 {
 	register int i, j, k, rev;
-	extern Terminal term;
+	extern XtermWidget term;
 
-	if((rev = (term.flags & (REVERSEWRAP | WRAPAROUND)) ==
+	if((rev = (term->flags & (REVERSEWRAP | WRAPAROUND)) ==
 	 (REVERSEWRAP | WRAPAROUND)) && screen->do_wrap)
 		n--;
 	if ((screen->cur_col -= n) < 0) {
@@ -209,7 +208,7 @@ register TScreen *screen;
  * Save Cursor and Attributes
  */
 CursorSave(term, sc)
-register Terminal *term;
+register XtermWidget term;
 register SavedCursor *sc;
 {
 	register TScreen *screen = &term->screen;
@@ -226,7 +225,7 @@ register SavedCursor *sc;
  * Restore Cursor and Attributes
  */
 CursorRestore(term, sc)
-register Terminal *term;
+register XtermWidget term;
 register SavedCursor *sc;
 {
 	register TScreen *screen = &term->screen;

@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/TekPrsTbl.c,v @
- *	@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @
+ *	@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @
  */
 
 
@@ -30,13 +29,13 @@
  */
 
 #ifndef lint
-static char *rcsid_Tekparsetable_c = "@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @";
-#endif	lint
+static char *rcsid_Tekparsetable_c = "@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @";
+#endif	/* lint */
 
 #include "Tekparse.h"
 #ifndef lint
-static char rcs_id[] = "@Header: TekPrsTbl.c,v 1.4 87/09/11 08:17:00 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: TekPrsTbl.c,v 1.1 88/02/10 13:07:58 jim Exp @";
+#endif	/* lint */
 
 int Talptable[] = {
 /*	NUL		SOH		STX		ETX	*/

@@ -1,11 +1,10 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/input.c,v @
- *	@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @
+ *	@Header: input.c,v 1.1 88/02/10 13:08:06 jim Exp @
  */
 
 #ifndef lint
-static char *rcsid_input_c = "@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @";
-#endif	lint
+static char *rcsid_input_c = "@Header: input.c,v 1.1 88/02/10 13:08:06 jim Exp @";
+#endif	/* lint */
 
 #include <X11/copyright.h>
 
@@ -35,8 +34,8 @@ static char *rcsid_input_c = "@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Ex
 /* input.c */
 
 #ifndef lint
-static char rcs_id[] = "@Header: input.c,v 1.14 87/09/11 08:16:45 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: input.c,v 1.1 88/02/10 13:08:06 jim Exp @";
+#endif	/* lint */
 
 #include <X11/Xlib.h>
 #include <X11/keysym.h>

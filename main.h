@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/main.h,v @
- *	@Header: main.h,v 1.6 87/09/11 08:17:25 toddb Exp @
+ *	@Header: main.h,v 1.2 88/02/21 15:06:04 jim Exp @
  */
 
 
@@ -33,5 +32,5 @@
 
 #define	DEFBOLDFONT		"fixed"
 #define	DEFBORDER		2
-#define	DEFBORDERWIDTH		1
+#define	DEFBORDERWIDTH		2
 #define	DEFFONT			"fixed"

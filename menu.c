@@ -1,6 +1,8 @@
+#ifdef SCCS
+static char sccsid[]="@(#)menu.c	1.7 Stellar 87/10/16";
+#endif
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/menu.c,v @
- *	@Header: menu.c,v 1.28 87/09/11 22:31:28 rws Exp @
+ *	@Header: menu.c,v 1.2 88/02/18 16:48:09 jim Exp @
  */
 
 #include <X11/copyright.h>
@@ -31,25 +33,23 @@
 #include <stdio.h>
 #ifdef MODEMENU
 #include <X11/Xlib.h>
+#include <X11/Atoms.h>
 #include <X11/Intrinsic.h>
+#include <X11/Shell.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/cursorfont.h>
-#include <X11/Xtlib.h>
 #include "menu.h"
 #include <setjmp.h>
 #include "ptyx.h"
 #include "data.h"
 
 #ifndef lint
-static char rcs_id[] = "@Header: menu.c,v 1.28 87/09/11 22:31:28 rws Exp @";
+static char rcs_id[] = "@Header: menu.c,v 1.2 88/02/18 16:48:09 jim Exp @";
 #endif	lint
 
 #define DEFMENUBORDER	2
 #define DEFMENUPAD	3
-
-#define  XtNxterm                "xterm"
-#define  XtCApp                  "App"
 
 #define XOR(a,b)	((a&(~b)) | ((~a)&b))
 
@@ -63,18 +63,6 @@ static char Check_MarkBits[] = {
    0x00, 0x01, 0x80, 0x01, 0xc0, 0x00, 0x60, 0x00,
    0x31, 0x00, 0x1b, 0x00, 0x0e, 0x00, 0x04, 0x00
 };
-static char Default_CursorBits[] = {
-   0x00, 0x00, 0x02, 0x00, 0x06, 0x00, 0x0e, 0x00,
-   0x1e, 0x00, 0x3e, 0x00, 0x7e, 0x00, 0xfe, 0x00,
-   0xfe, 0x01, 0x3e, 0x00, 0x36, 0x00, 0x62, 0x00,
-   0x60, 0x00, 0xc0, 0x00, 0xc0, 0x00, 0x00, 0x00
-};
-static char Default_MaskBits[] = {
-   0x03, 0x00, 0x07, 0x00, 0x0f, 0x00, 0x1f, 0x00,
-   0x3f, 0x00, 0x7f, 0x00, 0xff, 0x00, 0xff, 0x01,
-   0xff, 0x03, 0xff, 0x07, 0x7f, 0x00, 0xf7, 0x00,
-   0xf3, 0x00, 0xe1, 0x01, 0xe0, 0x01, 0xc0, 0x01
-};
 
 static GC MenuGC, MenuInverseGC, MenuInvertGC, MenuGrayGC;
 static int gotGCs = FALSE;
@@ -84,21 +72,16 @@ Menu Menu_Default;
 Cursor Menu_DefaultCursor;
 char *Menu_DefaultFont;
 
-extern XrmNameList nameList;
-extern XrmClassList classList;
-extern EventDoNothing();
-
 static int default_menuBorder = DEFMENUBORDER;
 static int default_menuPad = DEFMENUPAD;
-static char *defaultNULL = NULL;
 
-static Resource resourceList[] = {
-  {"menuBorder", "MenuBorder", XrmRInt, sizeof(int),
-     (caddr_t) &Menu_Default.menuBorderWidth, (caddr_t) &default_menuBorder},
-  {"menuFont", XtCFont, XrmRString, sizeof(char *),
-     (caddr_t) &Menu_DefaultFont, (caddr_t) &defaultNULL},
-  {"menuPad", "MenuPad", XrmRInt, sizeof(int),
-     (caddr_t) &Menu_Default.menuItemPad, (caddr_t) &default_menuPad}
+static XtResource resourceList[] = {
+  {"menuBorder", "MenuBorder", XtRInt, sizeof(int),
+     XtOffset (Menu *, menuBorderWidth), XtRInt, (caddr_t) &default_menuBorder},
+  {"menuFont", XtCFont, XtRFontStruct, sizeof(XFontStruct *),
+     XtOffset (Menu *, menuFontInfo), XtRString, NULL},
+  {"menuPad", "MenuPad", XtRInt, sizeof(int),
+     XtOffset (Menu *, menuItemPad), XtRInt, (caddr_t) &default_menuPad}
 };
 
 /*
@@ -128,66 +111,18 @@ register char *text;
 	return(i);
 }
 
-/*
- * DisposeItem() releases the memory allocated for the given indexed
- * menuitem.  Nonzero is returned if an item was actual disposed of.
- */
-DisposeItem(menu, i)
-register Menu *menu;
-register int i;
-{
-	register MenuItem **next, **last, *menuitem;
-
-	if(!menu || i < 0)
-		return(0);
-	next = &menu->menuItems;
-	do {
-		if(!*next)
-			return(0);
-		last = next;
-		next = &(*next)->nextItem;
-	} while(i-- > 0);
-	menuitem = *last;
-	*last = *next;
-	free(menuitem);
-	return(1);
-}
-
-/*
- * DisposeMenu() releases the memory allocated for the given menu.
- */
-DisposeMenu(menu)
-register Menu *menu;
-{
-	register TScreen *screen = &term.screen;
-	static Unmap_Menu();
-
-	if(!menu)
-		return;
-	if(menu->menuFlags & menuMapped)
-		Unmap_Menu(menu);
-	while(DisposeItem(menu, 0));
-	if(menu->menuWindow)
-		XDestroyWindow(screen->display, menu->menuWindow);
-	if(menu->menuSaved)
-		XFreePixmap(screen->display, menu->menuSaved);
-	free(menu);
-}
-
 InitMenu(name)
 register char *name;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 	register char *cp;
-	extern Pixmap make_gray();
-	Display *dpy = screen->display;
+	Display *dpy = XtDisplay(xw);
 
 	/*
 	 * If the gray tile hasn't been set up, do it now.
 	 */
 	if(!Gray_Tile) 
-		Gray_Tile = make_gray(WhitePixel(dpy, DefaultScreen(dpy)), 
-		BlackPixel(dpy, DefaultScreen(dpy)), 1);
+		Gray_Tile = XtGrayPixmap(XtScreen(xw));
 	if (!Check_Tile) {
 	        Check_Tile = Make_tile(checkMarkWidth, checkMarkHeight,
 		  Check_MarkBits, BlackPixel(dpy, DefaultScreen(dpy)),
@@ -201,22 +136,19 @@ register char *name;
 		Menu_Default.menuFlags |= menuSaveMenu;
 */
 	Menu_Default.menuInitialItem = -1;
-	XtGetResources( dpy, resourceList, XtNumber(resourceList),
-		        (ArgList) NULL, 0, DefaultRootWindow(dpy),
-		        XtNxterm, XtCApp, &nameList, &classList );
+	XtGetSubresources(xw, (caddr_t)&Menu_Default, "menu", "Menu",
+           resourceList, XtNumber(resourceList), NULL, 0);
 
-	/* would be nice if (Xrm)CvtStringToFontStruct didn't complain
-	 * when the font didn't exist! */
-	if (Menu_DefaultFont != NULL) {
-	    Menu_Default.menuFontInfo = XLoadQueryFont(dpy, Menu_DefaultFont);
-	    if (!Menu_Default.menuFontInfo)
-	        Menu_DefaultFont = NULL;
-	}
-
-	/* actually, we need to know whether the fid is valid anyway */
-	if (Menu_DefaultFont == NULL) {
-	    Menu_Default.menuFontInfo = screen->fnt_norm;
-	    MenugcFontMask = VTgcFontMask;
+	if (Menu_Default.menuFontInfo == NULL) {
+	    if (xw->screen.fnt_norm) {
+		Menu_Default.menuFontInfo = xw->screen.fnt_norm;
+		MenugcFontMask = VTgcFontMask;
+	    } else {
+		Display *dpy = XtDisplay (xw);
+		Menu_Default.menuFontInfo =
+		  XQueryFont (dpy, DefaultGC (dpy, DefaultScreen (dpy))->gid);
+		MenugcFontMask = 0;
+	    }
 	}
 };
 
@@ -268,12 +200,11 @@ char *name;
 int reverse;
 {
 	register Menu *menu;
-	register int fg, bg;
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 	XGCValues xgc;
 	extern char *malloc();
 	extern XFontStruct *XLoadQueryFont();
-	register Display *dpy = screen->display;
+	register Display *dpy = XtDisplay(xw);
 
 	/*
 	 * If the GrayTile hasn't been defined, InitMenu() was never
@@ -295,17 +226,6 @@ int reverse;
 	 */
 	if(!menu->menuCursor) {
 		if(!Menu_DefaultCursor) {
-			if(reverse) {
-				fg = WhitePixel(dpy, 
-					DefaultScreen(dpy));
-				bg = BlackPixel(dpy, 
-					DefaultScreen(dpy));
-			} else {
-				fg = BlackPixel(dpy, 
-					DefaultScreen(dpy));
-				bg = WhitePixel(dpy, 
-					DefaultScreen(dpy));
-			}
 			if(!(Menu_DefaultCursor =
 			   XCreateFontCursor(dpy, XC_left_ptr)))
 				return((Menu *)0);
@@ -443,18 +363,21 @@ int y, n, hilited_y, hilited_n, in_window;
 static MenuItem *Mouse_InItem(), *Y_InItem();
 static Unmap_Menu();
 
-XtEventReturnCode MenuExposeWindow(event, eventdata)
-register XEvent *event;
-caddr_t eventdata;
+
+/*ARGSUSED*/
+void MenuExposeWindow(w, closure, event)
+Widget w;
+caddr_t closure;
+XEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = (XtermWidget) w;
 	/*
 	 * If we have a saved pixmap, display it.  Otherwise
 	 * redraw the menu and save it away.
 	 */
 	if (event->type == NoExpose) return;
 	if(menu->menuSaved) {
-		XCopyArea(screen->display, menu->menuSaved, menu->menuWindow, 
+		XCopyArea(XtDisplay(xw), menu->menuSaved, menu->menuWindow, 
 		 MenuGC, 0, 0,
 		 menu->menuWidth, menu->menuHeight, 0, 0);
 		/*
@@ -479,11 +402,11 @@ caddr_t eventdata;
 	 * save the menu, throw away any existing save menu
 	 * image and make a new one.
 	 */
-	XFlush(screen->display);
+	XFlush(XtDisplay(xw));
 	if(changed && (menu->menuFlags & menuSaveMenu)) {
 		if(menu->menuSaved)
-			XFreePixmap(screen->display, menu->menuSaved);
-/*		menu->menuSaved = XPixmapSave(screen->display, 
+			XFreePixmap(XtDisplay(xw), menu->menuSaved);
+/*		menu->menuSaved = XPixmapSave(XtDisplay(xw), 
 		 menu->menuWindow, 0, 0, menu->menuWidth, menu->menuHeight);
 */
 	}
@@ -492,18 +415,19 @@ caddr_t eventdata;
 	 * it is in a non-disabled item, hilite it.
 	 */
 	if(hilited_item = Mouse_InItem(menu, &hilited_y, &hilited_n))
-		XFillRectangle(screen->display, menu->menuWindow, 
+		XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 		 MenuInvertGC, 0, hilited_y,
 		 menu->menuWidth, hilited_item->itemHeight);
 	drawn++;
-	return (XteventHandled);
 }
 
-XtEventReturnCode MenuMouseMoved(event, eventdata)
-XButtonEvent *event;
-caddr_t eventdata;
+/*ARGSUSED*/
+void MenuMouseMoved(w, closure, event)
+Widget w;
+caddr_t closure;
+XMotionEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = (XtermWidget) w;
 	if(!drawn || !in_window)
 		return;
 	/*
@@ -514,52 +438,56 @@ caddr_t eventdata;
 	y = event->y;
 	if((item = Y_InItem(menu, &y, &n)) != hilited_item) {
 		if(hilited_item)
-			XFillRectangle(screen->display, menu->menuWindow, 
+			XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 			 MenuInvertGC, 0, hilited_y,
 			 menu->menuWidth, hilited_item->itemHeight);
 		if(hilited_item = item) {
-			XFillRectangle(screen->display, menu->menuWindow, 
+			XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 			 MenuInvertGC, 0,
 			 hilited_y = y, menu->menuWidth, item->itemHeight);
 			hilited_n = n;
 		}
 	}
-	return (XteventHandled);
 }
 
-XtEventReturnCode MenuEnterWindow(event, eventdata)
+/*ARGSUSED*/
+void MenuEnterWindow(w, closure, event)
+Widget w;
+caddr_t closure;
 XEvent *event;
-caddr_t eventdata;
 {
 	in_window = TRUE;
-	return (MenuMouseMoved(event, eventdata));
+	MenuMouseMoved(w, closure, event);
 }
 
-XtEventReturnCode MenuLeaveWindow(event, eventdata)
+/*ARGSUSED*/
+void MenuLeaveWindow(w, closure, event)
+Widget w;
+caddr_t closure;
 XEvent *event;
-caddr_t eventdata;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = (XtermWidget) w;
 	if(!drawn)
-		return (XteventHandled);
+		return;
 	/*
 	 * Unhilite any window that is currently hilited.
 	 */
 	if(hilited_item) {
-		XFillRectangle(screen->display, menu->menuWindow, 
+		XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 		 MenuInvertGC, 0, hilited_y,
 		 menu->menuWidth, hilited_item->itemHeight);
 		hilited_item = (MenuItem *)0;
 	}
 	in_window = FALSE;
-	return (XteventHandled);
 }
 
-XtEventReturnCode MenuButtonReleased(event, eventdata)
+/*ARGSUSED*/
+void MenuButtonReleased(w, closure, event)
+Widget w;
+caddr_t closure;
 XButtonEvent *event;
-caddr_t eventdata;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = (XtermWidget) w;
 	extern FinishModeMenu();
 
 	/*
@@ -568,20 +496,20 @@ caddr_t eventdata;
 	 */
 
 	if (! AllButtonsUp(event->state, event->button))
-		return(XteventHandled);
+		return;
 
-	XUngrabPointer(screen->display, CurrentTime);
+	XUngrabPointer(XtDisplay(xw), CurrentTime);
 	
 	if(in_window) {
 		y = event->y;
 		if((item = Y_InItem(menu, &y, &n)) != hilited_item) {
 		    if(hilited_item)
-			XFillRectangle(screen->display, menu->menuWindow, 
+			XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 			 MenuInvertGC, 0,
 			 hilited_y, menu->menuWidth,
 			 hilited_item->itemHeight);
 		    if(hilited_item = item) {
-			XFillRectangle(screen->display, menu->menuWindow, 
+			XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 			 MenuInvertGC, 0,
 			 hilited_y = y, menu->menuWidth,
 			 hilited_item->itemHeight);
@@ -589,7 +517,7 @@ caddr_t eventdata;
 		    }
 		}
 	}
-	XFlush(screen->display);
+	XFlush(XtDisplay(xw));
 	menu->menuFlags &= ~(menuChanged | menuItemChanged);
 	Unmap_Menu(menu);
 	drawn = 0;
@@ -597,7 +525,6 @@ caddr_t eventdata;
 		FinishModeMenu(menu->menuInitialItem = hilited_n);
 	else
 		FinishModeMenu(-1);
-	return (XteventHandled);
 }
 
 /*
@@ -608,7 +535,7 @@ TrackMenu(lmenu, event)
 register Menu *lmenu;
 register XButtonPressedEvent *event;
 {
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 	XButtonReleasedEvent ev;
 	XSetWindowAttributes attr;
 
@@ -629,7 +556,7 @@ register XButtonPressedEvent *event;
 	 */
 	if(changed & menuChanged) {
 		if(menu->menuSaved)
-			XFreePixmap(screen->display, menu->menuSaved);
+			XFreePixmap(XtDisplay(xw), menu->menuSaved);
 		menu->menuSaved = (Pixmap)0;
 		if(!Recalc_Menu(menu))
 			return(-1);
@@ -640,43 +567,31 @@ register XButtonPressedEvent *event;
 	 * if the menu has changed, resize the window.
 	 */
 	if(!menu->menuWindow) {
+	        menu->menuWidget = XtCreatePopupShell ("Xterm Menu", transientShellWidgetClass, xw, NULL, 0);
+		XtResizeWidget (menu->menuWidget, menu->menuWidth, menu->menuHeight, menu->menuBorderWidth);
+		XtRealizeWidget (menu->menuWidget);
+		menu->menuWindow = XtWindow (menu->menuWidget);
 	        attr.override_redirect = TRUE;
-		attr.border_pixmap = make_gray(
-		  WhitePixel(screen->display, DefaultScreen(screen->display)), 
-		  BlackPixel(screen->display, DefaultScreen(screen->display)), 
-		  DefaultDepth(screen->display, DefaultScreen(screen->display)));
+		attr.border_pixmap = XtGrayPixmap(XtScreen(xw));
 		attr.background_pixel = menu->menuBgColor;
 		attr.cursor = menu->menuCursor;
-		if((menu->menuWindow = XCreateWindow(screen->display, 
-		 DefaultRootWindow(screen->display), 0, 0,
-		 menu->menuWidth, menu->menuHeight, menu->menuBorderWidth,
-		 0, CopyFromParent, CopyFromParent, 
-		 CWBorderPixmap+CWBackPixel+CWOverrideRedirect+CWCursor, 
-		 &attr)) == (Window)0)
-			return(-1);
+		XChangeWindowAttributes (XtDisplay(xw), menu->menuWindow, 
+                   CWBorderPixmap+CWBackPixel+CWOverrideRedirect+CWCursor, &attr);
 
+		XtAddEventHandler(menu->menuWidget, ExposureMask, FALSE,
+                   MenuExposeWindow, NULL);
+		XtAddEventHandler(menu->menuWidget, EnterWindowMask, FALSE,
+                   MenuEnterWindow, NULL);
+		XtAddEventHandler(menu->menuWidget, LeaveWindowMask, FALSE,
+                   MenuLeaveWindow, NULL);
+		XtAddEventHandler(menu->menuWidget, PointerMotionMask, FALSE,
+                   MenuMouseMoved, NULL);
+		XtAddEventHandler(menu->menuWidget, ButtonReleaseMask, FALSE,
+                   MenuButtonReleased, NULL);
 
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) MenuExposeWindow, ExposureMask, 
-		 (caddr_t)NULL);
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) MenuEnterWindow, EnterWindowMask, 
-		 (caddr_t)NULL);
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) MenuLeaveWindow, LeaveWindowMask, 
-		 (caddr_t)NULL);
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) MenuMouseMoved, PointerMotionMask, 
-		 (caddr_t)NULL);
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) MenuButtonReleased, ButtonReleaseMask,
-		 (caddr_t)NULL);
-		XtSetEventHandler(screen->display, menu->menuWindow,
-		 (XtEventHandler) EventDoNothing, ButtonPressMask, 
-		 (caddr_t)NULL);
 	} else if(changed & menuChanged)
-	 	XResizeWindow(screen->display, menu->menuWindow, 
-		 menu->menuWidth, menu->menuHeight);
+	 	XtResizeWidget(menu->menuWidget, menu->menuWidth, menu->menuHeight,
+                    menu->menuBorderWidth);
 	/*
 	 * Figure out where the menu is supposed to go, from the initial button
 	 * press, and move the window there.  Then map the menu.
@@ -684,9 +599,8 @@ register XButtonPressedEvent *event;
 	if(!Move_Menu(menu, event) || !Map_Menu(menu))
 		return(-1);
 
-	menuWindow = menu->menuWindow;
 	in_window = TRUE;
-	XGrabPointer(screen->display, menu->menuWindow, FALSE,
+	XGrabPointer(XtDisplay(xw), menu->menuWindow, FALSE,
 	 ExposureMask | EnterWindowMask | LeaveWindowMask | PointerMotionMask
 	 | ButtonReleaseMask | ButtonPressMask,
 	 GrabModeAsync, GrabModeAsync, None, menu->menuCursor, CurrentTime
@@ -700,7 +614,7 @@ static Recalc_Menu(menu)
 register Menu *menu;
 {
 	register MenuItem *item;
-	register int max, i, height, fontheight;
+	register int max, height, fontheight;
 
 	/*
 	 * We must have already gotten the menu font.
@@ -767,11 +681,9 @@ static Move_Menu(menu, ev)
 register Menu *menu;
 XButtonPressedEvent *ev;
 {
-	register MenuItem *item;
 	register int n, x, y;
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 	int total_width;
-	Window subw;
 	/*
 	 * Try to popup the menu so that the cursor is centered within the
 	 * width of the menu, but compensate if that would run it outside
@@ -780,31 +692,31 @@ XButtonPressedEvent *ev;
 	total_width = menu->menuWidth + 2 * menu->menuBorderWidth;
 	if((x = ev->x_root - total_width / 2) < 0)
 		x = 0;
-	else if(x + total_width > DisplayWidth(screen->display,
-					       DefaultScreen(screen->display)))
-		x = DisplayWidth(screen->display,
-				 DefaultScreen(screen->display)) - total_width;
+	else if(x + total_width > DisplayWidth(XtDisplay(xw),
+					       DefaultScreen(XtDisplay(xw))))
+		x = DisplayWidth(XtDisplay(xw),
+				 DefaultScreen(XtDisplay(xw))) - total_width;
 	/*
 	 * If the menu extends above outside of the display, warp
 	 * the mouse vertically so the menu will all show up.
 	 */
 	if((y = ev->y_root) < 0) {
 /* don't bother warping pointer 
-		XWarpPointer(screen->display, None, 
-		  DefaultRootWindow(screen->display), 0, 0, 0, 0, ev->x_root, 
+		XWarpPointer(XtDisplay(xw), None, 
+		  DefaultRootWindow(XtDisplay(xw)), 0, 0, 0, 0, ev->x_root, 
 		    0);
 */
 		y = 0;
 	} else if((n = y + menu->menuHeight + 2 * menu->menuBorderWidth - 
-	  DisplayHeight(screen->display, DefaultScreen(screen->display))) > 0) {
+	  DisplayHeight(XtDisplay(xw), DefaultScreen(XtDisplay(xw)))) > 0) {
 /* don't bother warping pointer 
-		XWarpPointer(screen->display, None,
-		 DefaultRootWindow(screen->display), 0, 0, 0, 0, ev->x_root, 
+		XWarpPointer(XtDisplay(xw), None,
+		 DefaultRootWindow(XtDisplay(xw)), 0, 0, 0, 0, ev->x_root, 
 		  ev->y_root - n);
 */
 		y -= n;
 	}
-	XMoveWindow(screen->display, menu->menuWindow, x, y);
+	XtMoveWidget(menu->menuWidget, x, y);
 	/*
 	 * If we are in freeze mode, save what will be the coordinates of
 	 * the save image.
@@ -823,17 +735,17 @@ static Map_Menu(menu)
 register Menu *menu;
 {
 	register int i;
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 
 	/*
 	 * If we are in freeze mode, save the pixmap underneath where the menu
 	 * will be (including the border).
 	 */
 	if(menu->menuFlags & menuFreeze) {
-		XGrabServer(screen->display);
+		XGrabServer(XtDisplay(xw));
 		i = 2 * menu->menuBorderWidth;
-/*		if((menu->menuSavedImage = XPixmapSave(screen->display,
-		 DefaultRootWindow(screen->display),
+/*		if((menu->menuSavedImage = XPixmapSave(XtDisplay(xw),
+		 DefaultRootWindow(XtDisplay(xw)),
 		 menu->menuSavedImageX, menu->menuSavedImageY, menu->menuWidth
 		 + i, menu->menuHeight + i)) == (Pixmap)0)
 */
@@ -842,7 +754,8 @@ register Menu *menu;
 	/*
 	 * Actually map the window.
 	 */
-	XMapRaised(screen->display, menu->menuWindow);
+        XRaiseWindow (XtDisplay(xw), menu->menuWindow);
+        XtPopup (menu->menuWidget, XtGrabNone);
 	menu->menuFlags |= menuMapped;
 	return(1);
 }
@@ -856,16 +769,16 @@ register Menu *menu;
 	register MenuItem *item;
 	register int top = menu->menuItemTop;
 	register int x = menu->menuItemPad;
-	register int y, dim;
-	register TScreen *screen = &term.screen;
+	register int dim;
+	register XtermWidget xw = term;
 
 	/*
 	 * If we have a menu title, draw it first, centered and hilited.
 	 */
 	if(menu->menuTitleLength) {
-		XFillRectangle(screen->display, menu->menuWindow, 
+		XFillRectangle(XtDisplay(xw), menu->menuWindow, 
 		 MenuGC, 0, 0, menu->menuWidth, top - 1);
-		XDrawImageString(screen->display, menu->menuWindow, 
+		XDrawImageString(XtDisplay(xw), menu->menuWindow, 
 		 MenuInverseGC, (menu->menuWidth -
 		 menu->menuTitleWidth) / 2, 
 		 menu->menuItemPad+menu->menuFontInfo->ascent, 
@@ -882,11 +795,11 @@ register Menu *menu;
 		 * Draw the check mark, possibly dimmed, wherever is necessary.
 		 */
 		if(item->itemFlags & itemChecked) {
-			XCopyArea(screen->display, 
+			XCopyArea(XtDisplay(xw), 
 			 Check_Tile, menu->menuWindow, 
 			 dim ? MenuGrayGC : MenuGC,
 			 0, 0, checkMarkWidth, checkMarkHeight, x, 
-			 y = top + (item->itemHeight - checkMarkHeight) / 2);
+			 top + (item->itemHeight - checkMarkHeight) / 2);
 		}
 		/*
 		 * Draw the item, possibly dimmed.
@@ -923,7 +836,7 @@ int top;
 	register int center = top + item->itemHeight / 2;
 	register int func = Modify_Table[item->itemFlags &
 	 (itemStateMask | itemSetMask)];
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 
 	/*
 	 * If we really won't be making a change, return.
@@ -935,7 +848,7 @@ int top;
 	 */
 	y = center - (checkMarkHeight / 2);
 	if(func & (drawCheck | dimCheck))
-		XCopyArea(screen->display, 
+		XCopyArea(XtDisplay(xw), 
 		 Check_Tile, menu->menuWindow, 
 		 (func & dimCheck) ? MenuGrayGC : MenuGC,
 		 0, 0, checkMarkWidth, checkMarkHeight, x, 
@@ -944,8 +857,8 @@ int top;
 	 * Remove the check mark if needed.
 	 */
 	if(func & removeCheck)
-		XClearArea(screen->display, menu->menuWindow, 
-		 x, y, checkMarkWidth, checkMarkHeight);
+		XClearArea(XtDisplay(xw), menu->menuWindow, 
+		 x, y, checkMarkWidth, checkMarkHeight, FALSE);
 	/*
 	 * Call Draw_Item if we need to draw or dim the item.
 	 */
@@ -969,13 +882,13 @@ int  dim;
 {
 	register int x = 2 * menu->menuItemPad + checkMarkWidth;
 	register int center = y + item->itemHeight / 2;
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 
 	/*
 	 * If the item text is a single dash, draw a separating line.
 	 */
 	if(XStrCmp(item->itemText, "-") == 0) {
-		XDrawLine(screen->display, menu->menuWindow,  MenuGC,
+		XDrawLine(XtDisplay(xw), menu->menuWindow,  MenuGC,
 		 0, center, menu->menuWidth, center);
 		return;
 	}
@@ -985,11 +898,11 @@ int  dim;
 	y = center - 
 	 ((menu->menuFontInfo->ascent + menu->menuFontInfo->descent)/ 2);
 	if(dim) {
-		XDrawString(screen->display, menu->menuWindow, MenuGrayGC,
+		XDrawString(XtDisplay(xw), menu->menuWindow, MenuGrayGC,
 		 x, y+menu->menuFontInfo->ascent, 
 		 item->itemText, item->itemTextLength);
 	} else
-		XDrawImageString(screen->display, menu->menuWindow, 
+		XDrawImageString(XtDisplay(xw), menu->menuWindow, 
 		 MenuGC, x, y+menu->menuFontInfo->ascent, 
 		 item->itemText, item->itemTextLength);
 }
@@ -1006,13 +919,13 @@ int *top, *n;
 	int x, y, rootx, rooty, mask;
 	Window subw, root;
 	static MenuItem *Y_InItem();
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 
 	/*
 	 * Find out where the mouse is.  If its not in the menu window,
 	 * return NULL.
 	 */
-	XQueryPointer(screen->display, menu->menuWindow, 
+	XQueryPointer(XtDisplay(xw), menu->menuWindow, 
 	&root, &subw, &rootx, &rooty, &x, &y, &mask);
 	if((x <0) || (y < 0) || 
 	   (x > menu->menuWidth) || (y > menu->menuHeight)) {
@@ -1037,7 +950,6 @@ int *top, *n;
 	register MenuItem *item;
 	register int t, i;
 	register int y = *top;
-	Window subw;
 
 	/*
 	 * Go through the item list.  "t" is the vertical position of the
@@ -1076,22 +988,22 @@ static Unmap_Menu(menu)
 register Menu *menu;
 {
 	register int i;
-	register TScreen *screen = &term.screen;
+	register XtermWidget xw = term;
 
 	if(!menu || !(menu->menuFlags & menuMapped))
 		return;
 	if(menu->menuFlags & menuFreeze) {
-		XUnmapWindow(screen->display, menu->menuWindow);
+	        XtPopdown (menu->menuWidget);
 		i = 2 * menu->menuBorderWidth;
-		XCopyArea(screen->display, 
-		 menu->menuSavedImage, DefaultRootWindow(screen->display), 
+		XCopyArea(XtDisplay(xw), 
+		 menu->menuSavedImage, DefaultRootWindow(XtDisplay(xw)), 
 		 MenuGC, 0, 0, menu->menuWidth + i,
 		 menu->menuHeight + i, menu->menuSavedImageX, 
 		 menu->menuSavedImageY);
-		XFreePixmap(screen->display, menu->menuSavedImage);
-		XUngrabServer(screen->display);
+		XFreePixmap(XtDisplay(xw), menu->menuSavedImage);
+		XUngrabServer(XtDisplay(xw));
 	} else
-		XUnmapWindow(screen->display, menu->menuWindow);
+		XtPopdown (menu->menuWidget);
 	menu->menuFlags &= ~menuMapped;
 }
 #endif MODEMENU

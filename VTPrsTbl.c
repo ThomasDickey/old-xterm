@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/VTPrsTbl.c,v @
- *	@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @
+ *	@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @
  */
 
 
@@ -30,13 +29,13 @@
  */
 
 #ifndef lint
-static char *rcsid_VTparsetable_c = "@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @";
-#endif	lint
+static char *rcsid_VTparsetable_c = "@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @";
+#endif	/* lint */
 
 #include "VTparse.h"
 #ifndef lint
-static char rcs_id[] = "@Header: VTPrsTbl.c,v 1.4 87/09/11 08:17:10 toddb Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: VTPrsTbl.c,v 1.1 88/02/10 13:08:01 jim Exp @";
+#endif	/* lint */
 /*
  * Stupid Apollo C preprocessor can't handle long lines.  So... To keep
  * it happy, we put each onto a seperate line....  Sigh...

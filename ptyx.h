@@ -1,6 +1,5 @@
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/ptyx.h,v @
- *	@Header: ptyx.h,v 1.11 87/09/11 08:17:30 toddb Exp @
+ *	@Header: ptyx.h,v 1.5 88/02/20 15:30:55 swick Exp @
  */
 
 #include <X11/copyright.h>
@@ -31,7 +30,9 @@
 /* ptyx.h */
 /* @(#)ptyx.h	X10/6.6	11/10/86 */
 
+#include <X11/Xos.h>
 #include <X11/Xlib.h>
+#include <X11/IntrinsicP.h>
 
 /* Extra Xlib definitions */
 #define AllButtonsUp(detail, ignore)  (\
@@ -49,6 +50,60 @@
 
 #define MAX_COLS	200
 #define MAX_ROWS	128
+
+/*
+** System V definitions
+*/
+
+#ifdef SYSV
+
+#ifdef JOBCONTROL
+#define	getpgrp		getpgrp2
+#else	/* !JOBCONTROL */
+#define	getpgrp(x)	(x)
+#endif	/* !JOBCONTROL */
+
+#define	killpg(x,sig)	kill(-x,sig)
+
+#define	dup2(fd1,fd2)	((fd1 == fd2) ? fd1 : \
+				(close(fd2), fcntl(fd1, F_DUPFD, fd2)))
+
+#endif	/* !SYSV */
+
+/*
+** allow for mobility of the pty master/slave directories
+*/
+#ifndef PTYDEV
+#ifdef hpux
+#define	PTYDEV		"/dev/ptym/ptyxx"
+#else	/* !hpux */
+#define	PTYDEV		"/dev/ptyxx"
+#endif	/* !hpux */
+#endif	/* !PTYDEV */
+
+#ifndef TTYDEV
+#ifdef hpux
+#define TTYDEV		"/dev/pty/ttyxx"
+#else	/* !hpux */
+#define	TTYDEV		"/dev/ttyxx"
+#endif	/* !hpux */
+#endif	/* !TTYDEV */
+
+#ifndef PTYCHAR1
+#ifdef hpux
+#define PTYCHAR1	"zyxwvutsrqp"
+#else	/* !hpux */
+#define	PTYCHAR1	"pqrstuvwxyz"
+#endif	/* !hpux */
+#endif	/* !PTYCHAR1 */
+
+#ifndef PTYCHAR2
+#ifdef hpux
+#define	PTYCHAR2	"fedcba9876543210"
+#else	/* !hpux */
+#define	PTYCHAR2	"0123456789abcdef"
+#endif	/* !hpux */
+#endif	/* !PTYCHAR2 */
 
 /* Until the translation manager comes along, I have to do my own translation of
  * mouse events into the proper routines. */
@@ -74,7 +129,7 @@ typedef char **ScrnBuf;
 #define	ESC	0x1B
 #define US	0x1F
 #define	DEL	0x7F
-#define HTS     ('H'+0x40')
+#define HTS     ('H'+0x40)
 #define	SS2	0x8E
 #define	SS3	0x8F
 #define	DCS	0x90
@@ -146,27 +201,23 @@ typedef struct {
 	long		pid;		/* pid of process on far side   */
 	int		uid;		/* user id of actual person	*/
 	int		gid;		/* group id of actual person	*/
-	int		color;		/* colors used			*/
 	GC		normalGC;	/* normal painting		*/
 	GC		reverseGC;	/* reverse painting		*/
 	GC		normalboldGC;	/* normal painting, bold font	*/
 	GC		reverseboldGC;	/* reverse painting, bold font	*/
 	GC		cursorGC;	/* normal cursor painting	*/
 	GC		reversecursorGC;/* reverse cursor painting	*/
-	unsigned long	foreground;	/* foreground color		*/
-	unsigned long	background;	/* Background color		*/
-	unsigned long	cursorcolor;	/* Cursor color			*/
-	unsigned long	mousecolor;	/* Mouse color			*/
+	Pixel		foreground;	/* foreground color		*/
+	Pixel		cursorcolor;	/* Cursor color			*/
+	Pixel		mousecolor;	/* Mouse color			*/
 	int		border;		/* inner border			*/
-	int		borderwidth;	/* outer border	    	    	*/
-	unsigned long	bordercolor;    /* border Pixel color		*/
 	Pixmap		graybordertile;	/* tile pixmap for border when
 						window is unselected	*/
 	Cursor		arrow;		/* arrow cursor			*/
 	unsigned short	send_mouse_pos;	/* user wants mouse transition  */
 					/* and position information	*/
 	int		select;		/* xterm selected		*/
-	int		visualbell;	/* visual bell mode		*/
+	Boolean		visualbell;	/* visual bell mode		*/
 	int		logging;	/* logging mode			*/
 	int		logfd;		/* file descriptor of log	*/
 	char		*logfile;	/* log file name		*/
@@ -200,37 +251,33 @@ typedef struct {
 	int		max_row;	/* bottom row			*/
 	int		top_marg;	/* top line of scrolling region */
 	int		bot_marg;	/* bottom line of  "	    "	*/
-	Window		scrollWindow;	/* pointer to scrollbar struct	*/
+	Widget		scrollWidget;	/* pointer to scrollbar struct	*/
 	int		scrollbar;	/* if > 0, width of scrollbar, and
 						scrollbar is showing	*/
 	int		topline;	/* line number of top, <= 0	*/
 	int		savedlines;     /* number of lines that've been saved */
 	int		savelines;	/* number of lines off top to save */
-	int		scrollinput;	/* scroll to bottom on input	*/
-	int		scrollkey;	/* scroll to bottom on key	*/
+	Boolean		scrollinput;	/* scroll to bottom on input	*/
+	Boolean		scrollkey;	/* scroll to bottom on key	*/
 	
 	ScrnBuf		buf;		/* screen buffer (main)		*/
 	ScrnBuf		allbuf;		/* screen buffer (may include
 					   lines scrolled off top	*/
 	ScrnBuf		altbuf;		/* alternate screen buffer	*/
-	int		alternate;	/* true if using alternate buf	*/
+	Boolean		alternate;	/* true if using alternate buf	*/
 	unsigned short	do_wrap;	/* true if cursor in last column
 					   and character just output    */
 	int		incopy;		/* 0 if no RasterCopy exposure
 					   event processed since last
 					   RasterCopy			*/
-	int		c132;		/* allow change to 132 columns	*/
-	int		curses;		/* cludge-ups for more and vi	*/
-	int		marginbell;	/* true if margin bell on	*/
+	Boolean		c132;		/* allow change to 132 columns	*/
+	Boolean		curses;		/* cludge-ups for more and vi	*/
+	Boolean		marginbell;	/* true if margin bell on	*/
 	int		nmarginbell;	/* columns from right margin	*/
 	int		bellarmed;	/* cursor below bell margin	*/
-	unsigned int	multiscroll;	/* true if multi-scroll		*/
+	Boolean 	multiscroll;	/* true if multi-scroll		*/
 	int		scrolls;	/* outstanding scroll count	*/
 	SavedCursor	sc;		/* data for restore cursor	*/
-	char		*iconname;	/* name in icon			*/
-	int		iconnamelen;	/* length of icon name		*/
-	char		*titlename;	/* name in title		*/
-	int		titlenamelen;	/* length of title name		*/
 	int		save_modes[19];	/* save dec private modes	*/
 
 	/* Improved VT100 emulation stuff.				*/
@@ -240,21 +287,22 @@ typedef struct {
 	char		curss;		/* Current single shift.	*/
 	int		scroll_amt;	/* amount to scroll		*/
 	int		refresh_amt;	/* amount to refresh		*/
-	int		jumpscroll;	/* whether we should jumpscroll */
+	Boolean		jumpscroll;	/* whether we should jumpscroll */
 
 /* Tektronix window parameters */
 	GC		TnormalGC;	/* normal painting		*/
 	GC		TcursorGC;	/* normal cursor painting	*/
-	unsigned long	Tforeground;	/* foreground color		*/
-	unsigned long	Tbackground;	/* Background color		*/
-	unsigned long	Tcursorcolor;	/* Cursor color			*/
+	Pixel		Tforeground;	/* foreground color		*/
+	Pixel		Tbackground;	/* Background color		*/
+	Pixel		Tcursorcolor;	/* Cursor color			*/
 	Pixmap		Tbgndtile;	/* background tile pixmap	*/
 	int		Tcolor;		/* colors used			*/
-	int		planeused;	/* is xorplane being used	*/
-	int		cellsused;	/* are color cells being used	*/
+	Boolean		planeused;	/* is xorplane being used	*/
+	Boolean		cellsused;	/* are color cells being used	*/
 	XColor		colorcells[3];	/* color cells for Tek		*/
-	int		Tshow;		/* Tek window showing		*/
-	int		waitrefresh;	/* postpone refresh		*/
+	Boolean		Vshow;		/* VT window showing		*/
+	Boolean		Tshow;		/* Tek window showing		*/
+	Boolean		waitrefresh;	/* postpone refresh		*/
 	struct {
 		Window	window;		/* X window id			*/
 		int	width;		/* width of columns		*/
@@ -269,7 +317,7 @@ typedef struct {
 	XFontStruct 	*Tfont[TEKNUMFONTS]; /* Tek fonts		*/
 	int		tobaseline[TEKNUMFONTS]; /* top to baseline for
 							each font	*/
-	int		TekEmu;		/* true if Tektronix emulation	*/
+	Boolean		TekEmu;		/* true if Tektronix emulation	*/
 	int		cur_X;		/* current x			*/
 	int		cur_Y;		/* current y			*/
 	Tmodes		cur;		/* current tek modes		*/
@@ -277,10 +325,6 @@ typedef struct {
 	int		margin;		/* 0 -> margin 1, 1 -> margin 2	*/
 	int		pen;		/* current Tektronix pen 0=up, 1=dn */
 	char		*TekGIN;	/* nonzero if Tektronix GIN mode*/
-	char		*Ticonname;	/* name in icon		*/
-	int		Ticonnamelen;	/* length of icon name	*/
-	char		*Ttitlename;	/* name of title		*/
-	int		Ttitlenamelen;	/* length of title name	*/
 } TScreen;
 
 /* meaning of bits in screen.select flag */
@@ -291,6 +335,34 @@ typedef struct
 {
 	unsigned	flags;
 } TKeyboard;
+
+typedef struct _Misc {
+    char *geo_metry;
+    char *T_geometry;
+    char *f_n;
+    char *f_b;
+    char *curs_shape;
+    Boolean log_on;
+    Boolean login_shell;
+    Boolean re_verse;
+    Boolean reverseWrap;
+    Boolean logInhibit;
+    Boolean signalInhibit;
+    Boolean tekInhibit;
+    Boolean scrollbar;
+} Misc;
+
+typedef struct {int foo;} XtermClassPart, TekClassPart;
+
+typedef struct _XtermClassRec {
+    CoreClassPart  core_class;
+    XtermClassPart xterm_class;
+} XtermClassRec;
+
+typedef struct _TekClassRec {
+    CoreClassPart core_class;
+    TekClassPart tek_class;
+} TekClassRec;
 
 /* define masks for flags */
 #define CAPS_LOCK	0x01
@@ -304,18 +376,21 @@ typedef struct
 
 typedef unsigned Tabs [TAB_ARRAY_SIZE];
 
+typedef struct _XtermWidgetRec {
+    CorePart	core;
+    TKeyboard	keyboard;	/* terminal keyboard		*/
+    TScreen	screen;		/* terminal screen		*/
+    unsigned	flags;		/* mode flags			*/
+    unsigned	initflags;	/* initial mode flags		*/
+    Tabs	tabs;		/* tabstops of the terminal	*/
+    Misc	misc;		/* miscelaneous parameters	*/
+} XtermWidgetRec, *XtermWidget;
+
+typedef struct _TekWidgetRec {
+    CorePart core;
+} TekWidgetRec, *TekWidget;
 
 #define BUF_SIZE 4096
-
-typedef struct
-{
-	TKeyboard	keyboard;	/* terminal keyboard		*/
-	TScreen		screen;		/* terminal screeen		*/
-	unsigned	flags;		/* mode flags			*/
-	unsigned	initflags;	/* initial mode flags		*/
-	Tabs		tabs;		/* tabstops of the terminal	*/
-} Terminal;
-
 
 /* masks for terminal flags */
 
@@ -336,8 +411,10 @@ typedef struct
 #define CHAR		0177
 
 #define VWindow(screen)		(screen->fullVwin.window)
+#define VShellWindow		term->core.parent->core.window
 #define TextWindow(screen)      (screen->fullVwin.window)
 #define TWindow(screen)		(screen->fullTwin.window)
+#define TShellWindow		tekWidget->core.parent->core.window
 #define Width(screen)		(screen->fullVwin.width)
 #define Height(screen)		(screen->fullVwin.height)
 #define FullWidth(screen)	(screen->fullVwin.fullwidth)
@@ -378,14 +455,6 @@ typedef struct Tek_Link
 #define	ON		1
 #define	CLEAR		0
 #define	TOGGLE		1
-
-/* flags for color */
-#define	C_FOREGROUND	0x01
-#define	C_BACKGROUND	0x02
-#define	C_FBMASK	0x03
-#define	C_CURSOR	0x04
-#define	C_MOUSE		0x08
-#define	C_BORDER	0x10
 
 /* flags for inhibit */
 #define	I_LOG		0x01

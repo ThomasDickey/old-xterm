@@ -1,6 +1,6 @@
+/*		@(#)menu.h	1.2 Stellar 87/10/07	*/
 /*
- *	@Source: /u1/X11/clients/xterm/RCS/menu.h,v @
- *	@Header: menu.h,v 1.7 87/09/11 08:17:17 toddb Exp @
+ *	@Header: menu.h,v 1.1 88/02/10 13:08:10 jim Exp @
  */
 
 
@@ -80,6 +80,7 @@ typedef struct _menu {
 	int menuFgColor;		/* foreground color */
 	XFontStruct *menuFontInfo;	/* font info for menu font */
 	int menuItemPad;		/* pad amount */
+	Widget menuWidget;
 	Window menuWindow;		/* window of menu */
 	Cursor menuCursor;		/* cursor used in menu */
 	Pixmap menuSaved;		/* copy of menu */

@@ -1,6 +1,5 @@
 /*
- *	@Source: /orpheus/u1/X11/clients/xterm/RCS/data.h,v @
- *	@Header: data.h,v 1.10 87/08/16 16:32:52 swick Exp @
+ *	@Header: data.h,v 1.2 88/02/16 14:59:50 jim Exp @
  */
 
 
@@ -34,31 +33,20 @@
 #include <X11/Intrinsic.h>
 
 extern TekLink *TekRefresh;
-extern Terminal term;
 extern XPoint T_box2[];
 extern XPoint T_box3[];
 extern XPoint T_boxlarge[];
 extern XPoint T_boxsmall[];
 extern XPoint VTbox[];
 extern T_fontsize Tfontsize[];
-extern char *T_geometry;
 extern char *Tbptr;
 extern char *Tbuffer;
 extern char *Tpushb;
 extern char *Tpushback;
 extern char *bptr;
-extern char *curs_shape;
-extern char *f_b;
-extern char *f_n;
-extern char *f_t;
-extern char *geo_metry;
-extern char *icon_geom;
-extern Boolean iconstartup;
 extern char log_def_name[];
 extern char *ptydev;
 extern char *ttydev;
-extern char *window_name;
-extern char *title_name;
 extern char *xterm_name;
 extern char buffer[];
 extern int L_flag;
@@ -72,12 +60,10 @@ extern int am_slave;
 extern int bcnt;
 #ifdef DEBUG
 extern int debug;
-#endif DEBUG
+#endif	/* DEBUG */
 extern int errno;
 extern int max_plus1;
 extern int pty_mask;
-extern int re_verse;
-extern int save_lines;
 extern int switchfb[];
 extern jmp_buf Tekend;
 extern jmp_buf VTend;
@@ -85,10 +71,12 @@ extern jmp_buf VTend;
 extern int waitingForTrackInfo;
 
 extern EventMode eventMode;
-extern Window menuWindow;
 
 extern GC visualBellGC;
 
 extern int VTgcFontMask;
 extern int TEKgcFontMask;
 extern int MenugcFontMask;
+
+extern XtermWidget term;
+extern TekWidget tekWidget;

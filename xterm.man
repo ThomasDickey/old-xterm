@@ -1,413 +1,449 @@
-.TH XTERM 1 "20 Apr 1987" "X Version 11"
+.TH XTERM 1 "1 March 1988" "X Version 11"
 .SH NAME
-xterm \- X window system terminal emulator
+xterm \- terminal emulator for X
 .SH SYNOPSIS
 .B xterm
-[ option ] ...
+[-\fItoolkitoption\fP ...] [-option ...]
 .SH DESCRIPTION
-.I Xterm
-is the
-.I X
-window system terminal emulator.
-It attempts to emulate a DEC VT102 terminal
-to provide a standard terminal type for programs not aware of the window
-system directly.
-Under 4.3BSD, Ultrix 1.2 and other systems with the capability,
-.I xterm
-supports the terminal resizing facilities built into the system.
+The \fIxterm\fP program is a terminal emulator for the X Window System.
+It provides DEC VT102 and Tektronix 4014 
+compatible terminals for programs that can't
+use the window system directly.  If the underlying operating system supports 
+terminal resizing capabilities (for example, the SIGWINCH signal in systems 
+derived from 4.3bsd), \fIxterm\fP will use the facilities to notify programs 
+running in the window whenever it is resized.
 .PP
-In addition,
-.I xterm
-emulates the Tektronix 4015 in a separate window.
-.I Note: Tektronix mode is untested for X 11 and guaranteed not to work at this
-.I time.
+The VT102 and Tektronix 4014 terminals each have their own window so that you
+can edit text in one and look at graphics in the other at the same time.
 To maintain the correct aspect ratio (height/width), Tektronix graphics will
-be restricted to the
-largest box with a 4015's aspect ratio that will fit in the window.
-This box is located in the upper left area of the window.
+be restricted to the largest box with a 4014's aspect ratio that will fit in 
+the window.  This box is located in the upper left area of the window.
 .PP
-Both windows may be displayed at the same time, though only one window and
-mode is active at a time.
-Input will be displayed in the active window even if the mouse is in the other
-window.
-Switching between the active modes is possible under manual (menu) and program
-(escape sequence) control.
-.PP
-.I Xterm
-understands the following options.
-If the option begins with a
+Although both windows may be displayed at the same time, one of them is 
+considered the ``active'' window for receiving keyboard input and terminal
+output.  This is the window that contains the text cursor and whose border 
+highlights whenever the pointer is in either window.
+The active window can be choosen through escape sequences,
+the ``Modes'' menu in the VT102 window, and the ``Tektronix''
+menu in the 4014 window.
+.SH OPTIONS
+The \fIxterm\fP terminal emulator 
+accepts all of the standard X Toolkit command line options along with the 
+additional options listed below (if the option begins with a
 .RB ` + '
 instead of a
 .RB ` \- ',
-the option is restored to its default value.
-These options override those set in the ``.Xdefaults'' file (see the
-.B "X DEFAULTS"
-section).
-.TP 12
+the option is restored to its default value):
+.TP 8
 .B \-132
 Normally, the VT102 DECCOLM escape sequence that switches between 80 and
 132 column mode is ignored.
 This option causes the DECCOLM escape sequence to be recognized, and the
 .I xterm
 window will resize appropriately.
-.TP
-.B \-L
-indicates that
-.I xterm
-is being called by
-.IR init (8),
-and should presume that its file descriptors
-are already open on a slave pseudo-tty, and that
-.IR getty (8)
-should be
-run rather than the user's shell.
-This option should only be used by
-.IR init (8)
-.TP
-.BI \-b " border"
-.I Xterm
-maintains an inner border (distance between characters and the window's
-border) of one pixel.
-The
-.B \-b
-option allows you to set the size of this border to 
-.I border.
-.TP
-.BI \-bd " color"
-On color displays, determines the color of the (highlighted) border.
-.TP
-.BI \-bg " color"
-On color displays, determines the color of the background.
-.TP
-.BI \-bw " borderwidth"
-Allows you to specify the width of the window border in pixels.
-.TP
+.TP 8
+.BI \-b " number"
+This option specifies the size of the inner border (the distance between
+the outer edge of the characters and the window border) in pixels.  The
+default is 2.
+.TP 8
 .BI \-cr " color"
-On color displays, determines the (highlighted) color of the text cursor;
-default is the text (foreground) color.
-.TP
+This option specifies the color to use for text cursor.  The default is to
+use the same foreground color that is used for text.
+.TP 8
 .B \-cu
-Several programs that use the
+This option indicates that \fIxterm\fP should work around a bug in the
 .IR curses (3x)
-cursor motion package have some difficulties with VT102-compatible terminals.
-The bug fixed with this option occurs with
+cursor motion package that causes the
 .IR more (1)
-on a file containing a line that is exactly the width of the window and
-which is followed by line beginning with a tab.
-Normally, the leading tabs disappear, but this option causes them to be
-displayed correctly.
-.TP
-.BI \-e " command arguments"
-The specified 
-.I command
-will be executed in the window, rather than
-starting a shell.
-The command and the optional arguments must appear last on the
-.I xterm
-command line.
-.TP
+program to display lines that are exactly the width of the window and
+are followed by line beginning with a tab to be displayed incorrectly
+(the leading tabs are not displayed).
+.TP 8
+.B \+cu
+This option indicates that that \fIxterm\fP should not work around the
+.IR curses (3x)
+bug mentioned above.
+.TP 8
+.BI \-e " program \[arguments \.\.\.\]"
+This option specifies the program (and its command line arguments) to be
+run in the \fIxterm\fP window.  The default is to start the user's shell.
+\fBThis must be the last option on the command line.\fP
+.TP 8
 .BI \-fb " font"
-The specified
-.I font
-will be used instead of the default bold font (which is ``vtbold'').
+This option specifies a font to be used when displaying bold text.  
 This font must be the same height and width as the normal font.
 If only one of the normal or bold fonts is specified, it will be used as the
 normal font and the bold font will be produced by overstriking this font.
-.TP
-.BI \-fg " color"
-On color displays, determines the color of the text (foreground).
-.TP
-.BI \-fn " font"
-The specified
-.I font
-will be used instead of the default font (which is ``fixed'').
-Any fixed width font may be used.
-.TP
-.B \-i
-This option causes
-.I xterm
-to startup displaying the icon rather than the normal window.
-.TP
+The default bold font is ``vtbold.''
+.TP 8
 .B \-j
-.I Xterm
-will `jump scroll'; when
-.I xterm
-falls behind scrolling
-the screen, it will move multiple lines up at once.
-The VT100 escape sequences for smooth scroll can be used to enable/disable
-this feature from a program,
-or the `Mode Menu' can be used to set it interactively.
-.\"TP
-.\"B \-k
-.TP
+This option indicates that \fIxterm\fP should do jump scrolling.  Normally,
+text is scrolled one line at a time; this option allows \fIxterm\fP to move
+multiple lines at a time so that it doesn't fall as far behind.  Its use is
+strongly recommended since it make \fIxterm\fP much faster when scanning
+through large amounts of text.  The VT100 escape sequences for enabling and
+disabling smooth scroll as well as the ``Modes'' menu can be used to turn this
+feature on or off.
+.TP 8
+.B \+j
+This option indicates that \fIxterm\fP should not do jump scrolling.
+.TP 8
 .B \-l
-Logging is turned on; all input from the pseudo tty is appended to the
-logfile.
-.TP
-.BI \-lf " file"
-This
-.I file
-specifies the file in which the log is written to, rather than the default
-``\fBXtermLog.\fIXXXXX\fR'' where
-.I XXXXX
-is the process id of
-.I xterm
-(the file is created in the directory
-.I xterm
-is started in, or the home directory for a login
-.IR xterm ).
-If
-.I file
-begins with a ``|'' then the rest of the string is assumed to be a command
-to be executed by the shell, and a pipe is opened to the process.
-.TP
+This option indicates that \fIxterm\fP should send all terminal output to
+a log file as well as to the screen.  This option can be enabled or disabled
+using the ``xterm X11'' menu.
+.TP 8
+.B \+l
+This option indicates that \fIxterm\fP should not do logging.
+.TP 8
+.BI \-lf " filename"
+This option specifies the name of the file to which the output log described
+above is written.  If \fIfile\fP begins with a pipe symbol (|), the rest of 
+the string is assumed to be a command to be used as the endpoint of a pipe.
+The default filename is ``\fBXtermLog.\fIXXXXX\fR'' (where \fIXXXXX\fP
+is the process id of \fIxterm\fP) and is created in the directory from which
+\fIxterm\fP was started (or the user's home directory in the case of a
+login window.
+.TP 8
 .B \-ls
-This option causes the shell run under
-.I xterm
-to be a login shell (the user's .login file is read and the initial directory
-will be the home directory).
-.TP
+This option indicates that shell that is started in the \fIxterm\fP window
+be a login shell (i.e. the first character of argv[0] will be a dash,
+indicating to the shell that it should read the user's .login or .profile).
+.TP 8
+.B \+ls
+This option indicates that the shell that is started should not be a login
+shell (i.e. it will be normal ``subshell'').
+.TP 8
 .B \-mb
-This option turns on the right margin bell.
-.TP
+This option indicates that \fIxterm\fP should ring a margin bell when
+the user types near the right end of a line.  This option can be turned on 
+and off from the ``Modes'' menu.
+.TP 8
+.B \+mb
+This option indicates that margin bell should not be rung.
+.TP 8
 .BI \-ms " color"
-On color displays, determines the color of the mouse cursor; default is the
-text cursor color.
-.TP
-.BI \-n " windowname"
-Sets the name of the window for use by a window manager.
-If no name is specified, the name "xterm" is used.
-.TP
+This option specifies the color to be used for the pointer cursor.  The default
+is to use the foreground color.
+.TP 8
 .BI \-nb " number"
-This
-.I number
-is used as the right margin distance in which the margin bell will ring
-(the default is 10).
-.TP
-.B \-r
-The screen will be displayed with white characters on a black background,
-rather than the default black on white.
-This becomes the normal video mode, which is reversed by turning on the
-reverse video mode.
-.TP
-.B \-rv
-Same as
-.BR \-r .
-.TP
+This option specifies the number of characters from the right end of a line
+at which the margin bell, if enabled, will ring.  The default is 10.
+.TP 8
 .B \-rw
-This options turns on reverse-wraparound mode, that allows the cursor to
-wraparound from the leftmost column to the rightmost column of the previous
-line.
-This is very useful in the shell to allow erasure backwards across the
-previous line.
-.TP
+This option indicates that reverse-wraparound should be allowed.  This allows
+the cursor to back up from the leftmost column of one line to the rightmost
+column of the previous line.  This is very useful for editing long shell
+command lines and is encouraged.  This option can be turned on and off from
+the ``Modes'' menu.
+.TP 8
+.B \+rw
+This option indicates that reverse-wraparound should not be allowed.
+.TP 8
 .B \-s
-When this option is specified, xterm no longer scrolls synchronously
-with the display.
-.I Xterm
-no longer attempts to keep the screen completely up to date while
-scrolling, but can then run faster when network latencies are very high.
-This is typically useful when using
-.I xterm
-across a very large internet or many hops.
-.TP
+This option indicates that \fIxterm\fP may scroll asynchronously, meaning that
+the screen does not have to be kept completely up to date while scrolling.
+This allows \fIxterm\fP to run faster when network latencies are very high
+and is typically useful when running across a very large internet or many
+gateways.
+.TP 8
+.B \+s
+This option indicates that \fIxterm\fP should scroll synchronously.
+.TP 8
 .B \-sb
-This option causes the scrollbar to be displayed during startup, with the
-saving of lines scrolled off the top of the window being turned on.
-.TP
+This option indicates that some number of lines that are scrolled off the top 
+of the window should be saved and that a scrollbar should be displayed so that
+those lines can be viewed.  This option may be turned on and off from the
+``Modes'' menu.
+.TP 8
+.B \+sb
+This option indicates that a scrollbar should not be displayed.
+.TP 8
 .B \-si
-When using the scrollbar to review previous lines of text, the window is
-normally repositioned automatically at the
-bottom of the scroll region when input has arrived.  This option disables
-repositioning on input.
-.TP
+This option indicates that output to a window should not automatically
+reposition the screen to the bottom of the scrolling region.  
+This option can be turned on and off from the ``Modes'' menu.
+.TP 8
+.B \+si
+This option indicates that output to a window should cause it to
+scroll to the bottom.
+.TP 8
 .B \-sk
-When using the scrollbar to review pass lines of text, this option
-causes the window to be repositioned automatically in the normal postion at the
-bottom of the scroll region when a key is pressed.
-.TP
+This option indicates that pressing a key while 
+using the scrollbar to review previous lines of text should
+cause the window to be repositioned automatically in the normal postion at the
+bottom of the scroll region.
+.TP 8
+.B \+sk
+This option indicates that pressing a key while using the scrollbar
+should not cause the window to be repositioned.
+.TP 8
 .BI \-sl " number"
-The
-.I number
-specifies the maximum number of lines to save that are scrolled off the top
-of the window.
-The default is 64 lines.
-.TP
-.B \-sn
-By default, the status line is in revere-video (relative to the rest of the
-window).
-This option causes the status line to be in normal video (the status line
-is still enclosed in a box).
-.TP
-.B \-st
-This option causes the status line to be displayed on startup.
-.TP
+This option specifies the number of lines to save that have been scrolled 
+off the top of the screen.  The default is 64.
+.TP 8
 .B \-t
-This option causes the initial
-.I xterm
-window to be the Tektronix window, rather than the normal VT102 window.
-.TP
+This option indicates that \fIxterm\fP should start in Tektronix mode, rather
+than in VT102 mode.  Switching between the two windows is done using the
+``Modes'' menus.
+.TP 8
+.B \+t
+This option indicates that \fIxterm\fP should start in VT102 mode.
+.TP 8
 .B \-vb
-This option turns on the visual bell mode, which flashes the window on
-receipt of a CTRL-G.
-.TP
-.B \-w
-Same as
-.BR \-bw .
-.TP
-.BI = geometry
-.I Xterm
-will take a normal X geometry specification for the VT102 window.
-This takes the form of ``\fB=\fIwidth\fBx\fIheight\fB+\fIxoff\fB+\fIyoff\fR''.
-See
-.IR X (1)
-for details of this specification.
-.TP
-.BI % geometry
-This geometry specification applies to the Tektronix window.
-.TP
-.BI # geometry
-This geometry specification applies to the icon position (the width and
-height information are optional and otherwise ignored).
-.TP
-.IB host : display
-Normally,
-.I xterm
-gets the host and display number to use from the environment
-variable ``DISPLAY''.
-One can, however specify them explicitly.
-The
-.I host
-specifies which machine to create the window on, and
-the
-.I display
-argument specifies the display number.
-For example,
-``orpheus:1'' creates a shell window on display one on the machine
-orpheus.
+This option indicates that a visual bell is prefered over an audible one.
+Instead of ringing the terminal bell whenever a Control-G is received, the
+window will be flashed.
+.TP 8
+.B \+vb
+This option indicates that a visual bell should not be used.
+.TP 8
+.B \-C
+This option indicates that this window should be receive console output.  This
+is not supported on all systems.
+.TP 8
+.B \-L
+This option indicates that \fIxterm\fP was started by \fIinit\fP.  In this
+mode, \fIxterm\fP does not try to allocate a new pseudoterminal as \fIinit\fP
+has already done so.  In addition, the system program \fIgetty\fP is run 
+instead of the user's shell.  \fBThis option should never be used by users when
+starting terminal windows.\fP
+.TP 8
+.B \-S\fIccn\fP
+This option specifies the last two letters of the name of a pseudoterminal
+to use in slave mode.  This allows \fIxterm\fP to be used as an input and
+output channel for an existing program and is sometimes used in specialized
+applications.
+.PP
+The following command line arguments are provided for compatibility with
+older versions.  They may not be supported in the next release as the X 
+Toolkit provides standard options that accomplish the same task.
+.TP 8
+.B "%geom"
+This option specifies the prefered size and position of the Tektronix window.
+It is shorthand for specifying the "\fI*tekGeometry\fP" resource.
+.TP 8
+.B \#geom
+This option specifies the prefered position of the icon window.
+It is shorthand for specifying the "\fI*iconGeometry\fP" resource.
+.TP 8
+.BI \-T " string"
+This option specifies the title for \fIxterm\fP's windows.
+It is equivalent to \fB-title\fP.
+.TP 8
+.BI \-n "string"
+This option specifies the icon name for \fIxterm\fP's windows.
+It is shorthand for specifying the "\fI*iconName\fP" resource.
+.TP 8
+.B \-r
+This option indicates that reverse video should be simulated by swapping
+the foreground and background colors.  It is equivalent to
+\fB-reversevideo\fP or \fB-rv\fP.
+.TP 8
+.BI \-w " number"
+This option specifies the width in pixels of the border surrounding the window.
+It is equivalent to \fB-borderwidth\fP or \fB-bw\fP.
+.PP
+The following standard X Toolkit command line arguments are commonly used 
+with \fIxterm\fP:
+.TP 8
+.B \-bg \fIcolor\fP
+This option specifies the color to use for the background of the window.  
+The default is ``white.''
+.TP 8
+.B \-bd \fIcolor\fP
+This option specifies the color to use for the border of the window.
+The default is ``black.''
+.TP 8
+.B \-bw \fInumber\fP
+This option specifies the width in pixels of the border surrounding the window.
+.TP 8
+.B \-fg \fIcolor\fP
+This option specifies the color to use for displaying text.  The default is 
+``black''.
+.TP 8
+.B \-fn \fIfont\fP
+This option specifies the font to be used for displaying normal text.  The
+default is ``vtsingle.''
+.TP 8
+.B \-name \fIname\fP
+This option specifies the application name under which resource are to be
+obtained, rather than the default executable file name.
+.TP 8
+.B \-rv
+This option indicates that reverse video should be simulated by swapping
+the foreground and background colors.
+.TP 8
+.B \-geometry \fIgeometry\fP
+This option specifies the prefered size and position of the VT102 window;
+see \fIX(1)\fP;
+.TP 8
+.B \-display \fIdisplay\fP
+This option specifies the X server to contact; see \fIX(1)\fP.
+.TP 8
+.B \-xrm \fIresourcestring\fP
+This option specifies a resource string to be used.  This is especially
+useful for setting resources that do not have separate command line options.
 .SH "X DEFAULTS"
-.I Xterm
-allows you to preset defaults in a customization file in your home
-directory, called
-.BR .Xdefaults .
-The format of the file is ``programname.keyword:string''.
-See
-.IR X (1)
-for more details.
-.I Xterm
-obeys the convention for `MakeWindow' defaults.
-Keywords recognized by
-.I xterm
-are listed below.
-.TP 15
-.B Background
-Set the background color.
-.TP
-.B BodyFont
-Set the default font.
-.TP
-.B BoldFont
-Specify a default bold font.
-.TP
-.B Border
-Set the border color.
-.TP
-.B BorderWidth
-Set the border width of the window.
-.TP
-.B C132
-If ``on'', allow the DECCOLM escape sequence to switch between 80 and 132
-column mode.
-.TP
-.B Curses
-If ``on'', enable the
-.IR curses (3x)
-fix.
-.TP
-.B Cursor
-Set the text cursor color.
-.TP
-.B CursorShape
-If ``arrow'', use the arrow mouse cursor rather than the I-beam mouse cursor.
-.TP
-.B Foreground
-Set the text color.
-.TP
-.B Geometry
-Set the window geometry (position and size).
-.TP
-.B IconStartup
-If ``on'', initially display the icon rather than the normal window.
-.TP
-.B InternalBorder
-Set the space between the text and window border.
-This is called padding above.
-.TP
-.B JumpScroll
-If ``on'', jump scroll is enabled.
-.\"TP
-.\"B KeyBoard
-.TP
-.B LogFile
-Specifies the log file or command to pipe to when logging is activated.
-.TP
-.B Logging
-If ``on'', turn logging on initially.
-.TP
-.B LogInhibit
-If ``on'', totally inhibit logging from being turned on.
-.TP
-.B LoginShell
-If ``on'', make the shell executed a login shell.
-.TP
-.B MarginBell
-If ``on'', turn on the margin bell.
-.TP
-.B Mouse
-Set the mouse cursor color.
-.TP
-.B MultiScroll
-Allows xterm to scroll asynchronously with the display.
-.TP
-.B NMarginBell
-Set the margin bell right margin distance.
-.TP
-.B ReverseVideo
-If ``on'', reverse the definition of foreground and background color.
-.TP
-.B ReverseWrap
-If ``on'', turn on the reverse wraparound mode.
-.TP
-.B SaveLines
-Set the number of lines to save when scrolled of the top of the window.
-.TP
-.B ScrollBar
-If ``on'', show the scrollbar initially.
-.TP
-.B ScrollInput
-If ``off'', disable repositioning the scroll region at the bottom if
-new input has arrived.
-.TP
-.B ScrollKey
-If ``on'', reposition the scroll region at the bottom if
-a key is pressed.
-.TP
-.B SignalInhibit
-If ``on'', totally inhibit the sending of signals from the
-.B xterm
-menu.
-.TP
-.B StatusLine
-If ``on'', show the status line on startup.
-.TP
-.B StatusNormal
-If ``on'', make the status line normal video.
-.TP
-.B TekInhibit
-If ``on'', totally inhibit going into Tektronix mode.
-.TP
-.B VisualBell
-If ``on'', turn on visual bell mode at startup.
+The program understands all of the core X Toolkit resource names and
+classes as well as:
+.TP 8
+.B "name (\fPclass\fB Name)"
+Specifies the name of this instance of the program.  The default is ``xterm.''
+.TP 8
+.B "iconGeometry (\fPclass\fB IconGeometry)"
+Specifies the prefered size and position of the application when iconified.
+It is not necessarily obeyed by all window managers.
+.TP 8
+.B "title (\fPclass\fB Title)"
+Specifies a string that may be used by the window manager when displaying
+this application.
+.sp
+.PP
+The following resources are specified as part of the ``vt100'' widget (class
+``VT100''):
+.TP 8
+.B "font (\fPclass\fB Font)"
+Specifies the name of the normal font.  The default is ``vtsingle.''
+.TP 8
+.B "boldFont (\fPclass\fB Font)"
+Specifies the name of the bold font.  The default is ``vtbold.''
+.TP 8
+.B "c132 (\fPclass\fB C132)"
+Specifies whether or not the VT102 DECCOLM escape sequence should be honored.
+The default is ``false.''
+.TP 8
+.B "curses (\fPclass\fB Curses)"
+Specifies whether or not the last column bug in cursor should be worked around.
+The default is ``false.''
+.TP 8
+.B "background (\fPclass\fB Background)"
+Specifies the color to use for the background of the window.  The default is 
+``white.''
+.TP 8
+.B "foreground (\fPclass\fB Foreground)"
+Specifies the color to use for displaying text in the window.  Setting the
+class name instead of the instance name is an easy way to have everything
+that would normally appear in the "text" color change color.  The default
+is ``black.''
+.TP 8
+.B "cursorColor (\fPclass\fB Foreground)"
+Specifies the color to use for the text cursor.  The default is ``black.''
+.TP 8
+.B "geometry (\fPclass\fB Geometry)"
+Specifies the prefered size and position of the VT102 window.
+.TP 8
+.B "tekGeometry (\fPclass\fB Geometry)"
+Specifies the prefered size and position of the Tektronix window.
+.TP 8
+.B "internalBorder (\fPclass\fB BorderWidth)"
+Specifies the number of pixels between the characters and the window border.
+The default is 2.
+.TP 8
+.B "jumpScroll (\fPclass\fB JumpScroll)"
+Specifies whether or not jump scroll should be used.  The default is ``false''.
+.TP 8
+.B "logFile (\fPclass\fB Logfile)"
+Specifies the name of the file to which a terminal session is logged.  The
+default is ``\fBXtermLog.\fIXXXXX\fR'' (where \fIXXXXX\fP
+is the process id of \fIxterm\fP).
+.TP 8
+.B "logging (\fPclass\fB Logging)"
+Specifies whether or not a terminal session should be logged.  The default is
+``false.''
+.TP 8
+.B "logInhibit (\fPclass\fB LogInhibit)"
+Specifies whether or not terminal session logging should be inhibited.  The
+default is ``false.''
+.TP 8
+.B "loginShell (\fPclass\fB LoginShell)"
+Specifies whether or not the shell to be run in the window should be started
+as a login shell.  The default is ``false.''
+.TP 8
+.B "marginBell (\fPclass\fB MarginBell)"
+Specifies whether or not the bell should be run when the user types near the
+right margin.  The default is ``false.''
+.TP 8
+.B "multiScroll (\fPclass\fB MultiScroll)"
+Specifies whether or not asynchronous scrolling is allowed.  The default is
+``false.''
+.TP 8
+.B "nMarginBell (\fPclass\fB Column)"
+Specifies the number of characters from the right margin at which the margin
+bell should be run, when enabled.
+.TP 8
+.B "pointerColor (\fPclass\fB Foreground)"
+Specifies the color of the pointer.  The default is ``black.''
+.TP 8
+.B "pointerShape (\fPclass\fB Cursor)"
+Specifies the name of the shape of the pointer.  The default is ``xterm.''
+.TP 8
+.B "reverseVideo (\fPclass\fB ReverseVideo)"
+Specifies whether or not reverse video should be simulated.  The default is
+``false.''
+.TP 8
+.B "reverseWrap (\fPclass\fB ReverseWrap)"
+Specifies whether or not reverse-wraparound should be enabled.  The default is
+``false.''
+.TP 8
+.B "saveLines (\fPclass\fB SaveLines)"
+Specifies the number of lines to save beyond the top of the screen when a
+scrollbar is turned on.  The default is 64.
+.TP 8
+.B "scrollBar (\fPclass\fB ScrollBar)"
+Specifies whether or not the scrollbar should be displayed.  The default is
+``false.''
+.TP 8
+.B "scrollInput (\fPclass\fB ScrollCond)"
+Specifies whether or not output to the terminal should automatically cause
+the scrollbar to go to the bottom of the scrolling region.  The default is
+``true.''
+.TP 8
+.B "scrollKey (\fPclass\fB ScrollCond)"
+Specifies whether or not pressing a key should automatically cause the
+scrollbar to go to the bottom of the scrolling region.  The default is
+``false.''
+.TP 8
+.B "signalInhibit (\fPclass\fB SignalInhibit)"
+Specifies whether or not the entries in the ``xterm X11'' menu for sending
+signals to \fIxterm\fP should be disallowed.  The default is ``false.''
+.TP 8
+.B "tekInhibit (\fPclass\fB TekInhibit)"
+Specifies whether or not Tektronix mode should be disallowed.  The default is
+``false.''
+.TP 8
+.B "tekStartup (\fPclass\fB TekStartup)"
+Specifies whether or not \fIxterm\fP should start up in Tektronix mode.
+The default is ``false.''
+.TP 8
+.B "visualBell (\fPclass\fB VisualBell)"
+Specifies whether or not a visible bell (i.e. flashing) should be used instead
+of an audible bell when Control-G is received.  The default is ``false.''
+.sp
+.PP
+The following resources are specified as part of the ``tek4014'' widget
+(class ``Tek4014''):
+.TP 8
+.B "width (\fPclass\fB Width)"
+Specifies the width of the Tektronix window in pixels.
+.TP 8
+.B "height (\fPclass\fB Height)"
+Specifies the height of the Tektronix window in pixels.
+.sp
+.PP
+The following resources are specified as part of the ``menu'' widget:
+.TP 8
+.B "menuBorder (\fPclass\fB MenuBorder)"
+Specifies the size in pixels of the border surrounding menus.  The default is
+2.
+.TP 8
+.B "menuFont (\fPclass\fB Font)"
+Specifies the name of the font to use for displaying menu items.
+.TP 8
+.B "menuPad (\fPclass\fB MenuPad)"
+Specifies the number of pixels between menu items and the menu border.  The
+default is 3.
 .SH EMULATIONS
 The VT102 emulation is fairly complete, but does not support the blinking
 character attribute nor the double-wide and double-size character sets.
@@ -428,7 +464,7 @@ sequences.
 .I ``Xterm Control Sequences''
 document.)
 .PP
-The Tektronix 4015 emulation is also fairly good.
+The Tektronix 4014 emulation is also fairly good.
 Four different font sizes and five different lines types are supported.
 The Tektronix text and graphics commands are recorded internally by
 .I xterm
@@ -450,16 +486,16 @@ are the year, month, day, hour, minute and second when the COPY was performed
 .I xterm
 is started in, or the home directory for a login
 .IR xterm ).
-.SH "MOUSE USAGE"
+.SH "POINTER USAGE"
 .PP
 Once the VT102 window is created,
 .I xterm
 allows you to select text and copy it within the same or other windows.
 .PP
-The selection functions are invoked when the mouse buttons are used with no
+The selection functions are invoked when the pointer buttons are used with no
 modifiers, and when they are used with the ``shift'' key.
 .PP
-The left button is used to save text into the cut buffer.
+Pointer button one (usually left) is used to save text into the cut buffer.
 Move the cursor to beginning of the text,
 and then hold the button down while moving the cursor to the end of the region
 and releasing the button.
@@ -469,10 +505,11 @@ selects by lines.  Quadruple-clicking goes back to characters, etc.
 Multiple-click is determined by the time from button up to
 button down, so you can change the selection unit in the middle of a selection.
 .PP
-The middle button `types' (pastes) the text from the cut buffer,
+Pointer button two (usually middle) `types' (pastes) the text from the cut buffer,
 inserting it as keyboard input.
 .PP
-The right button extends the current selection.  (Without loss of generality,
+Pointer button three (usually right) extends the current selection.
+(Without loss of generality,
 that is you can swap ``right'' and ``left'' everywhere in the rest of this
 paragraph...)  If pressed while closer to
 the right edge of the selection than the left, it extends/contracts the
@@ -499,14 +536,14 @@ in the window (highlighted) relative to the amount of text actually saved.
 As more text is saved (up to the maximum), the size of the highlighted area
 decreases.  
 .PP
-Clicking the mouse with the left button in the scroll region moves the
-corresponding line to the top of the display window.
+Clicking button one with the pointer in the scroll region moves the
+adjacent line to the top of the display window.
 .PP
-Clicking the right button moves the top line of the display window down to the
-mouse position.
+Clicking button three moves the top line of the display window down to the
+pointer position.
 .PP
-Clicking the middle button moves the display to a position in the saved text
-that corresponds to the mouse's position in the scrollbar.
+Clicking button two moves the display to a position in the saved text
+that corresponds to the pointer's position in the scrollbar.
 .PP
 .PP
 Unlike the VT102 window, the Tektronix window dows not allow the copying of
@@ -515,11 +552,11 @@ It does allow Tektronix GIN mode, and in this mode
 the cursor will change from an arrow to a cross.
 Pressing any key will send that key and the current coordinate of the
 cross cursor.
-Pressing the left, middle or right button will return the letters `l', `m', and
+Pressing button one, two, or three will return the letters `l', `m', and
 `r', respectively.
-If the `shift' key is pressed when a mouse buton is pressed, the corresponding
+If the `shift' key is pressed when a pointer buton is pressed, the corresponding
 upper case letter is sent.
-To distinquish a mouse button from a key, the high bit of the character is
+To distinquish a pointer button from a key, the high bit of the character is
 set (but this is bit is normally stripped unless the terminal mode is RAW;
 see
 .IR tty (4)
@@ -542,10 +579,8 @@ performs the indicated function.
 .PP
 The
 .B xterm
-menu pops up when the ``control'' and ``shift'' keys and the left button are
+menu pops up when the ``control'' key and pointer button one are
 pressed in a window.
-The menu title gives the version number of
-.IR xterm .
 The modes section contains items that apply to both the VT102 and Tektronix
 windows.
 Notable entries in the command section of the menu are the
@@ -568,8 +603,8 @@ suspending the process.
 .PP
 The
 .B Modes
-menu sets various modes in the VT102 emulation, and is popped up with the
-``control'', ``shift'', and middle button combination in the VT102 window.
+menu sets various modes in the VT102 emulation, and is popped up when the
+``control'' key and pointer button two are pressed in the VT102 window.
 In the command section of this menu, the soft reset entry will reset
 scroll regions.
 This can be convenient when some program has left the scroll regions
@@ -581,8 +616,8 @@ to there initial states just after
 has finish processing the command line options.
 The
 .B Tektronix
-menu sets various modes in the Tektronix emulation, and is popped up with the
-``control'', ``shift'',  and middle button combination in the Tektronix window.
+menu sets various modes in the Tektronix emulation, and is popped up when the
+``control'' key and pointer button two are pressed in the Tektronix window.
 The current font size is checked in the modes section of the menu.
 The
 .B PAGE
@@ -590,10 +625,10 @@ entry in the command section clears the Tektronix window.
 .SH "OTHER FEATURES"
 .I Xterm
 automatically highlights the window border and text cursor when the
-mouse enters the window (selected) and unhighlights them when the mouse
+pointer enters the window (selected) and unhighlights them when the pointer
 leaves the window (unselected).
 If the window is the focus window, then the window is highlighted no matter
-where the mouse is.
+where the pointer is.
 .PP
 In VT102 mode, there are escape sequences to activate and deactivate
 an alternate screen buffer, which is the same size as the display area
@@ -612,7 +647,7 @@ to switch to the alternate screen for editing, and restore the screen
 on exit.  
 .PP
 In either VT102 or Tektronix mode, there are escape sequences to change the
-name of the windows  to specify a new log file name.
+name of the windows and to specify a new log file name.
 .SH ENVIRONMENT
 .I Xterm
 sets the environment variables ``TERM'' and ``TERMCAP'' properly for the
@@ -628,29 +663,43 @@ resize(1), X(1), pty(4), tty(4)
 .br
 .I ``Xterm Control Sequences''
 .SH BUGS
-XTERM WILL HANG FOREVER IF YOU TRY TO PASTE TOO MUCH TEXT AT ONE TIME !!!  IT
-IS BOTH PRODUCER AND CONSUMER FOR THE PTY AND SCREWS ITSELF.
-Tektronix mode is **not** working in this version.
-There is currently no way for a
-.I xterm
-window not to highlight itself when the mouse cursor enter it
-while another window is the keyboard focus.
+\fBXterm will hang forever if you try to paste too much text at one time.\fP
+It is both producer and consumer for the pty and can deadlock.
+.PP
+Variable-width fonts are not handled reasonably.
+.PP
+This program still needs to be rewritten.  It should be split into very
+modular sections, with the various emulators being completely separate
+widgets that don't know about each other.  Ideally, you'd like to be able to
+pick and choose emulator widgets and stick them into a single control widget.
+.PP
+The focus is considered lost if some other client (e.g., the window manager)
+grabs the pointer; it is difficult to do better without an addition to the
+protocol.
+.PP
 There needs to be a dialog box to allow entry of log file name
 and the COPY file name.
+.PP
 Many of the options are not resettable after
 .I xterm
 starts.
+.PP
+This manual page is too long.  There should be a separate users manual
+defining all of the non-standard escape sequences.
+.PP
+All programs should be written to use X directly; then we could
+eliminate this program.
+.SH COPYRIGHT
+Copyright 1988, Massachusetts Institute of Technology.
+.br
+See \fIX(1)\fP for a full statement of rights and permissions.
 .SH AUTHORS
+Far too many people, including:
+.sp
 Loretta Guarino Reid (DEC-UEG-WSL), 
 Joel McCormack (DEC-UEG-WSL), Terry Weissman (DEC-UEG-WSL),
 Edward Moy (Berkeley), Ralph R. Swick (MIT-Athena),
 Mark Vandevoorde (MIT-Athena), Bob McNamara (DEC-MAD),
-Jim Gettys (MIT-Athena), Bob Scheifler (MIT-LCS), Doug Mink (SAO).
-.sp
-VMS and TOPS-20 are trademarks of Digital Equipment Corporation.
-.sp
-Copyright (c) 1984, 1985, 1986, 1987 by Massachusetts Institute of Technology.
-.br
-See
-.IR X (1)
-for a full copyright notice.
+Jim Gettys (MIT-Athena), Bob Scheifler (MIT X Consortium), Doug Mink (SAO),
+Steve Pitschke (Stellar), Ron Newman (MIT-Athena), Jim Fulton (MIT X 
+Consortium)

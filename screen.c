@@ -1,6 +1,5 @@
 /*
- *	@Source: /orpheus/u1/X11/clients/xterm/RCS/screen.c,v @
- *	@Header: screen.c,v 1.9 87/08/13 16:02:42 guarino Exp @
+ *	@Header: screen.c,v 1.1 88/02/10 13:08:12 jim Exp @
  */
 
 #include <X11/copyright.h>
@@ -31,8 +30,8 @@
 /* screen.c */
 
 #ifndef lint
-static char rcs_id[] = "@Header: screen.c,v 1.9 87/08/13 16:02:42 guarino Exp @";
-#endif	lint
+static char rcs_id[] = "@Header: screen.c,v 1.1 88/02/10 13:08:12 jim Exp @";
+#endif	/* lint */
 
 #include <X11/Xlib.h>
 #include <stdio.h>
@@ -352,12 +351,12 @@ unsigned *flags;
 #ifdef sun
 #ifdef TIOCSSIZE
 	struct ttysize ts;
-#endif TIOCSSIZE
-#else sun
+#endif	/* TIOCSSIZE */
+#else	/* sun */
 #ifdef TIOCSWINSZ
 	struct winsize ws;
-#endif TIOCSWINSZ
-#endif sun
+#endif	/* TIOCSWINSZ */
+#endif	/* sun */
 
 	/* round so that it is unlikely the screen will change size on  */
 	/* small mouse movements.					*/
@@ -368,22 +367,11 @@ unsigned *flags;
 	if (rows < 1) rows = 1;
 	if (cols < 1) cols = 1;
 
-	if ((width - border - screen->scrollbar) % FontWidth(screen)
-	 != 0 || (height - border) % FontHeight(screen) != 0) {
-		XResizeWindow(
-		    screen->display,
-		    TextWindow(screen),
-		    (unsigned) cols * FontWidth(screen) + border
-		        + screen->scrollbar,
-		    (unsigned) rows * FontHeight(screen) + border);
-		return (-1);
-	}
-
 	/* change buffers if the screen has changed size */
 	if (screen->max_row != rows - 1 || screen->max_col != cols - 1) {
 		if(screen->cursor_state)
 			HideCursor();
-		savelines = screen->scrollWindow ? screen->savelines : 0;
+		savelines = screen->scrollWidget ? screen->savelines : 0;
 		j = screen->max_col + 1;
 		i = cols - j;
 		k = screen->max_row;
@@ -479,8 +467,8 @@ unsigned *flags;
 	} else if(FullHeight(screen) == height && FullWidth(screen) == width)
 	 	return(0);	/* nothing has changed at all */
 
-	if(screen->scrollWindow)
-		ResizeScrollBar(screen->scrollWindow, -1, -1, height);
+	if(screen->scrollWidget)
+		ResizeScrollBar(screen->scrollWidget, -1, -1, height);
 	
 	screen->fullVwin.fullheight = height;
 	screen->fullVwin.fullwidth = width;
@@ -493,9 +481,9 @@ unsigned *flags;
 #ifdef SIGWINCH
 	if(screen->pid > 1)
 		killpg(getpgrp(screen->pid), SIGWINCH);
-#endif SIGWINCH
-#endif TIOCSSIZE
-#else sun
+#endif	/* SIGWINCH */
+#endif	/* TIOCSSIZE */
+#else	/* sun */
 #ifdef TIOCSWINSZ
 	/* Set tty's idea of window size */
 	ws.ws_row = rows;
@@ -506,9 +494,9 @@ unsigned *flags;
 #ifdef SIGWINCH
 	if(screen->pid > 1)
 		killpg(getpgrp((int)screen->pid), SIGWINCH);
-#endif SIGWINCH
-#endif TIOCSWINSZ
-#endif sun
+#endif	/* SIGWINCH */
+#endif	/* TIOCSWINSZ */
+#endif	/* sun */
 	return (0);
 }
 
