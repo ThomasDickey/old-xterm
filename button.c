@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: button.c,v 1.32 89/01/05 12:47:45 swick Exp $
+ *	$XConsortium: button.c,v 1.49 89/12/10 20:45:17 jim Exp $
  */
 
 
@@ -35,23 +35,21 @@ button.c	Handles button events in the terminal emulator.
 				J. Gettys.
 */
 #ifndef lint
-static char rcs_id[] = "$XConsortium: button.c,v 1.22 88/10/17 20:10:47 swick Exp $";
+static char rcs_id[] = "$XConsortium: button.c,v 1.49 89/12/10 20:45:17 jim Exp $";
 #endif	/* lint */
-#include <X11/Xos.h>
-#include <X11/Xlib.h>
+
+#include "ptyx.h"		/* Xlib headers included here. */
 #include <X11/Xatom.h>
-#include <X11/Xmu.h>
 #include <stdio.h>
-#include <signal.h>
 #include <setjmp.h>
 #include <ctype.h>
-#include <X11/Intrinsic.h>
-#include "ptyx.h"
+
+#include <X11/Xmu/Atoms.h>
+#include <X11/Xmu/StdSel.h>
+
 #include "data.h"
 #include "error.h"
-#ifdef MODEMENU
 #include "menu.h"
-#endif	/* MODEMENU */
 
 extern char *malloc();
 
@@ -72,31 +70,10 @@ extern char *malloc();
 char *SaveText();
 extern EditorButton();
 
-extern ModeMenu();
 extern char *xterm_name;
 extern Bogus();
-extern GINbutton();
 
-/* button and shift keys for Tek mode */
-static int (*Tbfunc[SHIFTS][NBUTS])() = {
-/*	left		middle		right	*/
-	GINbutton,	GINbutton,	GINbutton,	/* down	|no shift   */
-
-	GINbutton,	GINbutton,	GINbutton,	/* down |shift	    */
-
-	Bogus,		Bogus,		Bogus,		/* down	|meta	    */
-
-	Bogus,		Bogus,		Bogus,		/* down	|meta shift */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|control    */
-
-	ModeMenu,	ModeMenu,	ModeMenu,	/* down	|ctl shift  */
-
-	Bogus,		Bogus,		Bogus,		/* down	|ctl meta   */
-
-	Bogus,		Bogus,		Bogus,		/* down	| all       */
-
-};	/* button and shift keys */
+static PointToRowCol();
 
 extern XtermWidget term;
 
@@ -123,7 +100,11 @@ static int saveStartRRow, saveStartRCol, saveEndRRow, saveEndRCol;
 /* Multi-click handling */
 static int numberOfClicks = 0;
 static long int lastButtonUpTime = 0;
-typedef enum {SELECTCHAR, SELECTWORD, SELECTLINE} SelectUnit;
+typedef int SelectUnit;
+#define SELECTCHAR 0
+#define SELECTWORD 1
+#define SELECTLINE 2
+#define NSELECTUNITS 3
 static SelectUnit selectUnit;
 
 /* Send emacs escape code when done selecting or extending? */
@@ -135,6 +116,7 @@ Widget w;
 XEvent* event;
 {
     register TScreen *screen = &((XtermWidget)w)->screen;
+    static TrackDown();
     
     if (screen->send_mouse_pos == 0) return False;
 
@@ -194,11 +176,16 @@ XEvent *event;			/* must be XMotionEvent */
 String *params;			/* unused */
 Cardinal *num_params;		/* unused */
 {
-	((XtermWidget)w)->screen.selection_time = event->xmotion.time;
+	register TScreen *screen = &((XtermWidget)w)->screen;
+	int row, col;
+
+	screen->selection_time = event->xmotion.time;
 	switch (eventMode) {
 		case LEFTEXTENSION :
 		case RIGHTEXTENSION :
-			ExtendExtend(event->xmotion.x, event->xmotion.y);
+			PointToRowCol (event->xmotion.y, event->xmotion.x, 
+				       &row, &col);
+			ExtendExtend (row, col);
 			break;
 		case NORMAL :
 			/* will get here if send_mouse_pos != 0 */
@@ -208,14 +195,13 @@ Cardinal *num_params;		/* unused */
 
 
 /*ARGSUSED*/
-void HandleSelectEnd(w, event, params, num_params)
+static void do_select_end (w, event, params, num_params, use_cursor_loc)
 Widget w;
 XEvent *event;			/* must be XButtonEvent */
 String *params;			/* selections */
 Cardinal *num_params;
+Bool use_cursor_loc;
 {
-	register TScreen *screen = &((XtermWidget)w)->screen;
-
 	((XtermWidget)w)->screen.selection_time = event->xbutton.time;
 	switch (eventMode) {
 		case NORMAL :
@@ -223,27 +209,33 @@ Cardinal *num_params;
 			break;
 		case LEFTEXTENSION :
 		case RIGHTEXTENSION :
-			EndExtend(event, params, *num_params);
+			EndExtend(event, params, *num_params, use_cursor_loc);
 			break;
 	}
 }
 
 
-/*ARGSUSED*/
-void TekButtonPressed(w, eventdata, event)
+void HandleSelectEnd(w, event, params, num_params)
 Widget w;
-caddr_t eventdata;
-register XButtonEvent *event;
+XEvent *event;			/* must be XButtonEvent */
+String *params;			/* selections */
+Cardinal *num_params;
 {
-	register TScreen *screen = &term->screen;
-	/* so table above will be nice, we index from 0 */
-	int button = event->button - 1; 
-	int shift = KeyState(event->state);
-
-	if (screen->incopy)
-		CopyWait (screen);
-	(*(Tbfunc[shift][button]))(event);
+	do_select_end (w, event, params, num_params, False);
 }
+
+
+void HandleKeyboardSelectEnd(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent */
+String *params;			/* selections */
+Cardinal *num_params;
+{
+	do_select_end (w, event, params, num_params, True);
+}
+
+
+
 
 struct _SelectionList {
     String *params;
@@ -258,7 +250,7 @@ Time time;
 String *params;			/* selections in precedence order */
 Cardinal num_params;
 {
-    void SelectionReceived();
+    static void SelectionReceived();
     Atom selection;
     int buffer;
 
@@ -276,10 +268,12 @@ Cardinal num_params;
     }
     if (buffer >= 0) {
 	register TScreen *screen = &((XtermWidget)w)->screen;
+	int inbytes;
 	unsigned long nbytes;
 	int fmt8 = 8;
 	Atom type = XA_STRING;
-	char *line = XFetchBuffer(screen->display, &nbytes, buffer);
+	char *line = XFetchBuffer(screen->display, &inbytes, buffer);
+	nbytes = (unsigned long) inbytes;
 	if (nbytes > 0)
 	    SelectionReceived(w, NULL, &selection, &type, (caddr_t)line,
 			      &nbytes, &fmt8);
@@ -339,7 +333,6 @@ int *format;
 }
 
 
-/* ARGSUSED */
 HandleInsertSelection(w, event, params, num_params)
 Widget w;
 XEvent *event;			/* assumed to be XButtonEvent* */
@@ -362,9 +355,19 @@ SelectUnit defaultUnit;
 		selectUnit = defaultUnit;
 	} else {
 		++numberOfClicks;
-		/* Don't bitch.  This is only temporary. */
-		selectUnit = (SelectUnit) (((int) selectUnit + 1) % 3);
+		selectUnit = ((selectUnit + 1) % NSELECTUNITS);
 	}
+}
+
+static void do_select_start (w, event, startrow, startcol)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+int startrow, startcol;
+{
+	if (SendMousePosition(w, event)) return;
+	SetSelectUnit(event->xbutton.time, SELECTCHAR);
+	replyToEmacs = FALSE;
+	StartSelect(startrow, startcol);
 }
 
 /* ARGSUSED */
@@ -377,13 +380,23 @@ Cardinal *num_params;		/* unused */
 	register TScreen *screen = &((XtermWidget)w)->screen;
 	int startrow, startcol;
 
-	if (SendMousePosition(w, event)) return;
 	firstValidRow = 0;
 	lastValidRow  = screen->max_row;
-	SetSelectUnit(event->xbutton.time, SELECTCHAR);
 	PointToRowCol(event->xbutton.y, event->xbutton.x, &startrow, &startcol);
-	replyToEmacs = FALSE;
-	StartSelect(startrow, startcol);
+	do_select_start (w, event, startrow, startcol);
+}
+
+
+/* ARGSUSED */
+HandleKeyboardSelectStart(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
+{
+	register TScreen *screen = &((XtermWidget)w)->screen;
+
+	do_select_start (w, event, screen->cursor_row, screen->cursor_col);
 }
 
 
@@ -404,15 +417,24 @@ register XButtonEvent *event;
 }
 
 
+#define boundsCheck(x)	if (x < 0) \
+			    x = 0; \
+			else if (x >= screen->max_row) \
+			    x = screen->max_row;
+
 TrackMouse(func, startrow, startcol, firstrow, lastrow)
 int func, startrow, startcol, firstrow, lastrow;
 {
+	TScreen *screen = &term->screen;
+
 	if (!waitingForTrackInfo) {	/* Timed out, so ignore */
 		return;
 	}
 	waitingForTrackInfo = 0;
 	if (func == 0) return;
-
+	boundsCheck (startrow)
+	boundsCheck (firstrow)
+	boundsCheck (lastrow)
 	firstValidRow = firstrow;
 	lastValidRow  = lastrow;
 	replyToEmacs = TRUE;
@@ -446,23 +468,29 @@ int startrow, startcol;
 		endERow = startrow;
 		endECol = startcol;
 	}
-	ComputeSelect(startERow, startECol, endERow, endECol);
+	ComputeSelect(startERow, startECol, endERow, endECol, False);
 
 }
 
-EndExtend(event, params, num_params)
+EndExtend(event, params, num_params, use_cursor_loc)
 XEvent *event;			/* must be XButtonEvent */
 String *params;			/* selections */
 Cardinal num_params;
+Bool use_cursor_loc;
 {
 	int	row, col;
 	TScreen *screen = &term->screen;
 	char line[9];
 
-	ExtendExtend(event->xbutton.x, event->xbutton.y);
+	if (use_cursor_loc) {
+	    row = screen->cursor_row;
+	    col = screen->cursor_col;
+	} else {
+	    PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
+	}
+	ExtendExtend (row, col);
 
 	lastButtonUpTime = event->xbutton.time;
-	PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
 	/* Only do select stuff if non-null select */
 	if (startSRow != endSRow || startSCol != endSCol) {
 		if (replyToEmacs) {
@@ -497,11 +525,12 @@ Cardinal num_params;
 #define Abs(x)		((x) < 0 ? -(x) : (x))
 
 /* ARGSUSED */
-HandleStartExtend(w, event, params, num_params)
+static void do_start_extend (w, event, params, num_params, use_cursor_loc)
 Widget w;
 XEvent *event;			/* must be XButtonEvent* */
 String *params;			/* unused */
 Cardinal *num_params;		/* unused */
+Bool use_cursor_loc;
 {
 	TScreen *screen = &((XtermWidget)w)->screen;
 	int row, col, coord;
@@ -527,7 +556,12 @@ Cardinal *num_params;		/* unused */
 		endECol   = endRCol   = saveEndRCol;
 
 	}
-	PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
+	if (use_cursor_loc) {
+	    row = screen->cursor_row;
+	    col = screen->cursor_col;
+	} else {
+	    PointToRowCol(event->xbutton.y, event->xbutton.x, &row, &col);
+	}
 	coord = Coordinate(row, col);
 
 	if (Abs(coord - Coordinate(startSRow, startSCol))
@@ -543,16 +577,13 @@ Cardinal *num_params;		/* unused */
 		endERow = row;
 		endECol = col;
 	}
-	ComputeSelect(startERow, startECol, endERow, endECol);
+	ComputeSelect(startERow, startECol, endERow, endECol, True);
 }
 
-ExtendExtend(x, y)
-int x, y;
+ExtendExtend (row, col)
+int row, col;
 {
-	int row, col, coord;
-
-	PointToRowCol(y, x, &row, &col);
-	coord = Coordinate(row, col);
+	int coord = Coordinate(row, col);
 	
 	if (eventMode == LEFTEXTENSION 
 	 && (coord + (selectUnit!=SELECTCHAR)) > Coordinate(endSRow, endSCol)) {
@@ -574,8 +605,30 @@ int x, y;
 		endERow = row;
 		endECol = col;
 	}
-	ComputeSelect(startERow, startECol, endERow, endECol);
+	ComputeSelect(startERow, startECol, endERow, endECol, False);
 }
+
+
+void HandleStartExtend(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
+{
+    do_start_extend (w, event, params, num_params, False);
+}
+
+void HandleKeyboardStartExtend(w, event, params, num_params)
+Widget w;
+XEvent *event;			/* must be XButtonEvent* */
+String *params;			/* unused */
+Cardinal *num_params;		/* unused */
+{
+    do_start_extend (w, event, params, num_params, True);
+}
+
+
+
 
 
 ScrollSelection(screen, amount)
@@ -630,6 +683,7 @@ register int amount;
 }
 
 
+/*ARGSUSED*/
 ResizeSelection (screen, rows, cols)
     TScreen *screen;
     int rows, cols;
@@ -681,7 +735,7 @@ register int row;
 {
 	register TScreen *screen =  &term->screen;
 	register int i;
-	register char *ch;
+	register Char *ch;
 
 	for(i = screen->max_col,
 	 ch = screen->buf[2 * (row + screen->topline)] + i ;
@@ -737,13 +791,15 @@ int SetCharacterClassRange (low, high, value)
 }
 
 
-ComputeSelect(startRow, startCol, endRow, endCol)
+ComputeSelect(startRow, startCol, endRow, endCol, extend)
 int startRow, startCol, endRow, endCol;
+Bool extend;
 {
 	register TScreen *screen = &term->screen;
-	register char *ptr;
+	register Char *ptr;
 	register int length;
 	register int class;
+	int osc = startSCol;
 
 	if (Coordinate(startRow, startCol) <= Coordinate(endRow, endCol)) {
 		startSRow = startRRow = startRow;
@@ -807,7 +863,11 @@ int startRow, startCol, endRow, endCol;
 			}
 			break;
 		case SELECTLINE :
-			if (term->screen.cutToBeginningOfLine) startSCol = 0;
+			if (term->screen.cutToBeginningOfLine) {
+			    startSCol = 0;
+			} else if (!extend) {
+			    startSCol = osc;
+			}
 			if (term->screen.cutNewline) {
 			    endSCol = 0;
 			    ++endSRow;
@@ -816,6 +876,7 @@ int startRow, startCol, endRow, endCol;
 			}
 			break;
 	}
+
 	TrackText(startSRow, startSCol, endSRow, endSCol);
 	return;
 }
@@ -878,8 +939,7 @@ register int frow, fcol, trow, tcol;
 /* Guaranteed that (frow, fcol) <= (trow, tcol) */
 {
 	register TScreen *screen = &term->screen;
-	register int i, j;
-	GC tempgc;
+	register int i;
 
 	if (frow < 0)
 	    frow = fcol = 0;
@@ -911,7 +971,7 @@ register int frow, fcol, trow, tcol;
 }
 
 SaltTextAway(crow, ccol, row, col, params, num_params)
-register crow, ccol, row, col;
+/*register*/ int crow, ccol, row, col;
 String *params;			/* selections */
 Cardinal num_params;
 /* Guaranteed that (crow, ccol) <= (row, col), and that both points are valid
@@ -920,6 +980,13 @@ Cardinal num_params;
 	register TScreen *screen = &term->screen;
 	register int i, j = 0;
 	char *line, *lp;
+	static _OwnSelection();
+
+	if (crow == row && ccol > col) {
+	    int tmp = ccol;
+	    ccol = col;
+	    col = tmp;
+	}
 
 	--col;
 	/* first we need to know how long the string is before we can save it*/
@@ -942,6 +1009,8 @@ Cardinal num_params;
 	    screen->selection = line;
 	    screen->selection_size = j + 1;
 	} else line = screen->selection;
+	if (!line || j < 0) return;
+
 	line[j] = '\0';		/* make sure it is null terminated */
 	lp = line;		/* lp points to where to save the text */
 	if ( row == crow ) lp = SaveText(screen, row, ccol, col, lp);
@@ -982,11 +1051,12 @@ int *format;
 		    w, xterm->screen.selection_time, selection,
 		    target, type, (caddr_t*)&std_targets, &std_length, format
 		   );
-	*length = std_length + 4;
+	*length = std_length + 5;
 	*value = (caddr_t)XtMalloc(sizeof(Atom)*(*length));
 	targetP = *(Atom**)value;
 	*targetP++ = XA_STRING;
 	*targetP++ = XA_TEXT(d);
+	*targetP++ = XA_COMPOUND_TEXT(d);
 	*targetP++ = XA_LENGTH(d);
 	*targetP++ = XA_LIST_LENGTH(d);
 	bcopy((char*)std_targets, (char*)targetP, sizeof(Atom)*std_length);
@@ -996,8 +1066,13 @@ int *format;
 	return True;
     }
 
-    if (*target == XA_STRING || *target == XA_TEXT(d)) {
-	*type = XA_STRING;
+    if (*target == XA_STRING ||
+	*target == XA_TEXT(d) ||
+	*target == XA_COMPOUND_TEXT(d)) {
+	if (*target == XA_COMPOUND_TEXT(d))
+	    *type = *target;
+	else
+	    *type = XA_STRING;
 	*value = xterm->screen.selection;
 	*length = xterm->screen.selection_length;
 	*format = 8;
@@ -1039,14 +1114,13 @@ int *format;
 }
 
 
-/* ARGSUSED */
 static void LoseSelection(w, selection)
   Widget w;
   Atom *selection;
 {
     register TScreen* screen = &((XtermWidget)w)->screen;
     register Atom* atomP;
-    int i, empty;
+    int i;
     for (i = 0, atomP = screen->selection_atoms;
 	 i < screen->selection_count; i++, atomP++)
     {
@@ -1099,6 +1173,8 @@ Cardinal count;
     int i;
     Boolean have_selection = False;
 
+    if (term->screen.selection_length < 0) return;
+
     if (count > term->screen.sel_atoms_size) {
 	XtFree((char*)atoms);
 	atoms = (Atom*)XtMalloc(count*sizeof(Atom));
@@ -1120,8 +1196,8 @@ Cardinal count;
 	  default:	       buffer = -1;
 	}
 	if (buffer >= 0)
-	    XStoreBytes( XtDisplay((Widget)term), term->screen.selection,
-			 term->screen.selection_length, buffer );
+	    XStoreBuffer( XtDisplay((Widget)term), term->screen.selection,
+			  term->screen.selection_length, buffer );
 	else if (!replyToEmacs) {
 	    have_selection |=
 		XtOwnSelection( (Widget)term, atoms[i],
@@ -1170,7 +1246,7 @@ int Length(screen, row, scol, ecol)
 register int row, scol, ecol;
 register TScreen *screen;
 {
-	register char *ch;
+	register Char *ch;
 
 	ch = screen->buf[2 * (row + screen->topline)];
 	while (ecol >= scol && (ch[ecol] == ' ' || ch[ecol] == 0))
@@ -1186,7 +1262,7 @@ TScreen *screen;
 register char *lp;		/* pointer to where to put the text */
 {
 	register int i = 0;
-	register char *ch = screen->buf[2 * (row + screen->topline)];
+	register Char *ch = screen->buf[2 * (row + screen->topline)];
 	register int c;
 
 	if ((i = Length(screen, row, scol, ecol)) == 0) return(lp);
@@ -1233,359 +1309,31 @@ register XButtonEvent *event;
 	v_write(pty, line, 6);
 }
 
-#ifdef MODEMENU
-#define FIRSTMENU	0
-#define	XTERMMENU	0
-#define	VTMENU		1
-#define	TEKMENU		2
-#define	NMENUS		3
 
-static Menu *menus[NMENUS];
-static int type;
-extern TekLink *TekRefresh;
-
-/* ARGSUSED */
-void HandleModeMenu(w, event, params, num_params)
-Widget w;
-XEvent *event;
-String *params;			/* unused */
-Cardinal *num_params;		/* unused */
+/*ARGSUSED*/
+void HandleGINInput (w, event, param_list, nparamsp)
+    Widget w;
+    XEvent *event;
+    String *param_list;
+    Cardinal *nparamsp;
 {
-    ModeMenu(event);		/* %%% hack 'till TekWidget uses TM */
-}
-
-ModeMenu(event)
-register XButtonEvent *event;
-{
-	register TScreen *screen = &term->screen;
-	register Menu *menu;
-	register int item;
-	static int inited;
-	extern Menu *setupmenu(), *Tsetupmenu(), *xsetupmenu();
-
-
-	if(!inited) {
-		extern Pixmap Gray_Tile;
-		extern Cursor Menu_DefaultCursor;
-		extern char *Menu_DefaultFont;
-		extern XFontStruct *Menu_DefaultFontInfo;
-
-		inited++;
-		Gray_Tile = make_gray(BlackPixel(screen->display,
-					         DefaultScreen(screen->display)), 
-		 WhitePixel(screen->display, DefaultScreen(screen->display)), 1);
-		InitMenu(xterm_name);
-		Menu_DefaultCursor = screen->arrow;
-/*		if(XStrCmp(Menu_DefaultFont, f_t) == 0)
-			Menu_DefaultFontInfo = screen->fnt_norm;
- */
+    if (term->screen.TekGIN && *nparamsp == 1) {
+	int c = param_list[0][0];
+	switch (c) {
+	  case 'l': case 'm': case 'r':
+	  case 'L': case 'M': case 'R':
+	    break;
+	  default:
+	    Bell ();			/* let them know they goofed */
+	    c = 'l';			/* provide a default */
 	}
-	if((event->button) == Button1)
-		type = XTERMMENU;
-	else if((event->button) == Button3)
-		{
-		    Bell();
-		    return;
-		}
-	else if(event->window == VWindow(screen))
-		type = VTMENU;
-	else if(event->window == TWindow(screen))
-		type = TEKMENU;
-	else
-		SysError(ERROR_BADMENU);
-	switch(type) {
-	 case XTERMMENU:
-		if((menu = xsetupmenu(&menus[XTERMMENU])) == NULL)
-			return;
-		break;
-	 case VTMENU:
-		if((menu = setupmenu(&menus[VTMENU])) == NULL)
-			return;
-		break;
-	 case TEKMENU:
-		if((menu = Tsetupmenu(&menus[TEKMENU])) == NULL)
-			return;
-		screen->waitrefresh = TRUE;
-		break;
-	}
-	/*
-	 * Set the select mode manually.
-	 */
-	TrackMenu(menu, event); /* MenuButtonReleased calls FinishModeMenu */
-}
-
-FinishModeMenu(item, time)
-register int item;
-Time time;
-{
-	TScreen *screen = &term->screen;
-
-	menusync();
-	screen->waitrefresh = FALSE;
-	reselectwindow(screen);
-
-	if (item < 0) {
-		if(type == TEKMENU && TekRefresh)
-			dorefresh();
-		return;
-	}
-	switch(type) {
-	 case XTERMMENU:
-		xdomenufunc(item, time);
-		break;
-	 case VTMENU:
-		domenufunc(item);
-		break;
-	 case TEKMENU:
-		Tdomenufunc(item);
-		break;
-	}
-}
-
-menusync()
-{
-	TScreen *screen = &term->screen;
-	XSync(screen->display, 0);
-	if (QLength(screen->display) > 0)
-		xevents();
-}
-
-#define XMENU_GRABKBD	0
-#define	XMENU_VISUALBELL (XMENU_GRABKBD+1)
-#define	XMENU_LOG	(XMENU_VISUALBELL+1)
-#define	XMENU_REDRAW	(XMENU_LOG+1)
-#define	XMENU_LINE	(XMENU_REDRAW+1)
-#define	XMENU_SUSPEND	(XMENU_LINE+1)
-#define	XMENU_RESUME	(XMENU_SUSPEND+1)
-#define	XMENU_INTR	(XMENU_RESUME+1)
-#define	XMENU_HANGUP	(XMENU_INTR+1)
-#define	XMENU_TERM	(XMENU_HANGUP+1)
-#define	XMENU_KILL	(XMENU_TERM+1)
-#define XMENU_LINE2	(XMENU_KILL+1)
-#define XMENU_EXIT	(XMENU_LINE2+1)
-
-static char *xtext[] = {
-	"Secure Keyboard",
-	"Visual Bell",
-	"Logging",
-	"Redraw",
-	"-",
-	"Suspend program",
-	"Continue program",
-	"Interrupt program",
-	"Hangup program",
-	"Terminate program",
-	"Kill program",
-	"-",
-	"Quit",
-	0,
-};
-
-static int xbell;
-static int xlog;
-static int xkgrab;
-
-Menu *xsetupmenu(menu)
-register Menu **menu;
-{
-	register TScreen *screen = &term->screen;
-	register char **cp;
-	register int i;
-
-	if (*menu == NULL) {
-		if ((*menu = NewMenu("xterm X11")) == NULL)
-			return(NULL);
-		for(cp = xtext ; *cp ; cp++)
-			AddMenuItem(*menu, *cp);
-		if(xkgrab = screen->grabbedKbd)
-			CheckItem(*menu, XMENU_GRABKBD);
-		if(xbell = screen->visualbell)
-			CheckItem(*menu, XMENU_VISUALBELL);
-		if(xlog = screen->logging)
-			CheckItem(*menu, XMENU_LOG);
-		DisableItem(*menu, XMENU_LINE);
-		if((screen->inhibit & I_LOG) ||
-		   /* if login window, check for completed login */
-		   (L_flag && !checklogin()))
-			DisableItem(*menu, XMENU_LOG);
-		if(screen->inhibit & I_SIGNAL)
-			for(i = XMENU_SUSPEND ; i <= XMENU_KILL ; i++)
-				DisableItem(*menu, i);
-#if defined(SYSV) && !defined(JOBCONTROL)
-		DisableItem(*menu, XMENU_RESUME);
-		DisableItem(*menu, XMENU_SUSPEND);
-#endif	/* defined(SYSV) && !defined(JOBCONTROL) */
-		return(*menu);
-	}
-	/* if login window, check for completed login */
-	if (!(L_flag && !checklogin()) && !(screen->inhibit & I_LOG))
-		EnableItem(*menu, XMENU_LOG);
-	if (xkgrab != screen->grabbedKbd)
-		SetItemCheck(*menu, XMENU_GRABKBD, (xkgrab =
-		 screen->grabbedKbd));
-	if (xbell != screen->visualbell)
-		SetItemCheck(*menu, XMENU_VISUALBELL, (xbell =
-		 screen->visualbell));
-	if (xlog != screen->logging)
-		SetItemCheck(*menu, XMENU_LOG, (xlog = screen->logging));
-	return(*menu);
-}
-
-xdomenufunc(item, time)
-int item;
-Time time;
-{
-	register TScreen *screen = &term->screen;
-
-	switch (item) {
-	case XMENU_GRABKBD:
-		if (screen->grabbedKbd) {
-		    XUngrabKeyboard(screen->display, time);
-		    ReverseVideo(term);
-		    screen->grabbedKbd = FALSE;
-		} else {
-		    if (XGrabKeyboard(screen->display,
-				      term->core.parent->core.window,
-				      True, GrabModeAsync, GrabModeAsync, time)
-			  != GrabSuccess) {
-		        XBell(screen->display, 100);
-		    } else {
-			ReverseVideo(term);
-			screen->grabbedKbd = TRUE;
-		    }
-		}
-		break;
-
-	case XMENU_VISUALBELL:
-		screen->visualbell = !screen->visualbell;
-		break;
-
-	case XMENU_LOG:
-		if(screen->logging)
-			CloseLog(screen);
-		else
-			StartLog(screen);
-		break;
-
-	case XMENU_REDRAW:
-		Redraw();
-		break;
-
-/*
- * The following cases use the pid instead of the process group so that we
- * don't get hosed by programs that change their process group
- */
-
-	case XMENU_RESUME:
-#if !defined(SYSV) || defined(JOBCONTROL)
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGCONT);
-#endif	/* !defined(SYSV) || defined(JOBCONTROL) */
-		break;
-
-	case XMENU_SUSPEND:
-#if !defined(SYSV) || defined(JOBCONTROL)
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGTSTP);
-#endif	/* !defined(SYSV) || defined(JOBCONTROL) */
-		break;
-
-	case XMENU_INTR:
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGINT);
-		break;
-
-	case XMENU_HANGUP:
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGHUP);
-		break;
-
-	case XMENU_TERM:
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGTERM);
-		break;
-
-	case XMENU_KILL:
-		if(screen->pid > 1)
-			killpg (screen->pid, SIGKILL);
-		break;
-
-	case XMENU_EXIT:
-		Cleanup (0);
-		/* NOTREACHED */
-	}
-}
-
-
-MenuNewCursor(cur)
-register Cursor cur;
-{
-	register Menu **menu;
-	register int i;
-	register TScreen *screen = &term->screen;
-	extern Cursor Menu_DefaultCursor;
-
-	Menu_DefaultCursor = cur;
-	for(i = XTERMMENU, menu = menus ; i <= TEKMENU ; menu++, i++) {
-		if(!*menu)
-			continue;
-		(*menu)->menuCursor = cur;
-		if((*menu)->menuWindow)
-			XDefineCursor(screen->display, (*menu)->menuWindow, 
-			 cur);
-	}
-}
-
-ReverseVideoAllMenus ()
-{
-    int i;
-    XtermWidget xw = term;
-    Display *dpy = XtDisplay (xw);
-    Pixel fg, bg;
-
-    MenuResetGCs (&bg, &fg);
-
-    for (i = FIRSTMENU; i < NMENUS; i++) {
-	Menu *menu = menus[i];
-
-	if (menu) {
-	    menu->menuBgColor = bg;
-	    menu->menuFgColor = fg;
-	    XSetWindowBackground (dpy, menu->menuWindow, menu->menuBgColor);
-	    menu->menuFlags |= menuChanged;
-	}
+	TekEnqMouse (c | 0x80);
+	TekGINoff();
+    } else {
+	Bell ();
     }
-    return;
 }
 
-#else	/* MODEMENU */
-
-/*ARGSUSED*/
-ModeMenu(event) register XButtonEvent *event; { Bell(); }
-#endif	/* MODEMENU */
-
-GINbutton(event)
-XButtonEvent *event;
-{
-	register TScreen *screen = &term->screen;
-	register int i;
-
-	if(screen->TekGIN) {
-		i = "rml"[event->button - 1];
-		if(event->state & ShiftMask)
-			i = toupper(i);
-		TekEnqMouse(i | 0x80);	/* set high bit */
-		TekGINoff();
-	} else
-		Bell();
-}
-
-/*ARGSUSED*/
-Bogus(event)
-XButtonEvent *event;
-{
-	Bell();
-}
 
 /* ARGSUSED */
 void HandleSecure(w, event, params, param_count)
@@ -1602,5 +1350,5 @@ void HandleSecure(w, event, params, param_count)
     else if ((event->xany.type == ButtonPress) ||
 	     (event->xany.type == ButtonRelease))
       time = event->xbutton.time;
-    xdomenufunc(XMENU_GRABKBD, time);
+    DoSecureKeyboard (time);
 }

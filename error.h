@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: error.h,v 1.3 88/09/06 17:08:03 jim Exp $
+ *	$XConsortium: error.h,v 1.6 89/05/26 13:34:16 jim Exp $
  */
 
 
@@ -32,8 +32,8 @@
 /* main.c */
 #define	ERROR_KMALLOC	10	/* main: malloc() failed for keyboardtype */
 #define	ERROR_FIONBIO	11	/* main: ioctl() failed on FIONBIO */
-#define	ERROR_TSLOT	12	/* spawn: tslot() failed and getty */
-#define	ERROR_TSLOT2	13	/* spawn: tslot() failed and am_slave */
+
+
 #define	ERROR_OPDEVTTY	14	/* spawn: open() failed on /dev/tty */
 #define	ERROR_TIOCGETP	15	/* spawn: ioctl() failed on TIOCGETP */
 #define	ERROR_TIOCGETC	16	/* spawn: ioctl() failed on TIOCGETC */
@@ -48,13 +48,14 @@
 #define	ERROR_TIOCSETD	25	/* spawn: ioctl() failed on TIOCSETD */
 #define	ERROR_TIOCSLTC	26	/* spawn: ioctl() failed on TIOCSLTC */
 #define	ERROR_TIOCLSET	27	/* spawn: ioctl() failed on TIOCLSET */
-#define	ERROR_TSLOT3	28	/* spawn: tslot() failed  */
+
 #define	ERROR_FORK	29	/* spawn: fork() failed */
 #define	ERROR_EXEC	30	/* spawn: exec() failed */
 #define	ERROR_OPDEVTTY3	31	/* spawn: third open() failed on /dev/tty */
 #define	ERROR_PTYS	32	/* get_pty: not enough ptys */
 #define	ERROR_NOX	33	/* get_terminal: can't connect to server */
-#define	ERROR_NOX2	34	/* get_terminal: can't connect and getty */
+#define ERROR_PTY_EXEC	34	/* waiting for initial map */
+
 #define	ERROR_INIT	36	/* spawn: can't initialize window */
 #define	ERROR_NOCO	37	/* resize: no `co' in termcap */
 #define	ERROR_NOLI	38	/* resize: no `li' in termcap */
@@ -72,7 +73,7 @@
 #define	ERROR_TBACK	65	/* TekBackground: can't make background */
 /* button.c */
 #define	ERROR_BMALLOC2	71	/* SaltTextAway: malloc() failed */
-#define ERROR_BADMENU   72      /* ModeMenu: don't know what menu to use */
+
 /* misc.c */
 #define	ERROR_LOGEXEC	80	/* StartLog: exec() failed */
 #define	ERROR_XERROR	83	/* xerror: XError event */

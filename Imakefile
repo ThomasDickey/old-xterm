@@ -4,9 +4,8 @@
 /**/#                                                                         #
 /**/#                                                                         #
 /**/# Xterm assumes that bcopy can handle overlapping arguments.  If your     #
-/**/# bcopy (or memcpy) can't, write a routine called Bcopy that can and      #
-/**/# the -DBcopy argument from the DEFINES list given below.  If possible,   #
-/**/# try to avoid extra procedure calls as this routine is used a lot.       #
+/**/# bcopy (or memcpy) can't, write a routine called bcopy and link it in    #
+/**/# or add -Dbcopy=mybcopy to the DEFINES list below.                       #
 /**/#                                                                         #
 /**/###########################################################################
 
@@ -15,17 +14,27 @@
 #endif
 
 /*
- * The configuration parameter GettyProgramName may be found in the
- * appropriate .macros in the directory $(TOP)/util/imake.includes/.
+ * add -DWTMP and -DLASTLOG if you want them; make sure that bcopy can
+ * handle overlapping copies before using it.
  */
-
-#if defined(SunArchitecture) && SunOSPlatform && OSMajorVersion >= 4
-#define GettyProgram '-DGETTY_EXE="/usr/etc/getty"'
-#else
-#define GettyProgram /* as nothing */
+#ifdef SetTtyGroup			/* turn on in config/machine.cf */
+   TTYGROUPDEF = -DUSE_TTY_GROUP
 #endif
-/* add -DWTMP and -DLASTLOG if you want them */
-        DEFINES = -DMODEMENU -DUTMP -DBcopy=bcopy GettyProgram
+/*
+ *	[PUCC = Purdue University Computer Center]
+ *	If you use PUCC's ptyd, add "-DPUCC_PTYD" to the DEFINES
+ *	and dink the -DUTMP (also don't define WTMP or LASTLOG - since
+ *	ptyd does all that logging for you)  You will need to add
+ *	the right library load line (we use -lpucc) to the 
+ *	ComplexProgramTarget (right next to -ltermcap)
+ */
+#ifdef UsePUCCPtyd			/* turn on in config/site.def */
+    PUCCPTYDDEF = -DPUCC_PTYD		/* does not need to be setuid */
+         PTYLIB = -lpucc
+#endif
+
+   MAIN_DEFINES = -DUTMP $(TTYGROUPDEF) $(PUCCPTYDDEF)
+
           SRCS1 = button.c charproc.c cursor.c data.c input.c \
 		  main.c menu.c misc.c screen.c scrollbar.c tabs.c \
 		  TekPrsTbl.c Tekproc.c util.c VTPrsTbl.c
@@ -34,13 +43,30 @@
 		  VTPrsTbl.o TekPrsTbl.o data.o menu.o
           SRCS2 = resize.c
           OBJS2 = resize.o
+           SRCS = $(SRCS1) $(SRCS2)
+           OBJS = $(OBJS1) $(OBJS2)
        PROGRAMS = resize xterm
-   INSTALLFLAGS = $(INSTUIDFLAGS)
-       INCLUDES = -I$(TOOLKITSRC) -I$(TOP)
+       DEPLIBS1 = XawClientDepLibs
+       DEPLIBS2 = 
+       PROGRAMS = xterm resize
 
+#ifdef CrayArchitecture
+     TERMCAPLIB = -lcurses
+#else
+     TERMCAPLIB = -ltermcap
+#endif
 
-ComplexProgramTarget_1(xterm,$(XAWLIB) $(XMULIB) $(XTOOLLIB) $(XLIB),-ltermcap)
+AllTarget($(PROGRAMS))
 
-SingleProgramTarget(resize,$(OBJS2),,-lc -ltermcap)
+SpecialObjectRule(main.o, ,$(MAIN_DEFINES))
+
+NormalProgramTarget(xterm,$(OBJS1),$(DEPLIBS1),XawClientLibs,$(TERMCAPLIB) $(PTYLIB))
+InstallProgramWithFlags(xterm, $(BINDIR), $(INSTUIDFLAGS))
+
+NormalProgramTarget(resize,$(OBJS2),$(DEPLIBS2), ,$(TERMCAPLIB))
 InstallProgramWithFlags(resize, $(BINDIR), )
+
+InstallAppDefaults(XTerm)
+InstallManPage(xterm,$(MANDIR))
 InstallManPage(resize,$(MANDIR))
+DependTarget()

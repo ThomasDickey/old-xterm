@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: data.h,v 1.3 88/09/06 17:08:02 jim Exp $
+ *	$XConsortium: data.h,v 1.7 89/05/26 18:10:45 jim Exp $
  */
 
 
@@ -38,18 +38,16 @@ extern XPoint T_box3[];
 extern XPoint T_boxlarge[];
 extern XPoint T_boxsmall[];
 extern XPoint VTbox[];
-extern T_fontsize Tfontsize[];
-extern char *Tbptr;
-extern char *Tbuffer;
-extern char *Tpushb;
-extern char *Tpushback;
-extern char *bptr;
+extern Char *Tbptr;
+extern Char *Tbuffer;
+extern Char *Tpushb;
+extern Char *Tpushback;
+extern Char *bptr;
 extern char log_def_name[];
 extern char *ptydev;
 extern char *ttydev;
 extern char *xterm_name;
-extern char buffer[];
-extern int L_flag;
+extern Char buffer[];
 extern int Select_mask;
 extern int T_lastx;
 extern int T_lasty;
@@ -76,7 +74,6 @@ extern GC visualBellGC;
 
 extern int VTgcFontMask;
 extern int TEKgcFontMask;
-extern int MenugcFontMask;
 
 extern XtermWidget term;
 extern TekWidget tekWidget;

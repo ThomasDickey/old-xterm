@@ -1,0 +1,73 @@
+XTerm*SimpleMenu*BackingStore: NotUseful
+XTerm*SimpleMenu*menuLabel.font: -adobe-helvetica-bold-r-normal--*-120-*-*-*-*-iso*-*
+XTerm*SimpleMenu*menuLabel.vertSpace: 	100
+XTerm*SimpleMenu*HorizontalMargins: 16
+XTerm*SimpleMenu*Sme.height:	16
+
+XTerm*SimpleMenu*Cursor: left_ptr
+XTerm*mainMenu.Label:  Main Options
+XTerm*mainMenu*securekbd*Label:  Secure Keyboard
+XTerm*mainMenu*allowsends*Label:  Allow SendEvents
+XTerm*mainMenu*logging*Label:  Log to File
+XTerm*mainMenu*redraw*Label:  Redraw Window
+XTerm*mainMenu*suspend*Label:  Send STOP Signal
+XTerm*mainMenu*continue*Label:  Send CONT Signal
+XTerm*mainMenu*interrupt*Label:  Send INT Signal
+XTerm*mainMenu*hangup*Label:  Send HUP Signal
+XTerm*mainMenu*terminate*Label:  Send TERM Signal
+XTerm*mainMenu*kill*Label:  Send KILL Signal
+XTerm*mainMenu*quit*Label:  Quit
+
+XTerm*vtMenu.Label:  VT Options
+XTerm*vtMenu*scrollbar*Label:  Enable Scrollbar
+XTerm*vtMenu*jumpscroll*Label:  Enable Jump Scroll
+XTerm*vtMenu*reversevideo*Label:  Enable Reverse Video
+XTerm*vtMenu*autowrap*Label:  Enable Auto Wraparound
+XTerm*vtMenu*reversewrap*Label:  Enable Reverse Wraparound
+XTerm*vtMenu*autolinefeed*Label:  Enable Auto Linefeed
+XTerm*vtMenu*appcursor*Label:  Enable Application Cursor Keys
+XTerm*vtMenu*appkeypad*Label:  Enable Application Keypad
+XTerm*vtMenu*scrollkey*Label:  Scroll to Bottom on Key Press
+XTerm*vtMenu*scrollttyoutput*Label:  Scroll to Bottom on Tty Output
+XTerm*vtMenu*allow132*Label: Allow 80/132 Column Switching
+XTerm*vtMenu*cursesemul*Label:  Enable Curses Emulation
+XTerm*vtMenu*visualbell*Label:  Enable Visual Bell
+XTerm*vtMenu*marginbell*Label:  Enable Margin Bell
+XTerm*vtMenu*altscreen*Label:  Show Alternate Screen
+XTerm*vtMenu*softreset*Label:  Do Soft Reset
+XTerm*vtMenu*hardreset*Label:  Do Full Reset
+XTerm*vtMenu*tekshow*Label:  Show Tek Window
+XTerm*vtMenu*tekmode*Label:  Switch to Tek Mode
+XTerm*vtMenu*vthide*Label:  Hide VT Window
+
+XTerm*fontMenu.Label:  VT Fonts
+XTerm*fontMenu*fontdefault*Label:	Default
+XTerm*fontMenu*font1*Label:	Tiny
+XTerm*VT100*font1:		nil2
+XTerm*fontMenu*font2*Label:	Small
+XTerm*VT100*font2:		6x10
+XTerm*fontMenu*font3*Label:	Medium
+XTerm*VT100*font3:		8x13
+XTerm*fontMenu*font4*Label:	Large
+XTerm*VT100*font4:		9x15
+XTerm*fontMenu*fontescape*Label:	Escape Sequence
+XTerm*fontMenu*fontsel*Label:		Selection
+!fontescape and fontsel overridden by application
+
+XTerm*tekMenu.Label:  Tek Options
+XTerm*tekMenu*tektextlarge*Label:  Large Characters
+XTerm*tekMenu*tektext2*Label:  #2 Size Characters
+XTerm*tekMenu*tektext3*Label:  #3 Size Characters
+XTerm*tekMenu*tektextsmall*Label:  Small Characters
+XTerm*tekMenu*tekpage*Label:  PAGE
+XTerm*tekMenu*tekreset*Label:  RESET
+XTerm*tekMenu*tekcopy*Label:  COPY
+XTerm*tekMenu*vtshow*Label:  Show VT Window
+XTerm*tekMenu*vtmode*Label:  Switch to VT Mode
+XTerm*tekMenu*tekhide*Label:  Hide Tek Window
+
+XTerm*tek4014*fontLarge: 9x15
+XTerm*tek4014*font2: 8x13
+XTerm*tek4014*font3: 6x13
+XTerm*tek4014*fontSmall: 6x10
+

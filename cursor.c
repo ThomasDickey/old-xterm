@@ -1,9 +1,9 @@
 /*
- *	$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $
+ *	$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $
  */
 
 #ifndef lint
-static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $";
+static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $";
 #endif	/* lint */
 
 #include <X11/copyright.h>
@@ -35,7 +35,7 @@ static char *rcsid_cursor_c = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 sw
 
 
 #ifndef lint
-static char rcs_id[] = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp $";
+static char rcs_id[] = "$XConsortium: cursor.c,v 1.7 89/05/26 11:38:54 jim Exp $";
 #endif	/* lint */
 
 #include <X11/Xlib.h>
@@ -43,7 +43,7 @@ static char rcs_id[] = "$XConsortium: cursor.c,v 1.5 88/10/07 14:16:09 swick Exp
 #include <sys/ioctl.h>
 #include "ptyx.h"
 
-extern void Bcopy();
+extern void bcopy();
 
 static void _CheckSelection(screen)
 register TScreen *screen;
@@ -238,7 +238,7 @@ register SavedCursor *sc;
 	sc->flags = term->flags;
 	sc->curgl = screen->curgl;
 	sc->curgr = screen->curgr;
-	Bcopy(screen->gsets, sc->gsets, sizeof(screen->gsets));
+	bcopy(screen->gsets, sc->gsets, sizeof(screen->gsets));
 }
 
 /*
@@ -250,10 +250,11 @@ register SavedCursor *sc;
 {
 	register TScreen *screen = &term->screen;
 
-	Bcopy(sc->gsets, screen->gsets, sizeof(screen->gsets));
+	bcopy(sc->gsets, screen->gsets, sizeof(screen->gsets));
 	screen->curgl = sc->curgl;
 	screen->curgr = sc->curgr;
 	term->flags &= ~(BOLD|INVERSE|UNDERLINE|ORIGIN);
 	term->flags |= sc->flags & (BOLD|INVERSE|UNDERLINE|ORIGIN);
-	CursorSet(screen, sc->row - screen->top_marg, sc->col, term->flags);
+	CursorSet (screen, (term->flags & ORIGIN) ? sc->row - screen->top_marg
+			   : sc->row, sc->col, term->flags);
 }
