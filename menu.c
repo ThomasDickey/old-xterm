@@ -1,4 +1,4 @@
-/* $XConsortium: menu.c /main/64 1996/01/14 16:52:55 kaleb $ */
+/* $XConsortium: menu.c /main/66 1996/12/01 23:46:59 swick $ */
 /*
 
 Copyright (c) 1989  X Consortium
@@ -54,6 +54,9 @@ static void do_securekbd(), do_allowsends(), do_visualbell(),
     do_reversevideo(), do_autowrap(), do_reversewrap(), do_autolinefeed(),
     do_appcursor(), do_appkeypad(), do_scrollkey(), do_scrollttyoutput(),
     do_allow132(), do_cursesemul(), do_marginbell(), do_tekshow(), 
+#ifndef NO_ACTIVE_ICON
+    do_activeicon(),
+#endif /* NO_ACTIVE_ICON */
     do_altscreen(), do_softreset(), do_hardreset(), do_clearsavedlines(),
     do_tekmode(), do_vthide(), 
     do_tektextlarge(), do_tektext2(), do_tektext3(), do_tektextsmall(), 
@@ -97,14 +100,17 @@ MenuEntry vtMenuEntries[] = {
     { "visualbell",	do_visualbell, NULL },		/* 12 */
     { "marginbell",	do_marginbell, NULL },		/* 13 */
     { "altscreen",	do_altscreen, NULL },		/* 14 */
-    { "line1",		NULL, NULL },			/* 15 */
-    { "softreset",	do_softreset, NULL },		/* 16 */
-    { "hardreset",	do_hardreset, NULL },		/* 17 */
-    { "clearsavedlines",do_clearsavedlines, NULL },	/* 18 */
-    { "line2",		NULL, NULL },			/* 19 */
-    { "tekshow",	do_tekshow, NULL },		/* 20 */
-    { "tekmode",	do_tekmode, NULL },		/* 21 */
-    { "vthide",		do_vthide, NULL }};		/* 22 */
+#ifndef NO_ACTIVE_ICON
+    { "activeicon",	do_activeicon, NULL },		/* 15 */
+#endif /* NO_ACTIVE_ICON */
+    { "line1",		NULL, NULL },			/* 16 */
+    { "softreset",	do_softreset, NULL },		/* 17 */
+    { "hardreset",	do_hardreset, NULL },		/* 18 */
+    { "clearsavedlines",do_clearsavedlines, NULL },	/* 19 */
+    { "line2",		NULL, NULL },			/* 20 */
+    { "tekshow",	do_tekshow, NULL },		/* 21 */
+    { "tekmode",	do_tekmode, NULL },		/* 22 */
+    { "vthide",		do_vthide, NULL }};		/* 23 */
 
 MenuEntry fontMenuEntries[] = {
     { "fontdefault",	do_vtfont, NULL },		/*  0 */
@@ -208,6 +214,15 @@ static Bool domenu (w, event, params, param_count)
 	    update_cursesemul();
 	    update_visualbell();
 	    update_marginbell();
+#ifndef NO_ACTIVE_ICON
+	    if (!screen->fnt_icon || !screen->iconVwin.window) {
+		set_sensitivity (screen->vtmenu,
+				 vtMenuEntries[vtMenu_activeicon].widget,
+				 FALSE);
+	    }
+	    else
+		update_activeicon();
+#endif /* NO_ACTIVE_ICON */
 	}
 	break;
 
@@ -479,7 +494,7 @@ static void do_scrollbar (gw, closure, data)
 {
     register TScreen *screen = &term->screen;
 
-    if (screen->scrollbar) {
+    if (screen->fullVwin.scrollbar) {
 	ScrollBarOff (screen);
     } else {
 	ScrollBarOn (term, FALSE, FALSE);
@@ -654,6 +669,24 @@ static void do_altscreen (gw, closure, data)
     /* do nothing for now; eventually, will want to flip screen */
 }
 
+#ifndef NO_ACTIVE_ICON
+/* ARGSUSED */
+static void do_activeicon (gw, closure, data)
+    Widget gw;
+    caddr_t closure, data;
+{
+    TScreen *screen = &term->screen;
+
+    if (screen->iconVwin.window) {
+	Widget shell = term->core.parent;
+	term->misc.active_icon = !term->misc.active_icon;
+	XtVaSetValues(shell, XtNiconWindow,
+		      term->misc.active_icon ? screen->iconVwin.window : None,
+		      NULL);
+	update_activeicon();
+    }
+}
+#endif /* NO_ACTIVE_ICON */
 
 static void do_softreset (gw, closure, data)
     Widget gw;
@@ -981,7 +1014,7 @@ void HandleScrollbar(w, event, params, param_count)
     String *params;
     Cardinal *param_count;
 {
-    handle_toggle (do_scrollbar, (int) term->screen.scrollbar,
+    handle_toggle (do_scrollbar, (int) term->screen.fullVwin.scrollbar,
 		   params, *param_count, w, NULL, NULL);
 }
 

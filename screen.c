@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: screen.c,v 1.33 94/04/02 17:34:36 gildea Exp $
+ *	$XConsortium: screen.c /main/35 1996/12/01 23:47:05 swick $
  */
 
 /*
@@ -322,7 +322,7 @@ int toprow, leftcol, nrows, ncols;
 Boolean force;			/* ... leading/trailing spaces */
 {
 	int y = toprow * FontHeight(screen) + screen->border +
-		screen->fnt_norm->ascent;
+		FontAscent(screen);
 	register int row;
 	register int topline = screen->topline;
 	int maxrow = toprow + nrows - 1;
@@ -393,11 +393,11 @@ Boolean force;			/* ... leading/trailing spaces */
 
 	   if ( (!hilite && (flags & INVERSE) != 0) ||
 	        (hilite && (flags & INVERSE) == 0) )
-	       if (flags & BOLD) gc = screen->reverseboldGC;
-	       else gc = screen->reverseGC;
+	       if (flags & BOLD) gc = ReverseBoldGC(screen);
+	       else gc = ReverseGC(screen);
 	   else 
-	       if (flags & BOLD) gc = screen->normalboldGC;
-	       else gc = screen->normalGC;
+	       if (flags & BOLD) gc = NormalBoldGC(screen);
+	       else gc = NormalGC(screen);
 
 	   x = CursorX(screen, col);
 	   lastind = col;
@@ -421,11 +421,11 @@ Boolean force;			/* ... leading/trailing spaces */
 
 	   	   if ((!hilite && (flags & INVERSE) != 0) ||
 		       (hilite && (flags & INVERSE) == 0) )
-	       		if (flags & BOLD) gc = screen->reverseboldGC;
-	       		else gc = screen->reverseGC;
+		       if (flags & BOLD) gc = ReverseBoldGC(screen);
+		       else gc = ReverseGC(screen);
 	  	    else 
-	      		 if (flags & BOLD) gc = screen->normalboldGC;
-	      		 else gc = screen->normalGC;
+			if (flags & BOLD) gc = NormalBoldGC(screen);
+			else gc = NormalGC(screen);
 		}
 
 		if(chars[col] == 0)
@@ -435,11 +435,11 @@ Boolean force;			/* ... leading/trailing spaces */
 
 	   if ( (!hilite && (flags & INVERSE) != 0) ||
 	        (hilite && (flags & INVERSE) == 0) )
-	       if (flags & BOLD) gc = screen->reverseboldGC;
-	       else gc = screen->reverseGC;
+	       if (flags & BOLD) gc = ReverseBoldGC(screen);
+	       else gc = ReverseGC(screen);
 	   else 
-	       if (flags & BOLD) gc = screen->normalboldGC;
-	       else gc = screen->normalGC;
+	       if (flags & BOLD) gc = NormalBoldGC(screen);
+	       else gc = NormalGC(screen);
 	   XDrawImageString(screen->display, TextWindow(screen), gc, 
 	         x, y, (char *) &chars[lastind], n = col - lastind);
 	   if((flags & BOLD) && screen->enbolden)
@@ -515,7 +515,7 @@ ScreenResize (screen, width, height, flags)
 	/* small mouse movements.					*/
 	rows = (height + FontHeight(screen) / 2 - border) /
 	 FontHeight(screen);
-	cols = (width + FontWidth(screen) / 2 - border - screen->scrollbar) /
+	cols = (width + FontWidth(screen) / 2 - border - Scrollbar(screen)) /
 	 FontWidth(screen);
 	if (rows < 1) rows = 1;
 	if (cols < 1) cols = 1;
@@ -572,7 +572,7 @@ ScreenResize (screen, width, height, flags)
 			screen->cur_col = screen->max_col;
 	
 		screen->fullVwin.height = height - border;
-		screen->fullVwin.width = width - border - screen->scrollbar;
+		screen->fullVwin.width = width - border - screen->fullVwin.scrollbar;
 
 	} else if(FullHeight(screen) == height && FullWidth(screen) == width)
 	 	return(0);	/* nothing has changed at all */
@@ -583,6 +583,27 @@ ScreenResize (screen, width, height, flags)
 	screen->fullVwin.fullheight = height;
 	screen->fullVwin.fullwidth = width;
 	ResizeSelection (screen, rows, cols);
+
+#ifndef NO_ACTIVE_ICON
+	if (screen->iconVwin.window) {
+	    XWindowChanges changes;
+	    screen->iconVwin.width =
+		(screen->max_col + 1) * screen->iconVwin.f_width;
+
+	    screen->iconVwin.height =
+		(screen->max_row + 1) * screen->iconVwin.f_height;
+
+	    changes.width = screen->iconVwin.fullwidth =
+		screen->iconVwin.width + 2 * screen->border;
+		
+	    changes.height = screen->iconVwin.fullheight =
+		screen->iconVwin.height + 2 * screen->border;
+
+	    XConfigureWindow(XtDisplay(term), screen->iconVwin.window,
+			     CWWidth|CWHeight,&changes);
+	}
+#endif /* NO_ACTIVE_ICON */
+
 #if defined(sun) && !defined(SVR4)
 #ifdef TIOCSSIZE
 	/* Set tty's idea of window size */

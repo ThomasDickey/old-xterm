@@ -1,5 +1,5 @@
 /*
- * $XConsortium: charproc.c /main/191 1996/01/23 11:34:26 kaleb $
+ * $XConsortium: charproc.c /main/196 1996/12/03 16:52:46 swick $
  */
 
 /*
@@ -73,6 +73,9 @@ in this Software without prior written authorization from the X Consortium.
 #include "error.h"
 #include "menu.h"
 #include "main.h"
+#ifndef NO_ACTIVE_ICON
+#include <X11/Shell.h>
+#endif /* NO_ACTIVE_ICON */
 
 /*
  * Check for both EAGAIN and EWOULDBLOCK, because some supposedly POSIX
@@ -130,7 +133,9 @@ static void bitset(), bitclr();
 #define XtNcutToBeginningOfLine "cutToBeginningOfLine"
 #define XtNeightBitInput "eightBitInput"
 #define XtNeightBitOutput "eightBitOutput"
+#ifdef NO_ACTIVE_ICON
 #define XtNgeometry "geometry"
+#endif /* NO_ACTIVE_ICON */
 #define XtNtekGeometry "tekGeometry"
 #define XtNinternalBorder "internalBorder"
 #define XtNjumpScroll "jumpScroll"
@@ -177,7 +182,9 @@ static void bitset(), bitclr();
 #define XtCCutToBeginningOfLine "CutToBeginningOfLine"
 #define XtCEightBitInput "EightBitInput"
 #define XtCEightBitOutput "EightBitOutput"
+#ifdef NO_ACTIVE_ICON
 #define XtCGeometry "Geometry"
+#endif /* NO_ACTIVE_ICON */
 #define XtCJumpScroll "JumpScroll"
 #ifdef ALLOWLOGGING
 #define XtCLogfile "Logfile"
@@ -538,6 +545,20 @@ static XtResource resources[] = {
 {XtNopenIm, XtCOpenIm, XtRBoolean, sizeof(Boolean),
 	XtOffsetOf(XtermWidgetRec, misc.open_im),
 	XtRImmediate, (XtPointer)TRUE},
+#ifndef NO_ACTIVE_ICON
+{"activeIcon", "ActiveIcon", XtRBoolean, sizeof(Boolean),
+	XtOffsetOf(XtermWidgetRec, misc.active_icon),
+	XtRString, "false"},
+{"iconFont", "IconFont", XtRFontStruct, sizeof(XFontStruct),
+	XtOffsetOf(XtermWidgetRec, screen.fnt_icon),
+	XtRString, (XtPointer)XtExtdefaultfont},
+{"iconBorderWidth", XtCBorderWidth, XtRInt, sizeof(int),
+	XtOffsetOf(XtermWidgetRec, misc.icon_border_width),
+	XtRString, "2"},
+{"iconBorderColor", XtCBorderColor, XtRPixel, sizeof(Pixel),
+	XtOffsetOf(XtermWidgetRec, misc.icon_border_pixel),
+	XtRString, XtExtdefaultbackground},
+#endif /* NO_ACTIVE_ICON */
 };
 
 static void VTClassInit();
@@ -1526,12 +1547,12 @@ WriteText(screen, str, len, flags)
 
 	if (fgs & BOLD)
 		if (fgs & INVERSE)
-			currentGC = screen->reverseboldGC;
-		else	currentGC = screen->normalboldGC;
+			currentGC = ReverseBoldGC(screen);
+		else	currentGC = NormalBoldGC(screen);
 	else  /* not bold */
 		if (fgs & INVERSE)
-			currentGC = screen->reverseGC;
-		else	currentGC = screen->normalGC;
+			currentGC = ReverseGC(screen);
+		else	currentGC = NormalGC(screen);
 
 	if (fgs & INSERT)
 		InsertChar(screen, len);
@@ -1539,12 +1560,13 @@ WriteText(screen, str, len, flags)
 		if(screen->scroll_amt)
 			FlushScroll(screen);
 	cx = CursorX(screen, screen->cur_col);
-	cy = CursorY(screen, screen->cur_row)+screen->fnt_norm->ascent;
+	cy = CursorY(screen, screen->cur_row)+FontAscent(screen);
  	XDrawImageString(screen->display, TextWindow(screen), currentGC,
 			cx, cy, str, len);
 
 	if((fgs & BOLD) && screen->enbolden) 
-		if (currentGC == screen->normalGC || screen->reverseGC)
+		if (currentGC == NormalGC(screen) ||
+		    currentGC == ReverseGC(screen))
 			XDrawString(screen->display, TextWindow(screen),
 			      	currentGC,cx + 1, cy, str, len);
 
@@ -1626,20 +1648,32 @@ dpmodes(termw, func)
 
 					status = XtMakeResizeRequest (
 					    (Widget) termw, 
-					    (Dimension) FontWidth(screen) * j
+					    (Dimension)
+					      screen->fullVwin.f_width * j
 					        + 2*screen->border
-						+ screen->scrollbar,
-					    (Dimension) FontHeight(screen)
+						+ screen->fullVwin.scrollbar,
+					    (Dimension)
+					      screen->fullVwin.f_height
 						* (screen->max_row + 1)
 						+ 2 * screen->border,
 					    &replyWidth, &replyHeight);
 
 					if (status == XtGeometryYes ||
 					    status == XtGeometryDone) {
+#ifndef NO_ACTIVE_ICON
+					    /* ScreenResize assumes fullVwin */
+					    struct _vtwin *saveWin =
+						screen->whichVwin;
+					    screen->whichVwin =
+						&screen->fullVwin;
+#endif /* NO_ACTIVE_ICON */
 					    ScreenResize (&termw->screen,
 							  replyWidth,
 							  replyHeight,
 							  &termw->flags);
+#ifndef NO_ACTIVE_ICON
+					    screen->whichVwin = saveWin;
+#endif /* NO_ACTIVE_ICON */
 					}
 				}
 				(*func)(&termw->flags, IN132COLUMNS);
@@ -1845,20 +1879,32 @@ restoremodes(termw)
 					XtGeometryResult status;
 					status = XtMakeResizeRequest (
 					    (Widget) termw,
-					    (Dimension) FontWidth(screen) * j 
+					    (Dimension)
+					      screen->fullVwin.f_width * j 
 						+ 2*screen->border
-						+ screen->scrollbar,
-					    (Dimension) FontHeight(screen)
+						+ screen->fullVwin.scrollbar,
+					    (Dimension)
+					      screen->fullVwin.f_height
 						* (screen->max_row + 1)
 						+ 2*screen->border,
 					    &replyWidth, &replyHeight);
 
 					if (status == XtGeometryYes ||
 					    status == XtGeometryDone) {
+#ifndef NO_ACTIVE_ICON
+					    /* ScreenResize assumes fullVwin */
+					    struct _vtwin *saveWin =
+						screen->whichVwin;
+					    screen->whichVwin =
+						&screen->fullVwin;
+#endif /* NO_ACTIVE_ICON */
 					    ScreenResize (&termw->screen,
 							  replyWidth,
 							  replyHeight,
 							  &termw->flags);
+#ifndef NO_ACTIVE_ICON
+					    screen->whichVwin = saveWin;
+#endif /* NO_ACTIVE_ICON */
 					}
 				}
 				termw->flags &= ~IN132COLUMNS;
@@ -2086,7 +2132,7 @@ SwitchBufs(screen)
 			XClearArea(
 			    screen->display,
 			    TextWindow(screen),
-			    (int) screen->border + screen->scrollbar,
+			    (int) screen->border + Scrollbar(screen),
 			    (int) top * FontHeight(screen) + screen->border,
 			    (unsigned) Width(screen),
 			    (unsigned) (screen->max_row - top + 1)
@@ -2301,6 +2347,9 @@ static void VTInitialize (wrequest, wnew, args, num_args)
    new->screen.input_eight_bits = request->screen.input_eight_bits;
    new->screen.output_eight_bits = request->screen.output_eight_bits;
    new->screen.allowSendEvents = request->screen.allowSendEvents;
+#ifndef NO_ACTIVE_ICON
+   new->screen.fnt_icon = request->screen.fnt_icon;
+#endif /* NO_ACTIVE_ICON */
    new->misc.titeInhibit = request->misc.titeInhibit;
    for (i = fontMenu_font1; i <= fontMenu_lastBuiltin; i++) {
        new->screen.menu_font_names[i] = request->screen.menu_font_names[i];
@@ -2356,6 +2405,11 @@ static void VTInitialize (wrequest, wnew, args, num_args)
 		       (String *) &(new->misc.resizeGravity), &nparams);
        new->misc.resizeGravity = SouthWestGravity;
    }
+
+#ifndef NO_ACTIVE_ICON
+   new->screen.whichVwin = &new->screen.fullVwin;
+   new->screen.whichTwin = &new->screen.fullTwin;
+#endif /* NO_ACTIVE_ICON */
 
    return;
 }
@@ -2496,6 +2550,73 @@ static void VTRealize (w, valuemask, values)
 		InputOutput, CopyFromParent,	
 		*valuemask|CWBitGravity, values);
 
+#ifndef NO_ACTIVE_ICON
+	if (term->misc.active_icon && screen->fnt_icon) {
+	    int iconX=0, iconY=0;
+	    Widget shell = term->core.parent;
+	    unsigned long mask;
+	    XGCValues xgcv;
+
+	    XtVaGetValues(shell, XtNiconX, &iconX, XtNiconY, &iconY, NULL);
+	    screen->iconVwin.f_width = screen->fnt_icon->max_bounds.width;
+	    screen->iconVwin.f_height = (screen->fnt_icon->ascent +
+					 screen->fnt_icon->descent);
+
+	    screen->iconVwin.width =
+		(screen->max_col + 1) * screen->iconVwin.f_width;
+	    screen->iconVwin.fullwidth = screen->iconVwin.width +
+		2 * screen->border; 
+
+	    screen->iconVwin.height =
+		(screen->max_row + 1) * screen->iconVwin.f_height;
+	    screen->iconVwin.fullheight = screen->iconVwin.height +
+		2 * screen->border;
+
+	    /* since only one client is permitted to select for Button
+	     * events, we have to let the window manager get 'em...
+	     */
+	    values->event_mask &= ~(ButtonPressMask|ButtonReleaseMask);
+	    values->border_pixel = term->misc.icon_border_pixel;
+
+	    screen->iconVwin.window =
+		XCreateWindow(XtDisplay(term),
+			      RootWindowOfScreen(XtScreen(shell)),
+			      iconX, iconY,
+			      screen->iconVwin.fullwidth,
+			      screen->iconVwin.fullheight,
+			      term->misc.icon_border_width,
+			      (int) term->core.depth,
+			      InputOutput, CopyFromParent,	
+			      *valuemask|CWBitGravity|CWBorderPixel,
+			      values);
+	    XtVaSetValues(shell, XtNiconWindow, screen->iconVwin.window, NULL);
+	    XtRegisterDrawable(XtDisplay(term), screen->iconVwin.window, w);
+
+	    mask = (GCFont | GCForeground | GCBackground |
+		    GCGraphicsExposures | GCFunction);
+
+	    xgcv.font = screen->fnt_icon->fid;
+	    xgcv.foreground = screen->foreground;
+	    xgcv.background = term->core.background_pixel;
+	    xgcv.graphics_exposures = TRUE;	/* default */
+	    xgcv.function = GXcopy;
+
+	    screen->iconVwin.normalGC =
+		screen->iconVwin.normalboldGC =
+		    XtGetGC(shell, mask, &xgcv);
+
+	    xgcv.foreground = term->core.background_pixel;
+	    xgcv.background = screen->foreground;
+
+	    screen->iconVwin.reverseGC =
+		screen->iconVwin.reverseboldGC =
+		    XtGetGC(shell, mask, &xgcv);
+	}
+	else {
+	    term->misc.active_icon = False;
+	}
+#endif /* NO_ACTIVE_ICON */
+
 	VTInitI18N();
 
 	set_cursor_gcs (screen);
@@ -2534,7 +2655,7 @@ static void VTRealize (w, valuemask, values)
 	screen->savedlines = 0;
 
 	if (term->misc.scrollbar) {
-		screen->scrollbar = 0;
+		screen->fullVwin.scrollbar = 0;
 		ScrollBarOn (term, FALSE, TRUE);
 	}
 	CursorSave (term, &screen->sc);
@@ -2582,11 +2703,11 @@ static void VTInitI18N()
 	}
     }
 
-    if (xim == NULL && (p = XSetLocaleModifiers("")) != NULL && *p)
+    if (xim == NULL && (p = XSetLocaleModifiers("")) != NULL)
 	xim = XOpenIM(XtDisplay(term), NULL, NULL, NULL);
     
     if (!xim) {
-	fprintf(stderr, "Failed to open input method");
+	fprintf(stderr, "Failed to open input method\n");
 	return;
     }
 
@@ -2732,6 +2853,14 @@ ShowCursor()
 
 	if (screen->cur_row - screen->topline > screen->max_row)
 		return;
+
+#ifndef NO_ACTIVE_ICON
+	if (IsIcon(screen)) {
+	    screen->cursor_state = ON;
+	    return;
+	}
+#endif /* NO_ACTIVE_ICON */
+
 	c = screen->buf[y = 2 * (screen->cursor_row = screen->cur_row)]
 	 [x = screen->cursor_col = screen->cur_col];
 	flags = screen->buf[y + 1][x];
@@ -2756,9 +2885,9 @@ ShowCursor()
 			currentGC = screen->cursorGC;
 		    } else {
 			if (flags & BOLD) {
-				currentGC = screen->normalboldGC;
+				currentGC = NormalBoldGC(screen);
 			} else {
-				currentGC = screen->normalGC;
+				currentGC = NormalGC(screen);
 			}
 		    }
 		} else { /* normal video */
@@ -2766,9 +2895,9 @@ ShowCursor()
 			currentGC = screen->reversecursorGC;
 		    } else {
 			if (flags & BOLD) {
-				currentGC = screen->reverseboldGC;
+				currentGC = ReverseBoldGC(screen);
 			} else {
-				currentGC = screen->reverseGC;
+				currentGC = ReverseGC(screen);
 			}
 		    }
 		}
@@ -2776,9 +2905,9 @@ ShowCursor()
 		if (( (flags & INVERSE) && !in_selection) ||
 		    (!(flags & INVERSE) &&  in_selection)) {
 		    /* text is reverse video */
-			currentGC = screen->reverseGC;
+			currentGC = ReverseGC(screen);
 		} else { /* normal video */
-			currentGC = screen->normalGC;
+			currentGC = NormalGC(screen);
 		}
 	    
 	}
@@ -2819,6 +2948,14 @@ HideCursor()
 
 	if(screen->cursor_row - screen->topline > screen->max_row)
 		return;
+
+#ifndef NO_ACTIVE_ICON
+	if (IsIcon(screen)) {
+	    screen->cursor_state = OFF;
+	    return;
+	}
+#endif /* NO_ACTIVE_ICON */
+
 	c = screen->buf[y = 2 * screen->cursor_row][x = screen->cursor_col];
 	flags = screen->buf[y + 1][x];
 
@@ -2835,15 +2972,15 @@ HideCursor()
 	if (( (flags & INVERSE) && !in_selection) ||
 	    (!(flags & INVERSE) &&  in_selection)) {
 		if(flags & BOLD) {
-			currentGC = screen->reverseboldGC;
+			currentGC = ReverseBoldGC(screen);
 		} else {
-			currentGC = screen->reverseGC;
+			currentGC = ReverseGC(screen);
 		}
 	} else {
 		if(flags & BOLD) {
-			currentGC = screen->normalboldGC;
+			currentGC = NormalBoldGC(screen);
 		} else {
-			currentGC = screen->normalGC;
+			currentGC = NormalGC(screen);
 		}
 	}
 
@@ -2903,7 +3040,7 @@ VTReset(full)
 			XtMakeResizeRequest(
 			    (Widget) term,
 			    (Dimension) 80*FontWidth(screen)
-				+ 2 * screen->border + screen->scrollbar,
+				+ 2 * screen->border + Scrollbar(screen),
 			    (Dimension) FontHeight(screen)
 			        * (screen->max_row + 1) + 2 * screen->border,
 			    &junk, &junk);
@@ -3306,16 +3443,16 @@ int LoadNewFont (screen, nfontname, bfontname, doresize, fontnum)
 	if (!new_reverseboldGC) goto bad;
     }
 
-    if (screen->normalGC != screen->normalboldGC)
-	XtReleaseGC ((Widget) term, screen->normalboldGC);
-    XtReleaseGC ((Widget) term, screen->normalGC);
-    if (screen->reverseGC != screen->reverseboldGC)
-	XtReleaseGC ((Widget) term, screen->reverseboldGC);
-    XtReleaseGC ((Widget) term, screen->reverseGC);
-    screen->normalGC = new_normalGC;
-    screen->normalboldGC = new_normalboldGC;
-    screen->reverseGC = new_reverseGC;
-    screen->reverseboldGC = new_reverseboldGC;
+    if (screen->fullVwin.normalGC != screen->fullVwin.normalboldGC)
+	XtReleaseGC ((Widget) term, screen->fullVwin.normalboldGC);
+    XtReleaseGC ((Widget) term, screen->fullVwin.normalGC);
+    if (screen->fullVwin.reverseGC != screen->fullVwin.reverseboldGC)
+	XtReleaseGC ((Widget) term, screen->fullVwin.reverseboldGC);
+    XtReleaseGC ((Widget) term, screen->fullVwin.reverseGC);
+    screen->fullVwin.normalGC = new_normalGC;
+    screen->fullVwin.normalboldGC = new_normalboldGC;
+    screen->fullVwin.reverseGC = new_reverseGC;
+    screen->fullVwin.reverseboldGC = new_reverseboldGC;
     screen->fnt_norm = nfs;
     screen->fnt_bold = bfs;
     screen->enbolden = (nfs == bfs);
@@ -3339,7 +3476,7 @@ int LoadNewFont (screen, nfontname, bfontname, doresize, fontnum)
   bad:
     if (tmpname) free (tmpname);
     if (new_normalGC)
-      XtReleaseGC ((Widget) term, screen->normalGC);
+      XtReleaseGC ((Widget) term, screen->fullVwin.normalGC);
     if (new_normalGC && new_normalGC != new_normalboldGC)
       XtReleaseGC ((Widget) term, new_normalboldGC);
     if (new_reverseGC)
@@ -3381,7 +3518,7 @@ update_font_info (screen, doresize)
 	DoResizeScreen (term);		/* set to the new natural size */
 	if (screen->scrollWidget)
 	  ResizeScrollBar (screen->scrollWidget, -1, -1,
-			   Height(screen) + screen->border * 2);
+			   screen->fullVwin.height + screen->border * 2);
 	Redraw ();
     }
     set_vt_box (screen);

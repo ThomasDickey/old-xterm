@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: ptyx.h /main/66 1995/12/09 08:58:41 kaleb $
+ *	$XConsortium: ptyx.h /main/67 1996/11/29 10:34:19 swick $
  */
 
 /*
@@ -233,10 +233,6 @@ typedef struct {
 	long		pid;		/* pid of process on far side   */
 	int		uid;		/* user id of actual person	*/
 	int		gid;		/* group id of actual person	*/
-	GC		normalGC;	/* normal painting		*/
-	GC		reverseGC;	/* reverse painting		*/
-	GC		normalboldGC;	/* normal painting, bold font	*/
-	GC		reverseboldGC;	/* reverse painting, bold font	*/
 	GC		cursorGC;	/* normal cursor painting	*/
 	GC		reversecursorGC;/* reverse cursor painting	*/
 	GC		cursoroutlineGC;/* for painting lines around    */
@@ -261,7 +257,7 @@ typedef struct {
 	int		inhibit;	/* flags for inhibiting changes	*/
 
 /* VT window parameters */
-	struct {
+	struct _vtwin {
 		Window	window;		/* X window id			*/
 		int	width;		/* width of columns		*/
 		int	height;		/* height of rows		*/
@@ -269,12 +265,25 @@ typedef struct {
 		int	fullheight;	/* full height of window	*/
 		int	f_width;	/* width of fonts in pixels	*/
 		int	f_height;	/* height of fonts in pixels	*/
+		int	scrollbar;	/* if > 0, width of scrollbar, and
+						scrollbar is showing	*/
+		GC	normalGC;	/* normal painting		*/
+		GC	reverseGC;	/* reverse painting		*/
+		GC	normalboldGC;	/* normal painting, bold font	*/
+		GC	reverseboldGC;	/* reverse painting, bold font	*/
 	} fullVwin;
+#ifndef NO_ACTIVE_ICON
+	struct _vtwin iconVwin;
+	struct _vtwin *whichVwin;
+#endif /* NO_ACTIVE_ICON */
 	Cursor pointer_cursor;		/* pointer cursor in window	*/
 
 	/* Terminal fonts must be of the same size and of fixed width */
 	XFontStruct	*fnt_norm;	/* normal font of terminal	*/
 	XFontStruct	*fnt_bold;	/* bold font of terminal	*/
+#ifndef NO_ACTIVE_ICON
+	XFontStruct	*fnt_icon;	/* icon font */
+#endif /* NO_ACTIVE_ICON */
 	int		enbolden;	/* overstrike for bold font	*/
 	XPoint		*box;		/* draw unselected cursor	*/
 
@@ -289,8 +298,6 @@ typedef struct {
 	int		top_marg;	/* top line of scrolling region */
 	int		bot_marg;	/* bottom line of  "	    "	*/
 	Widget		scrollWidget;	/* pointer to scrollbar struct	*/
-	int		scrollbar;	/* if > 0, width of scrollbar, and
-						scrollbar is showing	*/
 	int		topline;	/* line number of top, <= 0	*/
 	int		savedlines;     /* number of lines that've been saved */
 	int		savelines;	/* number of lines off top to save */
@@ -348,7 +355,7 @@ typedef struct {
 	Boolean		Vshow;		/* VT window showing		*/
 	Boolean		Tshow;		/* Tek window showing		*/
 	Boolean		waitrefresh;	/* postpone refresh		*/
-	struct {
+	struct _tekwin {
 		Window	window;		/* X window id			*/
 		int	width;		/* width of columns		*/
 		int	height;		/* height of rows		*/
@@ -356,6 +363,10 @@ typedef struct {
 		int	fullheight;	/* full height of window	*/
 		double	tekscale;	/* scale factor Tek -> vs100	*/
 	} fullTwin;
+#ifndef NO_ACTIVE_ICON
+	struct _tekwin iconTwin;
+	struct _tekwin *whichTwin;
+#endif /* NO_ACTIVE_ICON */
 	int		xorplane;	/* z plane for inverts		*/
 	GC		linepat[TEKNUMLINES]; /* line patterns		*/
 	Boolean		TekEmu;		/* true if Tektronix emulation	*/
@@ -438,6 +449,11 @@ typedef struct _Misc {
     char* preedit_type;
     Boolean open_im;
     Boolean shared_ic;
+#ifndef NO_ACTIVE_ICON
+    Boolean active_icon;	/* use application icon window  */
+    int icon_border_width;
+    Pixel icon_border_pixel;
+#endif /* NO_ACTIVE_ICON */
 } Misc;
 
 typedef struct {int foo;} XtermClassPart, TekClassPart;
@@ -517,28 +533,64 @@ typedef struct _TekWidgetRec {
 #define SMOOTHSCROLL	0x10000	/* true if in smooth scroll mode */
 #define IN132COLUMNS	0x20000	/* true if in 132 column mode */
 
-
-#define VWindow(screen)		(screen->fullVwin.window)
-#define VShellWindow		term->core.parent->core.window
-#define TextWindow(screen)      (screen->fullVwin.window)
-#define TWindow(screen)		(screen->fullTwin.window)
-#define TShellWindow		tekWidget->core.parent->core.window
-#define Width(screen)		(screen->fullVwin.width)
-#define Height(screen)		(screen->fullVwin.height)
-#define FullWidth(screen)	(screen->fullVwin.fullwidth)
-#define FullHeight(screen)	(screen->fullVwin.fullheight)
-#define FontWidth(screen)	(screen->fullVwin.f_width)
-#define FontHeight(screen)	(screen->fullVwin.f_height)
-#define TWidth(screen)		(screen->fullTwin.width)
-#define THeight(screen)		(screen->fullTwin.height)
-#define TFullWidth(screen)	(screen->fullTwin.fullwidth)
-#define TFullHeight(screen)	(screen->fullTwin.fullheight)
-#define TekScale(screen)	(screen->fullTwin.tekscale)
-
 #define CursorX(screen,col) ((col) * FontWidth(screen) + screen->border \
-			+ screen->scrollbar)
+			+ Scrollbar(screen))
 #define CursorY(screen,row) ((((row) - screen->topline) * FontHeight(screen)) \
 			+ screen->border)
+
+#ifndef NO_ACTIVE_ICON
+#define IsIcon(screen)		((screen)->whichVwin == &(screen)->iconVwin)
+#define VWindow(screen)		((screen)->whichVwin->window)
+#define VShellWindow		term->core.parent->core.window
+#define TextWindow(screen)      ((screen)->whichVwin->window)
+#define TWindow(screen)		((screen)->whichTwin->window)
+#define TShellWindow		tekWidget->core.parent->core.window
+#define Width(screen)		((screen)->whichVwin->width)
+#define Height(screen)		((screen)->whichVwin->height)
+#define FullWidth(screen)	((screen)->whichVwin->fullwidth)
+#define FullHeight(screen)	((screen)->whichVwin->fullheight)
+#define FontWidth(screen)	((screen)->whichVwin->f_width)
+#define FontHeight(screen)	((screen)->whichVwin->f_height)
+#define FontAscent(screen)	(IsIcon(screen) ? (screen)->fnt_icon->ascent \
+						: (screen)->fnt_norm->ascent)
+#define Scrollbar(screen)	((screen)->whichVwin->scrollbar)
+#define NormalGC(screen)	((screen)->whichVwin->normalGC)
+#define ReverseGC(screen)	((screen)->whichVwin->reverseGC)
+#define NormalBoldGC(screen)	((screen)->whichVwin->normalboldGC)
+#define ReverseBoldGC(screen)	((screen)->whichVwin->reverseboldGC)
+#define TWidth(screen)		((screen)->whichTwin->width)
+#define THeight(screen)		((screen)->whichTwin->height)
+#define TFullWidth(screen)	((screen)->whichTwin->fullwidth)
+#define TFullHeight(screen)	((screen)->whichTwin->fullheight)
+#define TekScale(screen)	((screen)->whichTwin->tekscale)
+
+#else /* NO_ACTIVE_ICON */
+
+#define IsIcon(screen)		(False)
+#define VWindow(screen)		((screen)->fullVwin.window)
+#define VShellWindow		term->core.parent->core.window
+#define TextWindow(screen)      ((screen)->fullVwin.window)
+#define TWindow(screen)		((screen)->fullTwin.window)
+#define TShellWindow		tekWidget->core.parent->core.window
+#define Width(screen)		((screen)->fullVwin.width)
+#define Height(screen)		((screen)->fullVwin.height)
+#define FullWidth(screen)	((screen)->fullVwin.fullwidth)
+#define FullHeight(screen)	((screen)->fullVwin.fullheight)
+#define FontWidth(screen)	((screen)->fullVwin.f_width)
+#define FontHeight(screen)	((screen)->fullVwin.f_height)
+#define FontAscent(screen)	((screen)->fnt_norm->ascent)
+#define Scrollbar(screen)	((screen)->fullVwin.scrollbar)
+#define NormalGC(screen)	((screen)->fullVwin.normalGC)
+#define ReverseGC(screen)	((screen)->fullVwin.reverseGC)
+#define NormalBoldGC(screen)	((screen)->fullVwin.normalboldGC)
+#define ReverseBoldGC(screen)	((screen)->fullVwin.reverseboldGC)
+#define TWidth(screen)		((screen)->fullTwin.width)
+#define THeight(screen)		((screen)->fullTwin.height)
+#define TFullWidth(screen)	((screen)->fullTwin.fullwidth)
+#define TFullHeight(screen)	((screen)->fullTwin.fullheight)
+#define TekScale(screen)	((screen)->fullTwin.tekscale)
+
+#endif /* NO_ACTIVE_ICON */
 
 #define	TWINDOWEVENTS	(KeyPressMask | ExposureMask | ButtonPressMask |\
 			 ButtonReleaseMask | StructureNotifyMask |\

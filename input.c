@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: input.c /main/20 1996/01/14 16:52:52 kaleb $
+ *	$XConsortium: input.c /main/21 1996/04/17 15:54:23 kaleb $
  */
 
 /*
@@ -79,10 +79,17 @@ Input (keyboard, screen, event, eightbit)
 	int	nbytes;
 	KeySym  keysym = 0;
 	ANSI	reply;
-	Status	status_return;
 
-	nbytes = XmbLookupString (screen->xic, event, strbuf, STRBUFSIZE,
-				&keysym, &status_return);
+
+	if (screen->xic) {
+	    Status status_return;
+	    nbytes = XmbLookupString (screen->xic, event, strbuf, STRBUFSIZE,
+				      &keysym, &status_return);
+	} else {
+	    XComposeStatus status_return;
+	    nbytes = XLookupString (event, strbuf, STRBUFSIZE,
+				    &keysym, &status_return);
+	}
 
 	string = &strbuf[0];
 	reply.a_pintro = 0;

@@ -1,4 +1,4 @@
-/* $XConsortium: button.c /main/70 1996/01/14 16:52:34 kaleb $ */
+/* $XConsortium: button.c /main/75 1996/11/29 10:33:33 swick $ */
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
  *
@@ -96,7 +96,7 @@ static int saveStartRRow, saveStartRCol, saveEndRRow, saveEndRCol;
 
 /* Multi-click handling */
 static int numberOfClicks = 0;
-static long int lastButtonUpTime = 0;
+static Time lastButtonUpTime = 0;
 typedef int SelectUnit;
 #define SELECTCHAR 0
 #define SELECTWORD 1
@@ -346,20 +346,27 @@ Cardinal *num_params;
 }
 
 
-static void
-SetSelectUnit(buttonDownTime, defaultUnit)
+static SelectUnit
+EvalSelectUnit(buttonDownTime, defaultUnit)
     Time buttonDownTime;
     SelectUnit defaultUnit;
 {
-/* Do arithmetic as integers, but compare as unsigned solves clock wraparound */
-	if ((long unsigned)((long int)buttonDownTime - lastButtonUpTime)
-	 > term->screen.multiClickTime) {
-		numberOfClicks = 1;
-		selectUnit = defaultUnit;
-	} else {
-		++numberOfClicks;
-		selectUnit = ((selectUnit + 1) % NSELECTUNITS);
-	}
+    int delta;
+
+    if (lastButtonUpTime == (Time) 0) /* first time and once in a blue moon */
+	delta = term->screen.multiClickTime + 1;
+    else if (buttonDownTime > lastButtonUpTime) /* most of the time */
+	delta = buttonDownTime - lastButtonUpTime;
+    else /* time has rolled over since lastButtonUpTime */
+	delta = (((Time) ~0) - lastButtonUpTime) + buttonDownTime;
+
+    if (delta > term->screen.multiClickTime) {
+	numberOfClicks = 1;
+	return defaultUnit;
+    } else {
+	++numberOfClicks;
+	return ((selectUnit + 1) % NSELECTUNITS);
+    }
 }
 
 static void do_select_start (w, event, startrow, startcol)
@@ -368,7 +375,7 @@ XEvent *event;			/* must be XButtonEvent* */
 int startrow, startcol;
 {
 	if (SendMousePosition(w, event)) return;
-	SetSelectUnit(event->xbutton.time, SELECTCHAR);
+	selectUnit = EvalSelectUnit(event->xbutton.time, SELECTCHAR);
 	replyToEmacs = FALSE;
 	StartSelect(startrow, startcol);
 }
@@ -411,7 +418,7 @@ TrackDown(event)
 {
 	int startrow, startcol;
 
-	SetSelectUnit(event->time, SELECTCHAR);
+	selectUnit = EvalSelectUnit(event->time, SELECTCHAR);
 	if (numberOfClicks > 1 ) {
 		PointToRowCol(event->y, event->x, &startrow, &startcol);
 		replyToEmacs = TRUE;
@@ -571,7 +578,7 @@ Bool use_cursor_loc;
 	if (SendMousePosition(w, event)) return;
 	firstValidRow = 0;
 	lastValidRow  = screen->max_row;
-	SetSelectUnit(event->xbutton.time, selectUnit);
+	selectUnit = EvalSelectUnit(event->xbutton.time, selectUnit);
 	replyToEmacs = FALSE;
 
 	if (numberOfClicks == 1) {
@@ -734,7 +741,7 @@ PointToRowCol(y, x, r, c)
 		row = firstValidRow;
 	else if(row > lastValidRow)
 		row = lastValidRow;
-	col = (x - screen->border - screen->scrollbar) / FontWidth(screen);
+	col = (x - screen->border - Scrollbar(screen)) / FontWidth(screen);
 	if(col < 0)
 		col = 0;
 	else if(col > screen->max_col+1) {
@@ -1113,8 +1120,8 @@ int *format;
 		    target, type, (caddr_t*)&std_targets, &std_length, format
 		   );
 	*length = std_length + 5;
-	*value = (XtPointer)XtMalloc(sizeof(Atom)*(*length));
-	targetP = *(Atom**)value;
+	targetP = (Atom*)XtMalloc(sizeof(Atom)*(*length));
+	*value = (XtPointer) targetP;
 	*targetP++ = XA_STRING;
 	*targetP++ = XA_TEXT(d);
 	*targetP++ = XA_COMPOUND_TEXT(d);
@@ -1382,7 +1389,7 @@ EditorButton(event)
 
 	row = (event->y - screen->border) 
 	 / FontHeight(screen);
-	col = (event->x - screen->border - screen->scrollbar)
+	col = (event->x - screen->border - Scrollbar(screen))
 	 / FontWidth(screen);
 	(void) strcpy(line, "\033[M");
 	if (screen->send_mouse_pos == 1) {

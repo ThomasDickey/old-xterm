@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: data.h /main/12 1996/01/14 16:52:48 kaleb $
+ *	$XConsortium: data.h /main/13 1996/11/24 17:35:40 rws $
  */
 /*
  * Copyright 1987 by Digital Equipment Corporation, Maynard, Massachusetts.
@@ -51,7 +51,6 @@ extern int bcnt;
 #ifdef DEBUG
 extern int debug;
 #endif	/* DEBUG */
-extern int errno;
 extern int max_plus1;
 extern int switchfb[];
 

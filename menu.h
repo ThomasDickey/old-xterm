@@ -1,4 +1,4 @@
-/* $XConsortium: menu.h,v 1.25 94/04/17 20:23:31 gildea Exp $ */
+/* $XConsortium: menu.h /main/27 1996/12/01 23:47:03 swick $ */
 /*
 
 Copyright (c) 1989  X Consortium
@@ -115,14 +115,17 @@ extern void DoSecureKeyboard();
 #define vtMenu_visualbell 12
 #define vtMenu_marginbell 13
 #define vtMenu_altscreen 14
-#define vtMenu_line1 15
-#define vtMenu_softreset 16
-#define vtMenu_hardreset 17
-#define vtMenu_clearsavedlines 18
-#define vtMenu_line2 19
-#define vtMenu_tekshow 20
-#define vtMenu_tekmode 21
-#define vtMenu_vthide 22
+#ifndef NO_ACTIVE_ICON
+#define vtMenu_activeicon 15
+#endif /* NO_ACTIVE_ICON */
+#define vtMenu_line1 16
+#define vtMenu_softreset 17
+#define vtMenu_hardreset 18
+#define vtMenu_clearsavedlines 19
+#define vtMenu_line2 20
+#define vtMenu_tekshow 21
+#define vtMenu_tekmode 22
+#define vtMenu_vthide 23
 
 /*
  * items in vt100 font menu
@@ -198,7 +201,7 @@ extern void DoSecureKeyboard();
 #define update_scrollbar() \
   update_menu_item (term->screen.vtMenu, \
 		    vtMenuEntries[vtMenu_scrollbar].widget, \
-		    term->screen.scrollbar)
+		    Scrollbar(&term->screen))
 
 #define update_jumpscroll() \
   update_menu_item (term->screen.vtMenu, \
@@ -269,6 +272,13 @@ extern void DoSecureKeyboard();
   update_menu_item (term->screen.vtMenu, \
 		    vtMenuEntries[vtMenu_altscreen].widget, \
 		    term->screen.alternate)
+
+#ifndef NO_ACTIVE_ICON
+#define update_activeicon() \
+  update_menu_item (term->screen.vtMenu, \
+		    vtMenuEntries[vtMenu_activeicon].widget, \
+		    term->misc.active_icon)
+#endif /* NO_ACTIVE_ICON */
 
 #define update_tekshow() \
   update_menu_item (term->screen.vtMenu, \

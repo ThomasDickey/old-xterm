@@ -1,5 +1,5 @@
 /*
- *	$XConsortium: scrollbar.c /main/45 1996/01/14 16:53:05 kaleb $
+ *	$XConsortium: scrollbar.c /main/47 1996/12/01 23:47:08 swick $
  */
 
 /*
@@ -61,6 +61,12 @@ static void ResizeScreen(xw, min_width, min_height )
 #endif
 	XtGeometryResult geomreqresult;
 	Dimension reqWidth, reqHeight, repWidth, repHeight;
+#ifndef NO_ACTIVE_ICON
+	struct _vtwin *saveWin = screen->whichVwin;
+
+	/* all units here want to be in the normal font units */
+	screen->whichVwin = &screen->fullVwin;
+#endif /* NO_ACTIVE_ICON */
 
 	/*
 	 * I'm going to try to explain, as I understand it, why we
@@ -143,8 +149,8 @@ static void ResizeScreen(xw, min_width, min_height )
 		      XtNminHeight, min_height + FontHeight(screen),
 		      NULL);
 
-	reqWidth = (screen->max_col + 1) * FontWidth(screen) + min_width;
-	reqHeight = FontHeight(screen) * (screen->max_row + 1) + min_height;
+	reqWidth = (screen->max_col + 1) * screen->fullVwin.f_width + min_width;
+	reqHeight = screen->fullVwin.f_height * (screen->max_row + 1) + min_height;
 	geomreqresult = XtMakeResizeRequest ((Widget)xw, reqWidth, reqHeight,
 					     &repWidth, &repHeight);
 
@@ -156,13 +162,16 @@ static void ResizeScreen(xw, min_width, min_height )
 #ifndef nothack
 	XSetWMNormalHints(screen->display, XtWindow(XtParent(xw)), &sizehints);
 #endif
+#ifndef NO_ACTIVE_ICON
+ 	screen->whichVwin = saveWin;
+#endif /* NO_ACTIVE_ICON */
 }
 
 void DoResizeScreen (xw)
     register XtermWidget xw;
 {
     int border = 2 * xw->screen.border;
-    ResizeScreen (xw, border + xw->screen.scrollbar, border);
+    ResizeScreen (xw, border + xw->screen.fullVwin.scrollbar, border);
 }
 
 
@@ -282,7 +291,7 @@ WindowScroll(screen, top)
 		scrolltop = lines;
 		refreshtop = scrollheight;
 	}
-	x = screen->scrollbar +	screen->border;
+	x = Scrollbar(screen) +	screen->border;
 	scrolling_copy_area(screen, scrolltop, scrollheight, -i);
 	screen->topline = top;
 
@@ -311,7 +320,7 @@ ScrollBarOn (xw, init, doalloc)
 	register int i;
 	Char *realloc(), *calloc();
 
-	if(screen->scrollbar)
+	if(screen->fullVwin.scrollbar)
 		return;
 
 	if (init) {			/* then create it only */
@@ -353,9 +362,9 @@ ScrollBarOn (xw, init, doalloc)
 	}
 
 	ResizeScrollBar (screen->scrollWidget, -1, -1, 
-			 Height (screen) + border);
+			 screen->fullVwin.height + border);
 	RealizeScrollBar (screen->scrollWidget, screen);
-	screen->scrollbar = screen->scrollWidget->core.width +
+	screen->fullVwin.scrollbar = screen->scrollWidget->core.width +
 	     screen->scrollWidget->core.border_width;
 
 	ScrollBarDrawThumb(screen->scrollWidget);
@@ -371,10 +380,10 @@ ScrollBarOn (xw, init, doalloc)
 ScrollBarOff(screen)
 	register TScreen *screen;
 {
-	if(!screen->scrollbar)
+	if(!screen->fullVwin.scrollbar)
 		return;
 	XtUnmapWidget(screen->scrollWidget);
-	screen->scrollbar = 0;
+	screen->fullVwin.scrollbar = 0;
 	DoResizeScreen (term);
 	update_scrollbar ();
 	if (screen->buf) {
