@@ -1,4 +1,4 @@
-XCOMM $XConsortium: Imakefile /main/65 1996/02/02 14:27:54 kaleb $
+XCOMM $TOG: Imakefile /main/68 1997/08/28 08:08:34 kaleb $
 XCOMM
 XCOMM                         Attention xterm porters
 XCOMM
@@ -46,7 +46,7 @@ XCOMM
 
 #ifndef TermcapLibrary
 #if SystemV && !defined(MacIIArchitecture)
-#if defined(CrayArchitecture) || defined(HPArchitecture) || defined(RsArchitecture)
+#if defined(CrayArchitecture) || (defined(HPArchitecture) && OSMajorVersion < 10) || defined(RsArchitecture)
 #define TermcapLibrary -lcurses		/* special cases of System V */
 #else
 #define TermcapLibrary -ltermlib	/* usually in here */
