@@ -1,12 +1,12 @@
-/* $XTermId: trace.c,v 1.56 2004/12/01 01:27:47 tom Exp $ */
+/* $XTermId: trace.c,v 1.63 2005/09/18 23:48:13 tom Exp $ */
 
 /*
- * $XFree86: xc/programs/xterm/trace.c,v 3.21 2004/12/01 01:27:47 dickey Exp $
+ * $XFree86: xc/programs/xterm/trace.c,v 3.23 2005/09/18 23:48:13 dickey Exp $
  */
 
 /************************************************************
 
-Copyright 1997-2003,2004 by Thomas E. Dickey
+Copyright 1997-2004,2005 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -47,12 +47,18 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #ifdef HAVE_X11_TRANSLATEI_H
 #include <X11/TranslateI.h>
 #else
-extern String _XtPrintXlations(Widget w,
-			       XtTranslations xlations,
-			       Widget accelWidget,
-			       _XtBoolean includeRHS);
+#ifdef __cplusplus
+extern "C" {
 #endif
 
+    extern String _XtPrintXlations(Widget w,
+				   XtTranslations xlations,
+				   Widget accelWidget,
+				   _XtBoolean includeRHS);
+#ifdef __cplusplus
+}
+#endif
+#endif
 char *trace_who = "parent";
 
 void
@@ -91,10 +97,10 @@ Trace(char *fmt,...)
 	    time_t now = time((time_t *) 0);
 	    fprintf(fp, "%s\n", xtermVersion());
 #ifdef HAVE_UNISTD_H
-	    fprintf(fp, "process %d real (%d/%d) effective (%d/%d) -- %s",
+	    fprintf(fp, "process %d real (%u/%u) effective (%u/%u) -- %s",
 		    getpid(),
-		    getuid(), getgid(),
-		    geteuid(), getegid(),
+		    (unsigned) getuid(), (unsigned) getgid(),
+		    (unsigned) geteuid(), (unsigned) getegid(),
 		    ctime(&now));
 #else
 	    fprintf(fp, "process %d -- %s",
@@ -145,7 +151,7 @@ visibleChars(PAIRED_CHARS(Char * buf, Char * buf2), unsigned len)
 	if (E2A(value) < 32 || (E2A(value) >= 127 && E2A(value) < 160))
 	    sprintf(dst, "\\%03o", value);
 	else
-	    sprintf(dst, "%c", value);
+	    sprintf(dst, "%c", CharOf(value));
 	dst += strlen(dst);
     }
     return result;
@@ -174,7 +180,7 @@ visibleIChar(IChar * buf, unsigned len)
 	if (E2A(value) < 32 || (E2A(value) >= 127 && E2A(value) < 160))
 	    sprintf(dst, "\\%03o", value);
 	else
-	    sprintf(dst, "%c", value);
+	    sprintf(dst, "%c", CharOf(value));
 	dst += strlen(dst);
     }
     return result;
@@ -202,23 +208,40 @@ TraceSizeHints(XSizeHints * hints)
 {
     TRACE(("size hints:\n"));
     if (hints->flags & (USPosition | PPosition))
-	TRACE(("  position %d,%d\n", hints->y, hints->x));
+	TRACE(("   position   %d,%d%s%s\n", hints->y, hints->x,
+	       hints->flags & USPosition ? " user" : "",
+	       hints->flags & PPosition ? " prog" : ""));
     if (hints->flags & (USSize | PSize))
-	TRACE(("  size %d,%d\n", hints->height, hints->width));
+	TRACE(("   size       %d,%d%s%s\n", hints->height, hints->width,
+	       hints->flags & USSize ? " user" : "",
+	       hints->flags & PSize ? " prog" : ""));
     if (hints->flags & PMinSize)
-	TRACE(("  min %d,%d\n", hints->min_height, hints->min_width));
+	TRACE(("   min        %d,%d\n", hints->min_height, hints->min_width));
     if (hints->flags & PMaxSize)
-	TRACE(("  max %d,%d\n", hints->max_height, hints->max_width));
+	TRACE(("   max        %d,%d\n", hints->max_height, hints->max_width));
     if (hints->flags & PResizeInc)
-	TRACE(("  inc %d,%d\n", hints->height_inc, hints->width_inc));
+	TRACE(("   inc        %d,%d\n", hints->height_inc, hints->width_inc));
     if (hints->flags & PAspect)
-	TRACE(("  min aspect %d/%d\n", hints->min_aspect.y, hints->min_aspect.y));
+	TRACE(("   min aspect %d/%d\n", hints->min_aspect.y, hints->min_aspect.y));
     if (hints->flags & PAspect)
-	TRACE(("  max aspect %d/%d\n", hints->max_aspect.y, hints->max_aspect.y));
+	TRACE(("   max aspect %d/%d\n", hints->max_aspect.y, hints->max_aspect.y));
     if (hints->flags & PBaseSize)
-	TRACE(("  base %d,%d\n", hints->base_height, hints->base_width));
+	TRACE(("   base       %d,%d\n", hints->base_height, hints->base_width));
     if (hints->flags & PWinGravity)
-	TRACE(("  gravity %d\n", hints->win_gravity));
+	TRACE(("   gravity    %d\n", hints->win_gravity));
+}
+
+void
+TraceWMSizeHints(XtermWidget xw)
+{
+    XSizeHints sizehints;
+    long supp = 0;
+
+    bzero(&sizehints, sizeof(sizehints));
+    if (!XGetWMNormalHints(xw->screen.display, XtWindow(SHELL_OF(xw)),
+			   &sizehints, &supp))
+	bzero(&sizehints, sizeof(sizehints));
+    TraceSizeHints(&sizehints);
 }
 
 /*
@@ -275,6 +298,7 @@ TraceXtermResources(void)
     XRES_S(tty_modes);
     XRES_B(hold_screen);
     XRES_B(utmpInhibit);
+    XRES_B(utmpDisplayId);
     XRES_B(messages);
     XRES_B(sunFunctionKeys);
 #if OPT_SUNPC_KBD
@@ -318,7 +342,7 @@ TraceArgv(const char *tag, char **argv)
 }
 
 static char *
-parse_option(char *dst, char *src, char first)
+parse_option(char *dst, char *src, int first)
 {
     char *s;
 
@@ -339,14 +363,14 @@ parse_option(char *dst, char *src, char first)
     return dst;
 }
 
-static Boolean
+static Bool
 same_option(OptionHelp * opt, XrmOptionDescRec * res)
 {
     char temp[BUFSIZ];
     return !strcmp(parse_option(temp, opt->opt, res->option[0]), res->option);
 }
 
-static Boolean
+static Bool
 standard_option(char *opt)
 {
     static const char *table[] =
@@ -396,7 +420,7 @@ TraceOptions(OptionHelp * options, XrmOptionDescRec * resources, Cardinal res_co
     OptionHelp *opt_array = sortedOpts(options, resources, res_count);
     size_t j, k;
     XrmOptionDescRec *res_array = sortedOptDescs(resources, res_count);
-    Boolean first, found;
+    Bool first, found;
 
     TRACE(("Checking options-tables for inconsistencies:\n"));
 

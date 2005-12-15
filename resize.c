@@ -1,13 +1,13 @@
-/* $XTermId: resize.c,v 1.92 2004/12/01 01:27:47 tom Exp $ */
+/* $XTermId: resize.c,v 1.97 2005/11/13 23:10:36 tom Exp $ */
 
 /*
  *	$Xorg: resize.c,v 1.3 2000/08/17 19:55:09 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/resize.c,v 3.58 2004/12/01 01:27:47 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/resize.c,v 3.60 2005/11/13 23:10:36 dickey Exp $ */
 
 /*
- * Copyright 2003,2004 by Thomas E. Dickey
+ * Copyright 2003-2004,2005 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *
@@ -71,7 +71,7 @@
 #endif
 
 #ifndef USE_TERMINFO		/* avoid conflict with configure script */
-#if defined(__QNX__) || defined(__SCO__) || defined(linux) || defined(__OpenBSD__)
+#if defined(__QNX__) || defined(__SCO__) || defined(linux) || defined(__OpenBSD__) || defined(__UNIXWARE__)
 #define USE_TERMINFO
 #endif
 #endif
@@ -470,7 +470,7 @@ main(int argc, char **argv ENVP_ARG)
 	}
 
 	i = ptr - termcap + 3;
-	strncpy(newtc, termcap, i);
+	strncpy(newtc, termcap, (unsigned) i);
 	sprintf(newtc + i, "%d", cols);
 	ptr = strchr(ptr, ':');
 	strcat(newtc, ptr);
@@ -482,7 +482,7 @@ main(int argc, char **argv ENVP_ARG)
 	}
 
 	i = ptr - newtc + 3;
-	strncpy(termcap, newtc, i);
+	strncpy(termcap, newtc, (unsigned) i);
 	sprintf(termcap + i, "%d", rows);
 	ptr = strchr(ptr, ':');
 	strcat(termcap, ptr);
