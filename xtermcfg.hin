@@ -1,12 +1,12 @@
-/* $XTermId: xtermcfg.hin,v 1.128 2004/12/01 01:27:47 tom Exp $ */
+/* $XTermId: xtermcfg.hin,v 1.143 2005/11/03 13:17:28 tom Exp $ */
 
 /*
- * $XFree86: xc/programs/xterm/xtermcfg.hin,v 3.52 2004/12/01 01:27:47 dickey Exp $
+ * $XFree86: xc/programs/xterm/xtermcfg.hin,v 3.57 2005/11/03 13:17:28 dickey Exp $
  */
 
 /************************************************************
 
-Copyright 1997-2003,2004 by Thomas E. Dickey
+Copyright 1997-2004,2005 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -41,6 +41,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef DFT_COLORMODE		/* AC_ARG_WITH(default-color-mode) */
 #undef DFT_DECID		/* AC_ARG_WITH(default-terminal-id) */
 #undef DFT_TERMTYPE		/* AC_ARG_WITH(default-term-type) */
+#undef DISABLE_SETUID		/* CF_ARG_DISABLE(setuid) */
 #undef HAVE_GETHOSTNAME		/* AC_CHECK_FUNCS(gethostname) */
 #undef HAVE_GETLOGIN		/* AC_CHECK_FUNCS(getlogin) */
 #undef HAVE_LANGINFO_CODESET	/* AM_LANGINFO_CODESET */
@@ -51,6 +52,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef HAVE_LIB_XAWPLUS		/* CF_X_ATHENA(--with-XawPlus) */
 #undef HAVE_NCURSES_TERM_H	/* AC_CHECK_HEADERS(ncurses/term.h) */
 #undef HAVE_PATHS_H		/* CF_LASTLOG */
+#undef HAVE_PUTENV		/* AC_CHECK_FUNCS(putenv) */
+#undef HAVE_SCHED_YIELD		/* AC_CHECK_FUNCS(sched_yield) */
 #undef HAVE_STDLIB_H		/* AC_CHECK_HEADERS(stdlib.h) */
 #undef HAVE_STRERROR		/* AC_CHECK_FUNCS(strerror) */
 #undef HAVE_STRFTIME		/* AC_CHECK_FUNCS(strftime) */
@@ -67,6 +70,9 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef HAVE_UTMP_UT_XSTATUS	/* CF_UTMP_UT_XSTATUS */
 #undef HAVE_UTMP_UT_XTIME	/* CF_UTMP_UT_XTIME */
 #undef HAVE_WAITPID		/* AC_CHECK_FUNCS(waitpid) */
+#undef HAVE_WCHAR_H		/* AC_CHECK_HEADERS(wchar.h) */
+#undef HAVE_WCSWIDTH		/* AC_CHECK_FUNCS(wcswidth) */
+#undef HAVE_WCWIDTH		/* AC_CHECK_FUNCS(wcwidth) */
 #undef HAVE_X11_DECKEYSYM_H	/* AC_CHECK_HEADERS(X11/DECkeysym.h) */
 #undef HAVE_X11_SUNKEYSYM_H	/* AC_CHECK_HEADERS(X11/Sunkeysym.h) */
 #undef HAVE_X11_XPOLL_H		/* AC_CHECK_HEADERS(X11/Xpoll.h) */
@@ -96,12 +102,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef OPT_MAXIMIZE		/* CF_ARG_DISABLE(maximize) */
 #undef OPT_MINI_LUIT		/* CF_ARG_ENABLE(mini-luit) */
 #undef OPT_NUM_LOCK		/* CF_ARG_DISABLE(num-lock) */
+#undef OPT_PASTE64		/* CF_ARG_ENABLE(past64) */
 #undef OPT_PC_COLORS		/* CF_ARG_DISABLE(pc-color) */
 #undef OPT_PTY_HANDSHAKE	/* CF_ARG_ENABLE(pty-handshake) */
-#undef OPT_SAME_NAME
+#undef OPT_SAME_NAME		/* CF_ARG_DISABLE(samename) */
 #undef OPT_SCO_FUNC_KEYS	/* CF_ARG_ENABLE(sco-fkeys) */
 #undef OPT_SESSION_MGT		/* CF_ARG_DISABLE(session-mgt) */
-#undef OPT_TCAP_QUERY
+#undef OPT_TCAP_QUERY		/* CF_ARG_ENABLE(tcap-query) */
 #undef OPT_TEK4014		/* CF_ARG_DISABLE(tek4014) */
 #undef OPT_TOOLBAR		/* CF_ARG_ENABLE(toolbar) */
 #undef OPT_TRACE		/* CF_ARG_ENABLE(trace) */
@@ -111,6 +118,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef OPT_ZICONBEEP		/* CF_ARG_DISABLE(ziconbeep) */
 #undef OWN_TERMINFO_DIR		/* AC_ARG_WITH(own-terminfo) */
 #undef SCROLLBAR_RIGHT		/* CF_ARG_ENABLE(rightbar) */
+#undef SIG_ATOMIC_T		/* CF_SIG_ATOMIC_T */
 #undef SVR4			/* CF_SVR4, imake */
 #undef SYSV			/* CF_SYSV, imake */
 #undef TIME_WITH_SYS_TIME	/* AC_HEADER_TIME */
@@ -124,12 +132,17 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #undef USE_TERMCAP		/* CF_FUNC_TGETENT */
 #undef USE_TERMINFO		/* CF_FUNC_TGETENT */
 #undef USE_TTY_GROUP		/* CF_TTY_GROUP */
+#undef USE_UTMP_SETGID		/* AC_ARG_WITH(utmp-setgid) */
 #undef USE_UTEMPTER		/* CF_UTEMPTER */
 #undef UTMPX_FOR_UTMP		/* CF_UTMP */
 #undef XRENDERFONT		/* CF_X_FREETYPE */
 #undef const			/* AC_CONST */
+#undef gid_t			/* AC_TYPE_UID_T */
+#undef mode_t			/* AC_TYPE_MODE_T */
+#undef pid_t			/* AC_TYPE_PID_T */
 #undef size_t			/* AC_TYPE_SIZE_T */
 #undef time_t			/* AC_CHECK_TYPE(time_t, long) */
+#undef uid_t			/* AC_TYPE_UID_T */
 #undef ut_name			/* CF_UTMP */
 #undef ut_xstatus		/* CF_UTMP_UT_XSTATUS */
 #undef ut_xtime			/* CF_UTMP_UT_XTIME */

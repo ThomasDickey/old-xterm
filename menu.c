@@ -1,9 +1,9 @@
-/* $XTermId: menu.c,v 1.150 2004/12/01 01:27:47 tom Exp $ */
+/* $XTermId: menu.c,v 1.191 2005/11/13 23:10:36 tom Exp $ */
 
 /* $Xorg: menu.c,v 1.4 2001/02/09 02:06:03 xorgcvs Exp $ */
 /*
 
-Copyright 1999-2003,2004 by Thomas E. Dickey
+Copyright 1999-2004,2005 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -47,7 +47,7 @@ used in advertising or otherwise to promote the sale, use or other dealings
 in this Software without prior written authorization from The Open Group.
 
 */
-/* $XFree86: xc/programs/xterm/menu.c,v 3.57 2004/12/01 01:27:47 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/menu.c,v 3.64 2005/11/13 23:10:36 dickey Exp $ */
 
 #include <xterm.h>
 #include <data.h>
@@ -180,6 +180,7 @@ static void do_hp_fkeys        PROTO_XT_CALLBACK_ARGS;
 #endif
 
 #if OPT_NUM_LOCK
+static void do_alt_esc         PROTO_XT_CALLBACK_ARGS;
 static void do_num_lock        PROTO_XT_CALLBACK_ARGS;
 static void do_meta_esc        PROTO_XT_CALLBACK_ARGS;
 #endif
@@ -245,6 +246,7 @@ MenuEntry mainMenuEntries[] = {
     { "backarrow key",	do_backarrow,	NULL },
 #if OPT_NUM_LOCK
     { "num-lock",	do_num_lock,	NULL },
+    { "alt-esc",	do_alt_esc,	NULL },
     { "meta-esc",	do_meta_esc,	NULL },
 #endif
     { "delete-is-del",	do_delete_del,	NULL },
@@ -382,7 +384,8 @@ static MenuHeader menu_names[] = {
  * are initialized before the widget is created.
  */
 typedef struct {
-    Widget w;
+    Widget b;			/* the toolbar's buttons */
+    Widget w;			/* the popup shell activated by the button */
     Cardinal entries;
 } MenuList;
 
@@ -531,7 +534,7 @@ domenu(Widget w GCC_UNUSED,
 {
     TScreen *screen = &term->screen;
     MenuIndex me;
-    Boolean created = False;
+    Bool created = False;
     Widget mw;
 
     if (*param_count != 1) {
@@ -552,6 +555,7 @@ domenu(Widget w GCC_UNUSED,
     if (mw == 0)
 	return False;
 
+    TRACE(("domenu(%s) %s\n", params[0], created ? "create" : "update"));
     switch (me) {
     case mainMenu:
 	if (created) {
@@ -563,32 +567,41 @@ domenu(Widget w GCC_UNUSED,
 	    update_8bit_control();
 	    update_decbkm();
 	    update_num_lock();
+	    update_alt_esc();
 	    update_meta_esc();
 	    update_delete_del();
 	    update_keyboard_type();
+	    if (!xtermHasPrinter()) {
+		set_sensitivity(mw,
+				mainMenuEntries[mainMenu_print].widget,
+				False);
+		set_sensitivity(mw,
+				mainMenuEntries[mainMenu_print_redir].widget,
+				False);
+	    }
 	    if (screen->terminal_id < 200) {
 		set_sensitivity(mw,
 				mainMenuEntries[mainMenu_8bit_ctrl].widget,
-				FALSE);
+				False);
 	    }
 #if !defined(SIGTSTP)
 	    set_sensitivity(mw,
-			    mainMenuEntries[mainMenu_suspend].widget, FALSE);
+			    mainMenuEntries[mainMenu_suspend].widget, False);
 #endif
 #if !defined(SIGCONT)
 	    set_sensitivity(mw,
-			    mainMenuEntries[mainMenu_continue].widget, FALSE);
+			    mainMenuEntries[mainMenu_continue].widget, False);
 #endif
 #ifdef ALLOWLOGGING
 	    if (screen->inhibit & I_LOG) {
 		set_sensitivity(mw,
-				mainMenuEntries[mainMenu_logging].widget, FALSE);
+				mainMenuEntries[mainMenu_logging].widget, False);
 	    }
 #endif
 	    if (screen->inhibit & I_SIGNAL) {
 		int n;
 		for (n = (int) mainMenu_suspend; n <= (int) mainMenu_quit; ++n) {
-		    set_sensitivity(mw, mainMenuEntries[n].widget, FALSE);
+		    set_sensitivity(mw, mainMenuEntries[n].widget, False);
 		}
 	    }
 	}
@@ -618,7 +631,7 @@ domenu(Widget w GCC_UNUSED,
 	    if (!screen->fnt_icon || !screen->iconVwin.window) {
 		set_sensitivity(mw,
 				vtMenuEntries[vtMenu_activeicon].widget,
-				FALSE);
+				False);
 	    } else
 		update_activeicon();
 #endif /* NO_ACTIVE_ICON */
@@ -626,7 +639,7 @@ domenu(Widget w GCC_UNUSED,
 	    if (screen->inhibit & I_TEK) {
 		int n;
 		for (n = (int) vtMenu_tekshow; n <= (int) vtMenu_vthide; ++n) {
-		    set_sensitivity(mw, vtMenuEntries[n].widget, FALSE);
+		    set_sensitivity(mw, vtMenuEntries[n].widget, False);
 		}
 	    }
 #endif
@@ -639,7 +652,7 @@ domenu(Widget w GCC_UNUSED,
 	    set_sensitivity(mw,
 			    fontMenuEntries[fontMenu_fontescape].widget,
 			    (screen->menu_font_names[fontMenu_fontescape]
-			     ? TRUE : FALSE));
+			     ? True : False));
 #if OPT_BOX_CHARS
 	    update_font_boxchars();
 	    set_sensitivity(mw,
@@ -650,7 +663,7 @@ domenu(Widget w GCC_UNUSED,
 	    update_font_loadable();
 	    set_sensitivity(mw,
 			    fontMenuEntries[fontMenu_font_loadable].widget,
-			    FALSE);
+			    False);
 #endif
 #if OPT_DEC_CHRSET
 	    update_font_doublesize();
@@ -669,23 +682,19 @@ domenu(Widget w GCC_UNUSED,
 #endif
 #if OPT_WIDE_CHARS
 	    update_font_utf8_mode();
-	    if (term->screen.utf8_mode > 1)
-		set_sensitivity(mw,
-				fontMenuEntries[fontMenu_wide_chars].widget,
-				False);
 #endif
 	}
 	FindFontSelection(NULL, True);
 	set_sensitivity(mw,
 			fontMenuEntries[fontMenu_fontsel].widget,
 			(screen->menu_font_names[fontMenu_fontsel]
-			 ? TRUE : FALSE));
+			 ? True : False));
 	break;
 
 #if OPT_TEK4014
     case tekMenu:
 	if (created) {
-	    set_tekfont_menu_item(screen->cur.fontsize, TRUE);
+	    set_tekfont_menu_item(screen->cur.fontsize, True);
 	    update_vtshow();
 	}
 	break;
@@ -703,6 +712,7 @@ HandleCreateMenu(Widget w,
 		 String * params,	/* mainMenu, vtMenu, or tekMenu */
 		 Cardinal *param_count)		/* 0 or 1 */
 {
+    TRACE(("HandleCreateMenu\n"));
     (void) domenu(w, event, params, param_count);
 }
 
@@ -712,6 +722,7 @@ HandlePopupMenu(Widget w,
 		String * params,	/* mainMenu, vtMenu, or tekMenu */
 		Cardinal *param_count)	/* 0 or 1 */
 {
+    TRACE(("HandlePopupMenu\n"));
     if (domenu(w, event, params, param_count)) {
 #if OPT_TOOLBAR
 	w = select_menu(w, mainMenu)->w;
@@ -730,7 +741,7 @@ static void
 handle_send_signal(Widget gw GCC_UNUSED, int sig)
 {
 #ifndef VMS
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     if (hold_screen > 1)
 	hold_screen = 0;
@@ -755,21 +766,21 @@ do_securekbd(Widget gw GCC_UNUSED,
 	     XtPointer closure GCC_UNUSED,
 	     XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
     Time now = CurrentTime;	/* XXX - wrong */
 
     if (screen->grabbedKbd) {
 	XUngrabKeyboard(screen->display, now);
 	ReverseVideo(term);
-	screen->grabbedKbd = FALSE;
+	screen->grabbedKbd = False;
     } else {
-	if (XGrabKeyboard(screen->display, XtWindow(term),
+	if (XGrabKeyboard(screen->display, XtWindow(CURRENT_EMU(screen)),
 			  True, GrabModeAsync, GrabModeAsync, now)
 	    != GrabSuccess) {
 	    Bell(XkbBI_MinorError, 100);
 	} else {
 	    ReverseVideo(term);
-	    screen->grabbedKbd = TRUE;
+	    screen->grabbedKbd = True;
 	}
     }
     update_securekbd();
@@ -780,7 +791,7 @@ do_allowsends(Widget gw GCC_UNUSED,
 	      XtPointer closure GCC_UNUSED,
 	      XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->allowSendEvents = !screen->allowSendEvents;
     update_allowsends();
@@ -791,7 +802,7 @@ do_visualbell(Widget gw GCC_UNUSED,
 	      XtPointer closure GCC_UNUSED,
 	      XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->visualbell = !screen->visualbell;
     update_visualbell();
@@ -802,7 +813,7 @@ do_poponbell(Widget gw GCC_UNUSED,
 	     XtPointer closure GCC_UNUSED,
 	     XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->poponbell = !screen->poponbell;
     update_poponbell();
@@ -814,7 +825,7 @@ do_logging(Widget gw GCC_UNUSED,
 	   XtPointer closure GCC_UNUSED,
 	   XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     if (screen->logging) {
 	CloseLog(screen);
@@ -830,7 +841,7 @@ do_print(Widget gw GCC_UNUSED,
 	 XtPointer closure GCC_UNUSED,
 	 XtPointer data GCC_UNUSED)
 {
-    xtermPrintScreen(TRUE);
+    xtermPrintScreen(True);
 }
 
 static void
@@ -883,6 +894,15 @@ do_num_lock(Widget gw GCC_UNUSED,
 {
     term->misc.real_NumLock = !term->misc.real_NumLock;
     update_num_lock();
+}
+
+static void
+do_alt_esc(Widget gw GCC_UNUSED,
+	   XtPointer closure GCC_UNUSED,
+	   XtPointer data GCC_UNUSED)
+{
+    term->screen.input_eight_bits = !term->screen.input_eight_bits;
+    update_alt_esc();
 }
 
 static void
@@ -1044,15 +1064,15 @@ do_jumpscroll(Widget gw GCC_UNUSED,
 	      XtPointer closure GCC_UNUSED,
 	      XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     term->flags ^= SMOOTHSCROLL;
     if (term->flags & SMOOTHSCROLL) {
-	screen->jumpscroll = FALSE;
+	screen->jumpscroll = False;
 	if (screen->scroll_amt)
 	    FlushScroll(screen);
     } else {
-	screen->jumpscroll = TRUE;
+	screen->jumpscroll = True;
     }
     update_jumpscroll();
 }
@@ -1115,7 +1135,7 @@ do_scrollkey(Widget gw GCC_UNUSED,
 	     XtPointer closure GCC_UNUSED,
 	     XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->scrollkey = !screen->scrollkey;
     update_scrollkey();
@@ -1126,7 +1146,7 @@ do_scrollttyoutput(Widget gw GCC_UNUSED,
 		   XtPointer closure GCC_UNUSED,
 		   XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->scrollttyoutput = !screen->scrollttyoutput;
     update_scrollttyoutput();
@@ -1137,7 +1157,7 @@ do_allow132(Widget gw GCC_UNUSED,
 	    XtPointer closure GCC_UNUSED,
 	    XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->c132 = !screen->c132;
     update_allow132();
@@ -1148,7 +1168,7 @@ do_cursesemul(Widget gw GCC_UNUSED,
 	      XtPointer closure GCC_UNUSED,
 	      XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     screen->curses = !screen->curses;
     update_cursesemul();
@@ -1159,7 +1179,7 @@ do_marginbell(Widget gw GCC_UNUSED,
 	      XtPointer closure GCC_UNUSED,
 	      XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     if (!(screen->marginbell = !screen->marginbell))
 	screen->bellarmed = -1;
@@ -1170,12 +1190,12 @@ do_marginbell(Widget gw GCC_UNUSED,
 static void
 handle_tekshow(Widget gw GCC_UNUSED, Bool allowswitch)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     if (!screen->Tshow) {	/* not showing, turn on */
-	set_tek_visibility(TRUE);
+	set_tek_visibility(True);
     } else if (screen->Vshow || allowswitch) {	/* is showing, turn off */
-	set_tek_visibility(FALSE);
+	set_tek_visibility(False);
 	end_tek_mode();		/* WARNING: this does a longjmp */
     } else
 	Bell(XkbBI_MinorError, 0);
@@ -1257,7 +1277,7 @@ do_softreset(Widget gw GCC_UNUSED,
 	     XtPointer closure GCC_UNUSED,
 	     XtPointer data GCC_UNUSED)
 {
-    VTReset(FALSE, FALSE);
+    VTReset(False, False);
 }
 
 static void
@@ -1265,7 +1285,7 @@ do_hardreset(Widget gw GCC_UNUSED,
 	     XtPointer closure GCC_UNUSED,
 	     XtPointer data GCC_UNUSED)
 {
-    VTReset(TRUE, FALSE);
+    VTReset(True, False);
 }
 
 static void
@@ -1273,7 +1293,7 @@ do_clearsavedlines(Widget gw GCC_UNUSED,
 		   XtPointer closure GCC_UNUSED,
 		   XtPointer data GCC_UNUSED)
 {
-    VTReset(TRUE, TRUE);
+    VTReset(True, True);
 }
 
 #if OPT_TEK4014
@@ -1282,7 +1302,7 @@ do_tekmode(Widget gw GCC_UNUSED,
 	   XtPointer closure GCC_UNUSED,
 	   XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     switch_modes(screen->TekEmu);	/* switch to tek mode */
 }
@@ -1303,7 +1323,7 @@ do_vthide(Widget gw GCC_UNUSED,
 
 static void
 do_vtfont(Widget gw GCC_UNUSED,
-	  XtPointer closure GCC_UNUSED,
+	  XtPointer closure,
 	  XtPointer data GCC_UNUSED)
 {
     char *entryname = (char *) closure;
@@ -1311,7 +1331,7 @@ do_vtfont(Widget gw GCC_UNUSED,
 
     for (i = 0; i < NMENUFONTS; i++) {
 	if (strcmp(entryname, fontMenuEntries[i].name) == 0) {
-	    SetVTFont(i, True, NULL);
+	    SetVTFont(term, i, True, NULL);
 	    return;
 	}
     }
@@ -1362,14 +1382,14 @@ do_font_renderfont(Widget gw GCC_UNUSED,
 {
     TScreen *screen = &term->screen;
     int fontnum = screen->menu_font_number;
-    String name = term->screen.menu_font_names[fontnum];
+    String name = term->screen.MenuFontName(fontnum);
 
     term->misc.render_font = !term->misc.render_font;
     update_font_renderfont();
-    xtermLoadFont(screen, xtermFontName(name), True, fontnum);
+    xtermLoadFont(term, xtermFontName(name), True, fontnum);
     ScrnRefresh(screen, 0, 0,
-		screen->max_row + 1,
-		screen->max_col + 1, True);
+		MaxRows(screen),
+		MaxCols(screen), True);
 }
 #endif
 
@@ -1381,8 +1401,20 @@ do_font_utf8_mode(Widget gw GCC_UNUSED,
 {
     TScreen *screen = &term->screen;
 
+    /*
+     * If xterm was started with -wc option, it might not have the wide fonts.
+     * If xterm was not started with -wc, it might not have wide cells.
+     */
+    if (!screen->utf8_mode) {
+	if (screen->wide_chars) {
+	    if (xtermLoadWideFonts(term, True)) {
+		SetVTFont(term, screen->menu_font_number, TRUE, NULL);
+	    }
+	} else {
+	    ChangeToWide(screen);
+	}
+    }
     switchPtyData(screen, !screen->utf8_mode);
-    update_font_utf8_mode();
     /*
      * We don't repaint the screen when switching UTF-8 on/off.  When switching
      * on - the Latin-1 codes should paint as-is.  When switching off, that's
@@ -1456,12 +1488,12 @@ do_tekcopy(Widget gw GCC_UNUSED,
 static void
 handle_vtshow(Widget gw GCC_UNUSED, Bool allowswitch)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     if (!screen->Vshow) {	/* not showing, turn on */
-	set_vt_visibility(TRUE);
+	set_vt_visibility(True);
     } else if (screen->Tshow || allowswitch) {	/* is showing, turn off */
-	set_vt_visibility(FALSE);
+	set_vt_visibility(False);
 	if (!screen->TekEmu && TekRefresh)
 	    dorefresh();
 	end_vt_mode();		/* WARNING: this does a longjmp... */
@@ -1490,7 +1522,7 @@ do_vtmode(Widget gw GCC_UNUSED,
 	  XtPointer closure GCC_UNUSED,
 	  XtPointer data GCC_UNUSED)
 {
-    register TScreen *screen = &term->screen;
+    TScreen *screen = &term->screen;
 
     switch_modes(screen->TekEmu);	/* switch to vt, or from */
 }
@@ -1560,14 +1592,20 @@ handle_toggle(void (*proc) PROTO_XT_CALLBACK_ARGS,
     return;
 }
 
+#define handle_vt_toggle(proc, var, params, nparams, w) \
+	handle_toggle(proc, (int) (var), params, nparams, w, (XtPointer)0, (XtPointer)0)
+
+#define handle_tek_toggle(proc, var, params, nparams, w) \
+	handle_toggle(proc, (int) (var), params, nparams, w, (XtPointer)0, (XtPointer)0)
+
 void
 HandleAllowSends(Widget w,
 		 XEvent * event GCC_UNUSED,
 		 String * params,
 		 Cardinal *param_count)
 {
-    handle_toggle(do_allowsends, (int) term->screen.allowSendEvents,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_allowsends, term->screen.allowSendEvents,
+		     params, *param_count, w);
 }
 
 void
@@ -1576,8 +1614,8 @@ HandleSetVisualBell(Widget w,
 		    String * params,
 		    Cardinal *param_count)
 {
-    handle_toggle(do_visualbell, (int) term->screen.visualbell,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_visualbell, term->screen.visualbell,
+		     params, *param_count, w);
 }
 
 void
@@ -1586,8 +1624,8 @@ HandleSetPopOnBell(Widget w,
 		   String * params,
 		   Cardinal *param_count)
 {
-    handle_toggle(do_poponbell, (int) term->screen.poponbell,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_poponbell, term->screen.poponbell,
+		     params, *param_count, w);
 }
 
 #ifdef ALLOWLOGGING
@@ -1597,8 +1635,8 @@ HandleLogging(Widget w,
 	      String * params,
 	      Cardinal *param_count)
 {
-    handle_toggle(do_logging, (int) term->screen.logging,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_logging, term->screen.logging,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1693,8 +1731,8 @@ Handle8BitControl(Widget w,
 		  String * params,
 		  Cardinal *param_count)
 {
-    handle_toggle(do_8bit_control, (int) term->screen.control_eight_bits,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_8bit_control, term->screen.control_eight_bits,
+		     params, *param_count, w);
 }
 
 void
@@ -1703,8 +1741,8 @@ HandleBackarrow(Widget w,
 		String * params,
 		Cardinal *param_count)
 {
-    handle_toggle(do_backarrow, (int) term->keyboard.flags & MODE_DECBKM,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_backarrow, term->keyboard.flags & MODE_DECBKM,
+		     params, *param_count, w);
 }
 
 void
@@ -1713,8 +1751,8 @@ HandleSunFunctionKeys(Widget w,
 		      String * params,
 		      Cardinal *param_count)
 {
-    handle_toggle(do_sun_fkeys, term->keyboard.type == keyboardIsSun,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_sun_fkeys, term->keyboard.type == keyboardIsSun,
+		     params, *param_count, w);
 }
 
 #if OPT_NUM_LOCK
@@ -1724,8 +1762,18 @@ HandleNumLock(Widget w,
 	      String * params,
 	      Cardinal *param_count)
 {
-    handle_toggle(do_num_lock, (int) term->misc.real_NumLock,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_num_lock, term->misc.real_NumLock,
+		     params, *param_count, w);
+}
+
+void
+HandleAltEsc(Widget w,
+	     XEvent * event GCC_UNUSED,
+	     String * params,
+	     Cardinal *param_count)
+{
+    handle_vt_toggle(do_alt_esc, !term->screen.input_eight_bits,
+		     params, *param_count, w);
 }
 
 void
@@ -1734,8 +1782,8 @@ HandleMetaEsc(Widget w,
 	      String * params,
 	      Cardinal *param_count)
 {
-    handle_toggle(do_meta_esc, (int) term->screen.meta_sends_esc,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_meta_esc, term->screen.meta_sends_esc,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1745,8 +1793,8 @@ HandleDeleteIsDEL(Widget w,
 		  String * params,
 		  Cardinal *param_count)
 {
-    handle_toggle(do_delete_del, term->screen.delete_is_del,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_delete_del, term->screen.delete_is_del,
+		     params, *param_count, w);
 }
 
 void
@@ -1755,8 +1803,8 @@ HandleOldFunctionKeys(Widget w,
 		      String * params,
 		      Cardinal *param_count)
 {
-    handle_toggle(do_old_fkeys, term->keyboard.type == keyboardIsLegacy,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_old_fkeys, term->keyboard.type == keyboardIsLegacy,
+		     params, *param_count, w);
 }
 
 #if OPT_SUNPC_KBD
@@ -1766,8 +1814,8 @@ HandleSunKeyboard(Widget w,
 		  String * params,
 		  Cardinal *param_count)
 {
-    handle_toggle(do_sun_kbd, term->keyboard.type == keyboardIsVT220,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_sun_kbd, term->keyboard.type == keyboardIsVT220,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1778,8 +1826,8 @@ HandleHpFunctionKeys(Widget w,
 		     String * params,
 		     Cardinal *param_count)
 {
-    handle_toggle(do_hp_fkeys, term->keyboard.type == keyboardIsHP,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_hp_fkeys, term->keyboard.type == keyboardIsHP,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1790,8 +1838,8 @@ HandleScoFunctionKeys(Widget w,
 		      String * params,
 		      Cardinal *param_count)
 {
-    handle_toggle(do_sco_fkeys, term->keyboard.type == keyboardIsSCO,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_sco_fkeys, term->keyboard.type == keyboardIsSCO,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1801,8 +1849,12 @@ HandleScrollbar(Widget w,
 		String * params,
 		Cardinal *param_count)
 {
-    handle_toggle(do_scrollbar, (int) term->screen.fullVwin.sb_info.width,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    if (IsIcon(&(term->screen))) {
+	Bell(XkbBI_MinorError, 0);
+    } else {
+	handle_vt_toggle(do_scrollbar, term->screen.fullVwin.sb_info.width,
+			 params, *param_count, w);
+    }
 }
 
 void
@@ -1811,8 +1863,8 @@ HandleJumpscroll(Widget w,
 		 String * params,
 		 Cardinal *param_count)
 {
-    handle_toggle(do_jumpscroll, (int) term->screen.jumpscroll,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_jumpscroll, term->screen.jumpscroll,
+		     params, *param_count, w);
 }
 
 void
@@ -1821,8 +1873,8 @@ HandleReverseVideo(Widget w,
 		   String * params,
 		   Cardinal *param_count)
 {
-    handle_toggle(do_reversevideo, (int) (term->misc.re_verse0),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_reversevideo, (term->misc.re_verse0),
+		     params, *param_count, w);
 }
 
 void
@@ -1831,8 +1883,8 @@ HandleAutoWrap(Widget w,
 	       String * params,
 	       Cardinal *param_count)
 {
-    handle_toggle(do_autowrap, (int) (term->flags & WRAPAROUND),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_autowrap, (term->flags & WRAPAROUND),
+		     params, *param_count, w);
 }
 
 void
@@ -1841,8 +1893,8 @@ HandleReverseWrap(Widget w,
 		  String * params,
 		  Cardinal *param_count)
 {
-    handle_toggle(do_reversewrap, (int) (term->flags & REVERSEWRAP),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_reversewrap, (term->flags & REVERSEWRAP),
+		     params, *param_count, w);
 }
 
 void
@@ -1851,8 +1903,8 @@ HandleAutoLineFeed(Widget w,
 		   String * params,
 		   Cardinal *param_count)
 {
-    handle_toggle(do_autolinefeed, (int) (term->flags & LINEFEED),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_autolinefeed, (term->flags & LINEFEED),
+		     params, *param_count, w);
 }
 
 void
@@ -1861,8 +1913,8 @@ HandleAppCursor(Widget w,
 		String * params,
 		Cardinal *param_count)
 {
-    handle_toggle(do_appcursor, (int) (term->keyboard.flags & MODE_DECCKM),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_appcursor, (term->keyboard.flags & MODE_DECCKM),
+		     params, *param_count, w);
 }
 
 void
@@ -1871,8 +1923,8 @@ HandleAppKeypad(Widget w,
 		String * params,
 		Cardinal *param_count)
 {
-    handle_toggle(do_appkeypad, (int) (term->keyboard.flags & MODE_DECKPAM),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_appkeypad, (term->keyboard.flags & MODE_DECKPAM),
+		     params, *param_count, w);
 }
 
 void
@@ -1881,8 +1933,8 @@ HandleScrollKey(Widget w,
 		String * params,
 		Cardinal *param_count)
 {
-    handle_toggle(do_scrollkey, (int) term->screen.scrollkey,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_scrollkey, term->screen.scrollkey,
+		     params, *param_count, w);
 }
 
 void
@@ -1891,8 +1943,8 @@ HandleScrollTtyOutput(Widget w,
 		      String * params,
 		      Cardinal *param_count)
 {
-    handle_toggle(do_scrollttyoutput, (int) term->screen.scrollttyoutput,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_scrollttyoutput, term->screen.scrollttyoutput,
+		     params, *param_count, w);
 }
 
 void
@@ -1901,8 +1953,8 @@ HandleAllow132(Widget w,
 	       String * params,
 	       Cardinal *param_count)
 {
-    handle_toggle(do_allow132, (int) term->screen.c132,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_allow132, term->screen.c132,
+		     params, *param_count, w);
 }
 
 void
@@ -1911,8 +1963,8 @@ HandleCursesEmul(Widget w,
 		 String * params,
 		 Cardinal *param_count)
 {
-    handle_toggle(do_cursesemul, (int) term->screen.curses,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_cursesemul, term->screen.curses,
+		     params, *param_count, w);
 }
 
 void
@@ -1921,8 +1973,8 @@ HandleMarginBell(Widget w,
 		 String * params,
 		 Cardinal *param_count)
 {
-    handle_toggle(do_marginbell, (int) term->screen.marginbell,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_marginbell, term->screen.marginbell,
+		     params, *param_count, w);
 }
 
 #if OPT_BLINK_CURS
@@ -1933,8 +1985,8 @@ HandleCursorBlink(Widget w,
 		  Cardinal *param_count)
 {
     /* eventually want to see if sensitive or not */
-    handle_toggle(do_cursorblink, (int) term->screen.cursor_blink,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_cursorblink, term->screen.cursor_blink,
+		     params, *param_count, w);
 }
 #endif
 
@@ -1945,8 +1997,8 @@ HandleAltScreen(Widget w,
 		Cardinal *param_count)
 {
     /* eventually want to see if sensitive or not */
-    handle_toggle(do_altscreen, (int) term->screen.alternate,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_altscreen, term->screen.alternate,
+		     params, *param_count, w);
 }
 
 void
@@ -1956,8 +2008,8 @@ HandleTiteInhibit(Widget w,
 		  Cardinal *param_count)
 {
     /* eventually want to see if sensitive or not */
-    handle_toggle(do_titeInhibit, !((int) term->misc.titeInhibit),
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_titeInhibit, !(term->misc.titeInhibit),
+		     params, *param_count, w);
 }
 
 /* ARGSUSED */
@@ -1997,8 +2049,8 @@ HandleFontDoublesize(Widget w,
 		     String * params,
 		     Cardinal *param_count)
 {
-    handle_toggle(do_font_doublesize, (int) term->screen.font_doublesize,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_font_doublesize, term->screen.font_doublesize,
+		     params, *param_count, w);
 }
 #endif
 
@@ -2009,8 +2061,8 @@ HandleFontBoxChars(Widget w,
 		   String * params,
 		   Cardinal *param_count)
 {
-    handle_toggle(do_font_boxchars, (int) term->screen.force_box_chars,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_font_boxchars, term->screen.force_box_chars,
+		     params, *param_count, w);
 }
 #endif
 
@@ -2021,8 +2073,8 @@ HandleFontLoading(Widget w,
 		  String * params,
 		  Cardinal *param_count)
 {
-    handle_toggle(do_font_loadable, (int) term->misc.font_loadable,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_font_loadable, term->misc.font_loadable,
+		     params, *param_count, w);
 }
 #endif
 
@@ -2033,8 +2085,8 @@ HandleRenderFont(Widget w,
 		 String * params,
 		 Cardinal *param_count)
 {
-    handle_toggle(do_font_renderfont, term->misc.render_font,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_font_renderfont, term->misc.render_font,
+		     params, *param_count, w);
 }
 #endif
 
@@ -2045,8 +2097,8 @@ HandleUTF8Mode(Widget w,
 	       String * params,
 	       Cardinal *param_count)
 {
-    handle_toggle(do_font_utf8_mode, term->screen.utf8_mode,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    handle_vt_toggle(do_font_utf8_mode, term->screen.utf8_mode,
+		     params, *param_count, w);
 }
 #endif
 
@@ -2087,15 +2139,13 @@ HandleVisibility(Widget w,
 	switch (params[0][0]) {
 	case 'v':
 	case 'V':
-	    handle_toggle(do_vtonoff, (int) term->screen.Vshow,
-			  params + 1, (*param_count) - 1,
-			  w, (XtPointer) 0, (XtPointer) 0);
+	    handle_tek_toggle(do_vtonoff, (int) term->screen.Vshow,
+			      params + 1, (*param_count) - 1, w);
 	    break;
 	case 't':
 	case 'T':
-	    handle_toggle(do_tekonoff, (int) term->screen.Tshow,
-			  params + 1, (*param_count) - 1,
-			  w, (XtPointer) 0, (XtPointer) 0);
+	    handle_tek_toggle(do_tekonoff, (int) term->screen.Tshow,
+			      params + 1, (*param_count) - 1, w);
 	    break;
 	default:
 	    Bell(XkbBI_MinorError, 0);
@@ -2215,17 +2265,18 @@ InitPopup(Widget gw,
     String params[2];
     Cardinal count = 1;
 
-    params[0] = closure;
+    params[0] = (char *) closure;
     params[1] = 0;
     TRACE(("InitPopup(%s)\n", params[0]));
 
     domenu(gw, (XEvent *) 0, params, &count);
 
-    XtRemoveCallback(gw, XtNpopupCallback, InitPopup, closure);
+    if (gw)
+	XtRemoveCallback(gw, XtNpopupCallback, InitPopup, closure);
 }
 
 static void
-SetupShell(Widget *menus, MenuList * shell, Widget *menu_tops, int n, int m)
+SetupShell(Widget *menus, MenuList * shell, int n, int m)
 {
     char temp[80];
     char *external_name = 0;
@@ -2247,15 +2298,15 @@ SetupShell(Widget *menus, MenuList * shell, Widget *menu_tops, int n, int m)
 	   (long) shell[n].w));
 
     sprintf(temp, "%sButton", menu_names[n].internal_name);
-    menu_tops[n] = XtVaCreateManagedWidget(temp,
-					   menuButtonWidgetClass,
-					   *menus,
-					   XtNfromHoriz, ((m >= 0)
-							  ? menu_tops[m]
-							  : 0),
-					   XtNmenuName, menu_names[n].internal_name,
-					   XtNlabel, external_name,
-					   (XtPointer) 0);
+    shell[n].b = XtVaCreateManagedWidget(temp,
+					 menuButtonWidgetClass,
+					 *menus,
+					 XtNfromHoriz, ((m >= 0)
+							? shell[m].b
+							: 0),
+					 XtNmenuName, menu_names[n].internal_name,
+					 XtNlabel, external_name,
+					 (XtPointer) 0);
 }
 
 #endif
@@ -2264,8 +2315,8 @@ void
 SetupMenus(Widget shell, Widget *forms, Widget *menus)
 {
 #if OPT_TOOLBAR
-    int n;
-    Widget menu_tops[NUM_POPUP_MENUS];
+    Cardinal n;
+    Arg args[10];
 #endif
 
     TRACE(("SetupMenus(%s)\n", shell == toplevel ? "vt100" : "tek4014"));
@@ -2288,24 +2339,27 @@ SetupMenus(Widget shell, Widget *forms, Widget *menus)
      * the grip, because it's too easy to make the toolbar look bad that
      * way.
      */
-    *menus = XtVaCreateManagedWidget("menubar",
-				     boxWidgetClass, *forms,
-				     XtNorientation, XtorientHorizontal,
-				     XtNtop, XawChainTop,
-				     XtNbottom, XawChainTop,
-				     XtNleft, XawChainLeft,
-				     XtNright, XawChainLeft,
-				     (XtPointer) 0);
+    XtSetArg(args[0], XtNorientation, XtorientHorizontal);
+    XtSetArg(args[1], XtNtop, XawChainTop);
+    XtSetArg(args[2], XtNbottom, XawChainTop);
+    XtSetArg(args[3], XtNleft, XawChainLeft);
+    XtSetArg(args[4], XtNright, XawChainLeft);
+
+    if (resource.toolBar)
+	*menus = XtCreateManagedWidget("menubar", boxWidgetClass, *forms,
+				       args, 5);
+    else
+	*menus = XtCreateWidget("menubar", boxWidgetClass, *forms, args, 5);
 
     if (shell == toplevel) {	/* vt100 */
 	for (n = mainMenu; n <= fontMenu; n++) {
-	    SetupShell(menus, vt_shell, menu_tops, n, n - 1);
+	    SetupShell(menus, vt_shell, n, n - 1);
 	}
     }
 #if OPT_TEK4014
     else {			/* tek4014 */
-	SetupShell(menus, tek_shell, menu_tops, mainMenu, -1);
-	SetupShell(menus, tek_shell, menu_tops, tekMenu, mainMenu);
+	SetupShell(menus, tek_shell, mainMenu, -1);
+	SetupShell(menus, tek_shell, tekMenu, mainMenu);
     }
 #endif
 
@@ -2319,12 +2373,33 @@ SetupMenus(Widget shell, Widget *forms, Widget *menus)
     TRACE(("...menus=%#lx\n", (long) *menus));
 }
 
-#if OPT_TOOLBAR
 void
-SetupToolbar(Widget shell)
+repairSizeHints(void)
+{
+    TScreen *screen = &term->screen;
+
+    XSizeHints sizehints;
+
+    if (XtIsRealized((Widget) term)) {
+	bzero(&sizehints, sizeof(sizehints));
+	xtermSizeHints(term, &sizehints, ScrollbarWidth(screen));
+
+	XSetWMNormalHints(screen->display, XtWindow(SHELL_OF(term)), &sizehints);
+    }
+}
+
+#if OPT_TOOLBAR
+static int called_SetupToolbar[2] =
+{False, False};
+
+static void
+SetupToolbar(int which)
 {
     int n;
-    if (shell == toplevel) {	/* vt100 */
+
+    TRACE(("SetupToolbar(%s)\n", which ? "vt100" : "tek4014"));
+
+    if (which) {		/* vt100 */
 	for (n = mainMenu; n <= fontMenu; n++) {
 	    InitPopup(vt_shell[n].w, menu_names[n].internal_name, 0);
 	}
@@ -2335,16 +2410,19 @@ SetupToolbar(Widget shell)
 	InitPopup(tek_shell[tekMenu].w, menu_names[tekMenu].internal_name, 0);
     }
 #endif
-    term->screen.toolbars = True;
-    update_toolbar();
+    called_SetupToolbar[which] = True;
+    ShowToolbar(resource.toolBar);
 }
 
 static TbInfo *
 toolbar_info(Widget w)
 {
-    return ((w == (Widget) term)
-	    ? &(WhichVWin(&(term->screen))->tb_info)
-	    : &(tekWidget->tek.tb_info));
+    TRACE(("...getting toolbar_info\n"));
+#if OPT_TEK4014
+    if (w != (Widget) term)
+	return &(tekWidget->tek.tb_info);
+#endif
+    return &(WhichVWin(&(term->screen))->tb_info);
 }
 
 static void
@@ -2353,13 +2431,19 @@ hide_toolbar(Widget w)
     if (w != 0) {
 	TbInfo *info = toolbar_info(w);
 
-	if (info->menu_bar != 0) {
-	    if (XtIsRealized(info->menu_bar))
-		XtUnmapWidget(info->menu_bar);
-	}
+	TRACE(("hiding toolbar\n"));
 	XtVaSetValues(w,
 		      XtNfromVert, (Widget) 0,
 		      (XtPointer) 0);
+
+	if (info->menu_bar != 0) {
+	    repairSizeHints();
+	    XtUnmanageChild(info->menu_bar);
+	    if (XtIsRealized(info->menu_bar)) {
+		XtUnmapWidget(info->menu_bar);
+	    }
+	}
+	TRACE(("...hiding toolbar (done)\n"));
     }
 }
 
@@ -2369,30 +2453,54 @@ show_toolbar(Widget w)
     if (w != 0) {
 	TbInfo *info = toolbar_info(w);
 
+	TRACE(("showing toolbar\n"));
 	if (info->menu_bar != 0) {
+	    XtVaSetValues(w,
+			  XtNfromVert, info->menu_bar,
+			  (XtPointer) 0);
 	    if (XtIsRealized(info->menu_bar))
+		repairSizeHints();
+	    XtManageChild(info->menu_bar);
+	    if (XtIsRealized(info->menu_bar)) {
 		XtMapWidget(info->menu_bar);
+	    }
 	}
-	XtVaSetValues(w,
-		      XtNfromVert, info->menu_bar,
-		      (XtPointer) 0);
 	/*
 	 * This is needed to make the terminal widget move down below the
 	 * toolbar.
 	 */
 	XawFormDoLayout(XtParent(w), True);
+	TRACE(("...showing toolbar (done)\n"));
     }
 }
 
+/*
+ * Make the toolbar visible or invisible in the current window(s).
+ */
 void
-ShowToolbar(Boolean enable)
+ShowToolbar(Bool enable)
 {
-    if (enable) {
-	show_toolbar((Widget) term);
-	show_toolbar((Widget) tekWidget);
+    TRACE(("ShowToolbar(%d)\n", enable));
+
+    if (IsIcon(&(term->screen))) {
+	Bell(XkbBI_MinorError, 0);
     } else {
-	hide_toolbar((Widget) term);
-	hide_toolbar((Widget) tekWidget);
+	if (enable) {
+	    int which = !TEK4014_ACTIVE(&(term->screen));
+	    if (!called_SetupToolbar[which])
+		SetupToolbar(which);
+	    show_toolbar((Widget) term);
+#if OPT_TEK4014
+	    show_toolbar((Widget) tekWidget);
+#endif
+	} else {
+	    hide_toolbar((Widget) term);
+#if OPT_TEK4014
+	    hide_toolbar((Widget) tekWidget);
+#endif
+	}
+	resource.toolBar = enable;
+	update_toolbar();
     }
 }
 
@@ -2402,8 +2510,12 @@ HandleToolbar(Widget w,
 	      String * params GCC_UNUSED,
 	      Cardinal *param_count GCC_UNUSED)
 {
-    handle_toggle(do_toolbar, (int) term->screen.toolbars,
-		  params, *param_count, w, (XtPointer) 0, (XtPointer) 0);
+    if (IsIcon(&(term->screen))) {
+	Bell(XkbBI_MinorError, 0);
+    } else {
+	handle_vt_toggle(do_toolbar, resource.toolBar,
+			 params, *param_count, w);
+    }
 }
 
 /* ARGSUSED */
@@ -2417,8 +2529,11 @@ do_toolbar(Widget gw GCC_UNUSED,
      * menu which contains the checkbox indicating whether the toolbar is
      * active.
      */
-    ShowToolbar(term->screen.toolbars = !term->screen.toolbars);
-    update_toolbar();
+    if (IsIcon(&(term->screen))) {
+	Bell(XkbBI_MinorError, 0);
+    } else {
+	ShowToolbar(resource.toolBar = !resource.toolBar);
+    }
 }
 
 void
@@ -2426,7 +2541,7 @@ update_toolbar(void)
 {
     update_menu_item(term->screen.mainMenu,
 		     mainMenuEntries[mainMenu_toolbar].widget,
-		     term->screen.toolbars);
+		     resource.toolBar);
 }
 #endif /* OPT_TOOLBAR */
 
@@ -2477,7 +2592,7 @@ update_decbkm(void)
 {
     update_menu_item(term->screen.mainMenu,
 		     mainMenuEntries[mainMenu_backarrow].widget,
-		     term->keyboard.flags & MODE_DECBKM);
+		     (term->keyboard.flags & MODE_DECBKM) != 0);
 }
 
 #if OPT_NUM_LOCK
@@ -2487,6 +2602,14 @@ update_num_lock(void)
     update_menu_item(term->screen.mainMenu,
 		     mainMenuEntries[mainMenu_num_lock].widget,
 		     term->misc.real_NumLock);
+}
+
+void
+update_alt_esc(void)
+{
+    update_menu_item(term->screen.mainMenu,
+		     mainMenuEntries[mainMenu_alt_esc].widget,
+		     !term->screen.input_eight_bits);
 }
 
 void
@@ -2581,7 +2704,7 @@ update_autowrap(void)
 {
     update_menu_item(term->screen.vtMenu,
 		     vtMenuEntries[vtMenu_autowrap].widget,
-		     (term->flags & WRAPAROUND));
+		     (term->flags & WRAPAROUND) != 0);
 }
 
 void
@@ -2589,7 +2712,7 @@ update_reversewrap(void)
 {
     update_menu_item(term->screen.vtMenu,
 		     vtMenuEntries[vtMenu_reversewrap].widget,
-		     (term->flags & REVERSEWRAP));
+		     (term->flags & REVERSEWRAP) != 0);
 }
 
 void
@@ -2597,7 +2720,7 @@ update_autolinefeed(void)
 {
     update_menu_item(term->screen.vtMenu,
 		     vtMenuEntries[vtMenu_autolinefeed].widget,
-		     (term->flags & LINEFEED));
+		     (term->flags & LINEFEED) != 0);
 }
 
 void
@@ -2605,7 +2728,7 @@ update_appcursor(void)
 {
     update_menu_item(term->screen.vtMenu,
 		     vtMenuEntries[vtMenu_appcursor].widget,
-		     (term->keyboard.flags & MODE_DECCKM));
+		     (term->keyboard.flags & MODE_DECCKM) != 0);
 }
 
 void
@@ -2613,7 +2736,7 @@ update_appkeypad(void)
 {
     update_menu_item(term->screen.vtMenu,
 		     vtMenuEntries[vtMenu_appkeypad].widget,
-		     (term->keyboard.flags & MODE_DECKPAM));
+		     (term->keyboard.flags & MODE_DECKPAM) != 0);
 }
 
 void
@@ -2752,9 +2875,13 @@ update_font_renderfont(void)
 void
 update_font_utf8_mode(void)
 {
-    update_menu_item(term->screen.fontMenu,
-		     fontMenuEntries[fontMenu_wide_chars].widget,
-		     term->screen.utf8_mode);
+    Widget iw = fontMenuEntries[fontMenu_wide_chars].widget;
+    Bool active = (term->screen.utf8_mode != uAlways);
+    Bool enable = (term->screen.utf8_mode != uFalse);
+
+    TRACE(("update_font_utf8_mode active %d, enable %d\n", active, enable));
+    set_sensitivity(term->screen.fontMenu, iw, active);
+    update_menu_item(term->screen.fontMenu, iw, enable);
 }
 #endif
 

@@ -1,13 +1,13 @@
-/* $XTermId: VTPrsTbl.c,v 1.39 2004/12/01 01:27:46 tom Exp $ */
+/* $XTermId: VTPrsTbl.c,v 1.44 2005/11/13 23:10:35 tom Exp $ */
 
 /*
  *	$Xorg: VTPrsTbl.c,v 1.3 2000/08/17 19:55:07 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/VTPrsTbl.c,v 3.27 2004/12/01 01:27:46 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/VTPrsTbl.c,v 3.29 2005/11/13 23:10:35 dickey Exp $ */
 /*
  *
- * Copyright 1999-2000,2004 by Thomas E. Dickey
+ * Copyright 1999-2004,2005 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *

@@ -1,11 +1,13 @@
+/* $XTermId: scrollbar.c,v 1.116 2005/11/03 13:17:28 tom Exp $ */
+
 /*
  *	$Xorg: scrollbar.c,v 1.4 2000/08/17 19:55:09 cpqbld Exp $
  */
 
-/* $XFree86: xc/programs/xterm/scrollbar.c,v 3.40 2004/12/01 01:27:47 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/scrollbar.c,v 3.45 2005/11/03 13:17:28 dickey Exp $ */
 
 /*
- * Copyright 2000-2003,2004 by Thomas E. Dickey
+ * Copyright 2000-2004,2005 by Thomas E. Dickey
  *
  *                         All Rights Reserved
  *
@@ -75,20 +77,34 @@
 #include <menu.h>
 #include <xcharmouse.h>
 
+/*
+ * The scrollbar's border overlaps the border of the vt100 window.  If there
+ * is no border for the vt100, there can be no border for the scrollbar.
+ */
+#define SCROLLBAR_BORDER(xw) ((xw)->screen.scrollBarBorder)
+#if OPT_TOOLBAR
+#define ScrollBarBorder(xw) (BorderWidth(xw) ? SCROLLBAR_BORDER(xw) : 0)
+#else
+#define ScrollBarBorder(xw) SCROLLBAR_BORDER(xw)
+#endif
+
 /* Event handlers */
 
 static void ScrollTextTo PROTO_XT_CALLBACK_ARGS;
 static void ScrollTextUpDownBy PROTO_XT_CALLBACK_ARGS;
 
-/* resize the text window for a terminal screen, modifying the
+/* Resize the text window for a terminal screen, modifying the
  * appropriate WM_SIZE_HINTS and taking advantage of bit gravity.
  */
-
-static void
-ResizeScreen(XtermWidget xw, int min_width, int min_height)
+void
+DoResizeScreen(XtermWidget xw)
 {
     TScreen *screen = &xw->screen;
-#ifndef nothack
+
+    int border = 2 * xw->screen.border;
+    int min_wide = border + xw->screen.fullVwin.sb_info.width;
+    int min_high = border;
+#if 1				/* ndef nothack */
     XSizeHints sizehints;
     long supp;
 #endif
@@ -145,85 +161,75 @@ ResizeScreen(XtermWidget xw, int min_width, int min_height)
      * to have time to completely rewrite xterm.
      */
 
-    TRACE(("ResizeScreen(min_width=%d, min_height=%d) xw=%#lx\n",
-	   min_width, min_height, (long) xw));
+    TRACE(("DoResizeScreen\n"));
 
-#ifndef nothack
+#if 1				/* ndef nothack */
     /*
-     * NOTE: If you change the way any of the hints are calculated
-     * below, make sure you change the calculation both in the
-     * sizehints assignments and in the XtVaSetValues.
+     * NOTE: the hints and the XtVaSetValues() must match.
      */
-
-    if (!XGetWMNormalHints(screen->display, XtWindow(XtParent(xw)),
+    TRACE(("%s@%d -- ", __FILE__, __LINE__));
+    TRACE_WM_HINTS(xw);
+    if (!XGetWMNormalHints(screen->display, XtWindow(SHELL_OF(xw)),
 			   &sizehints, &supp))
 	bzero(&sizehints, sizeof(sizehints));
-    sizehints.base_width = min_width;
-    sizehints.base_height = min_height;
-    sizehints.width_inc = FontWidth(screen);
-    sizehints.height_inc = FontHeight(screen);
-    sizehints.min_width = sizehints.base_width + sizehints.width_inc;
-    sizehints.min_height = sizehints.base_height + sizehints.height_inc;
-    sizehints.flags |= (PBaseSize | PMinSize | PResizeInc);
+
+    xtermSizeHints(xw, &sizehints, ScrollbarWidth(screen));
+
     /* These are obsolete, but old clients may use them */
-    sizehints.width = (screen->max_col + 1) * FontWidth(screen)
-	+ min_width;
-    sizehints.height = (screen->max_row + 1) * FontHeight(screen)
-	+ min_height;
+    sizehints.width = MaxCols(screen) * FontWidth(screen) + sizehints.min_width;
+    sizehints.height = MaxRows(screen) * FontHeight(screen) + sizehints.min_height;
 #endif
 
-    /*
-     * Note: width and height are not set here because they are
-     * obsolete.
-     */
-    XtVaSetValues(XtParent(xw),
-		  XtNbaseWidth, min_width,
-		  XtNbaseHeight, min_height,
-		  XtNwidthInc, FontWidth(screen),
-		  XtNheightInc, FontHeight(screen),
-		  XtNminWidth, min_width + FontWidth(screen),
-		  XtNminHeight, min_height + FontHeight(screen),
-		  (XtPointer) 0);
+    XSetWMNormalHints(screen->display, XtWindow(SHELL_OF(xw)), &sizehints);
 
-    reqWidth = screen->fullVwin.f_width * (screen->max_col + 1) + min_width;
-    reqHeight = screen->fullVwin.f_height * (screen->max_row + 1) + min_height;
+    reqWidth = MaxCols(screen) * FontWidth(screen) + min_wide;
+    reqHeight = MaxRows(screen) * FontHeight(screen) + min_high;
 
     TRACE(("...requesting screensize chars %dx%d, pixels %dx%d\n",
-	   (screen->max_row + 1),
-	   (screen->max_col + 1),
+	   MaxRows(screen),
+	   MaxCols(screen),
 	   reqHeight, reqWidth));
 
     geomreqresult = XtMakeResizeRequest((Widget) xw, reqWidth, reqHeight,
 					&repWidth, &repHeight);
+    TRACE(("scrollbar.c XtMakeResizeRequest %dx%d -> %dx%d (status %d)\n",
+	   reqHeight, reqWidth,
+	   repHeight, repWidth,
+	   geomreqresult));
 
     if (geomreqresult == XtGeometryAlmost) {
 	TRACE(("...almost, retry screensize %dx%d\n", repHeight, repWidth));
 	geomreqresult = XtMakeResizeRequest((Widget) xw, repWidth,
 					    repHeight, NULL, NULL);
     }
+#if 1				/* ndef nothack */
+    /*
+     * XtMakeResizeRequest() has the undesirable side-effect of clearing
+     * the window manager's hints, even on a failed request.  This would
+     * presumably be fixed if the shell did its own work.
+     */
+    if (sizehints.flags
+	&& repHeight
+	&& repWidth) {
+	sizehints.height = repHeight;
+	sizehints.width = repWidth;
+	TRACE_HINTS(&sizehints);
+	XSetWMNormalHints(screen->display, VShellWindow, &sizehints);
+    }
+#endif
     XSync(screen->display, FALSE);	/* synchronize */
     if (XtAppPending(app_con))
 	xevents();
 
-#ifndef nothack
-    XSetWMNormalHints(screen->display, XtWindow(XtParent(xw)), &sizehints);
-#endif
 #ifndef NO_ACTIVE_ICON
     WhichVWin(screen) = saveWin;
 #endif /* NO_ACTIVE_ICON */
 }
 
-void
-DoResizeScreen(XtermWidget xw)
-{
-    int border = 2 * xw->screen.border;
-    ResizeScreen(xw, border + xw->screen.fullVwin.sb_info.width, border);
-}
-
 static Widget
 CreateScrollBar(XtermWidget xw, int x, int y, int height)
 {
-    Widget scrollWidget;
+    Widget result;
     Arg args[6];
 
     XtSetArg(args[0], XtNx, x);
@@ -231,13 +237,13 @@ CreateScrollBar(XtermWidget xw, int x, int y, int height)
     XtSetArg(args[2], XtNheight, height);
     XtSetArg(args[3], XtNreverseVideo, xw->misc.re_verse);
     XtSetArg(args[4], XtNorientation, XtorientVertical);
-    XtSetArg(args[5], XtNborderWidth, 1);
+    XtSetArg(args[5], XtNborderWidth, ScrollBarBorder(xw));
 
-    scrollWidget = XtCreateWidget("scrollbar", scrollbarWidgetClass,
-				  (Widget) xw, args, XtNumber(args));
-    XtAddCallback(scrollWidget, XtNscrollProc, ScrollTextUpDownBy, 0);
-    XtAddCallback(scrollWidget, XtNjumpProc, ScrollTextTo, 0);
-    return (scrollWidget);
+    result = XtCreateWidget("scrollbar", scrollbarWidgetClass,
+			    (Widget) xw, args, XtNumber(args));
+    XtAddCallback(result, XtNscrollProc, ScrollTextUpDownBy, 0);
+    XtAddCallback(result, XtNjumpProc, ScrollTextTo, 0);
+    return (result);
 }
 
 void
@@ -282,7 +288,7 @@ ScrollBarDrawThumb(Widget scrollWidget)
     int thumbTop, thumbHeight, totalHeight;
 
     thumbTop = screen->topline + screen->savedlines;
-    thumbHeight = screen->max_row + 1;
+    thumbHeight = MaxRows(screen);
     totalHeight = thumbHeight + screen->savedlines;
 
     XawScrollbarSetThumb(scrollWidget,
@@ -291,23 +297,32 @@ ScrollBarDrawThumb(Widget scrollWidget)
 }
 
 void
-ResizeScrollBar(TScreen * screen)
+ResizeScrollBar(XtermWidget xw)
 {
+    TScreen *screen = &(xw->screen);
+
+    int height = screen->fullVwin.height + screen->border * 2;
+    int width = screen->scrollWidget->core.width;
+    int ypos = -ScrollBarBorder(xw);
+#ifdef SCROLLBAR_RIGHT
+    int xpos = ((term->misc.useRight)
+		? (screen->fullVwin.fullwidth -
+		   screen->scrollWidget->core.width -
+		   BorderWidth(screen->scrollWidget))
+		: -ScrollBarBorder(xw));
+#else
+    int xpos = -ScrollBarBorder(xw);
+#endif
+
+    TRACE(("ResizeScrollBar at %d,%d %dx%d\n", ypos, xpos, height, width));
+
     XtConfigureWidget(
 			 screen->scrollWidget,
-#ifdef SCROLLBAR_RIGHT
-			 (term->misc.useRight)
-			 ? (screen->fullVwin.fullwidth -
-			    screen->scrollWidget->core.width -
-			    screen->scrollWidget->core.border_width)
-			 : -1,
-#else
-			 -1,
-#endif
-			 -1,
-			 screen->scrollWidget->core.width,
-			 screen->fullVwin.height + screen->border * 2,
-			 screen->scrollWidget->core.border_width);
+			 xpos,
+			 ypos,
+			 width,
+			 height,
+			 BorderWidth(screen->scrollWidget));
     ScrollBarDrawThumb(screen->scrollWidget);
 }
 
@@ -316,7 +331,6 @@ WindowScroll(TScreen * screen, int top)
 {
     int i, lines;
     int scrolltop, scrollheight, refreshtop;
-    int x = 0;
 
     if (top < -screen->savedlines)
 	top = -screen->savedlines;
@@ -330,8 +344,8 @@ WindowScroll(TScreen * screen, int top)
     if (screen->cursor_state)
 	HideCursor();
     lines = i > 0 ? i : -i;
-    if (lines > screen->max_row + 1)
-	lines = screen->max_row + 1;
+    if (lines > MaxRows(screen))
+	lines = MaxRows(screen);
     scrollheight = screen->max_row - lines + 1;
     if (i > 0)
 	refreshtop = scrolltop = 0;
@@ -339,7 +353,6 @@ WindowScroll(TScreen * screen, int top)
 	scrolltop = lines;
 	refreshtop = scrollheight;
     }
-    x = OriginX(screen);
     scrolling_copy_area(screen, scrolltop, scrollheight, -i);
     screen->topline = top;
 
@@ -348,116 +361,133 @@ WindowScroll(TScreen * screen, int top)
     XClearArea(
 		  screen->display,
 		  VWindow(screen),
-		  (int) x,
-		  (int) refreshtop * FontHeight(screen) + screen->border,
+		  OriginX(screen),
+		  OriginY(screen) + refreshtop * FontHeight(screen),
 		  (unsigned) Width(screen),
 		  (unsigned) lines * FontHeight(screen),
 		  FALSE);
-    ScrnRefresh(screen, refreshtop, 0, lines, screen->max_col + 1, False);
+    ScrnRefresh(screen, refreshtop, 0, lines, MaxCols(screen), False);
 
     ScrollBarDrawThumb(screen->scrollWidget);
 }
 
+#ifdef SCROLLBAR_RIGHT
+/*
+ * Adjust the scrollbar position if we're asked to turn on scrollbars for the
+ * first time (or after resizing) after the xterm is already running.  That
+ * makes the window grow after we've initially configured the scrollbar's
+ * position.  (There must be a better way).
+ */
+void
+updateRightScrollbar(XtermWidget xw)
+{
+    TScreen *screen = &xw->screen;
+
+    if (xw->misc.useRight
+	&& screen->fullVwin.fullwidth < xw->core.width)
+	XtVaSetValues(screen->scrollWidget,
+		      XtNx, screen->fullVwin.fullwidth - BorderWidth(screen->scrollWidget),
+		      (XtPointer) 0);
+}
+
+#endif
 void
 ScrollBarOn(XtermWidget xw, int init, int doalloc)
 {
     TScreen *screen = &xw->screen;
     int i, j, k;
 
-    if (screen->fullVwin.sb_info.width)
+    if (screen->fullVwin.sb_info.width || IsIcon(screen))
 	return;
 
+    TRACE(("ScrollBarOn\n"));
     if (init) {			/* then create it only */
-	if (screen->scrollWidget)
-	    return;
-
-	/* make it a dummy size and resize later */
-	if ((screen->scrollWidget = CreateScrollBar(xw, -1, -1, 5))
-	    == NULL) {
-	    Bell(XkbBI_MinorError, 0);
-	    return;
-	}
-
-	return;
-
-    }
-
-    if (!screen->scrollWidget) {
-	Bell(XkbBI_MinorError, 0);
-	Bell(XkbBI_MinorError, 0);
-	return;
-    }
-
-    if (doalloc && screen->allbuf) {
-	/* FIXME: this is not integrated well with Allocate */
-	if ((screen->allbuf =
-	     (ScrnBuf) realloc((char *) screen->visbuf,
-			       (unsigned) MAX_PTRS * (screen->max_row + 2 +
-						      screen->savelines) *
-			       sizeof(char *)))
-	    == NULL)
-	      SysError(ERROR_SBRALLOC);
-	screen->visbuf = &screen->allbuf[MAX_PTRS * screen->savelines];
-	memmove((char *) screen->visbuf, (char *) screen->allbuf,
-		MAX_PTRS * (screen->max_row + 2) * sizeof(char *));
-	for (i = k = 0; i < screen->savelines; i++) {
-	    k += BUF_HEAD;
-	    for (j = BUF_HEAD; j < MAX_PTRS; j++) {
-		if ((screen->allbuf[k++] =
-		     (Char *) calloc((unsigned) screen->max_col + 1,
-				     sizeof(Char))
-		    ) == NULL)
-		    SysError(ERROR_SBRALLOC2);
+	if (screen->scrollWidget == 0) {
+	    /* make it a dummy size and resize later */
+	    screen->scrollWidget = CreateScrollBar(xw,
+						   -ScrollBarBorder(xw),
+						   -ScrollBarBorder(xw),
+						   5);
+	    if (screen->scrollWidget == NULL) {
+		Bell(XkbBI_MinorError, 0);
 	    }
 	}
-    }
+    } else if (!screen->scrollWidget || !XtIsRealized((Widget) term)) {
+	Bell(XkbBI_MinorError, 0);
+	Bell(XkbBI_MinorError, 0);
+    } else {
 
-    ResizeScrollBar(screen);
-    xtermAddInput(screen->scrollWidget);
-    XtRealizeWidget(screen->scrollWidget);
-    TRACE_TRANS("scrollbar", screen->scrollWidget);
+	if (doalloc && screen->allbuf) {
+	    /* FIXME: this is not integrated well with Allocate */
+	    if ((screen->allbuf =
+		 TypeRealloc(ScrnPtr,
+			     MAX_PTRS * (screen->max_row + 2 + screen->savelines),
+			     screen->visbuf)) == NULL) {
+		SysError(ERROR_SBRALLOC);
+	    }
+	    screen->visbuf = &screen->allbuf[MAX_PTRS * screen->savelines];
+	    memmove((char *) screen->visbuf, (char *) screen->allbuf,
+		    MAX_PTRS * (screen->max_row + 2) * sizeof(char *));
+	    for (i = k = 0; i < screen->savelines; i++) {
+		k += BUF_HEAD;
+		for (j = BUF_HEAD; j < MAX_PTRS; j++) {
+		    if ((screen->allbuf[k++] =
+			 TypeCallocN(Char, (unsigned) MaxCols(screen))
+			) == NULL)
+			SysError(ERROR_SBRALLOC2);
+		}
+	    }
+	}
 
-    screen->fullVwin.sb_info.rv_cached = False;
-    screen->fullVwin.sb_info.width = screen->scrollWidget->core.width +
-	screen->scrollWidget->core.border_width;
+	ResizeScrollBar(xw);
+	xtermAddInput(screen->scrollWidget);
+	XtRealizeWidget(screen->scrollWidget);
+	TRACE_TRANS("scrollbar", screen->scrollWidget);
 
-    ScrollBarDrawThumb(screen->scrollWidget);
-    DoResizeScreen(xw);
+	screen->fullVwin.sb_info.rv_cached = False;
+
+	screen->fullVwin.sb_info.width = (screen->scrollWidget->core.width
+					  + BorderWidth(screen->scrollWidget));
+
+	TRACE(("setting scrollbar width %d = %d + %d\n",
+	       screen->fullVwin.sb_info.width,
+	       screen->scrollWidget->core.width,
+	       BorderWidth(screen->scrollWidget)));
+
+	ScrollBarDrawThumb(screen->scrollWidget);
+	DoResizeScreen(xw);
 
 #ifdef SCROLLBAR_RIGHT
-    /*
-     * Adjust the scrollbar position if we're asked to turn on scrollbars
-     * for the first time after the xterm is already running.  That makes
-     * the window grow after we've initially configured the scrollbar's
-     * position.  (There must be a better way).
-     */
-    if (term->misc.useRight
-	&& screen->fullVwin.fullwidth < term->core.width)
-	XtVaSetValues(screen->scrollWidget,
-		      XtNx, screen->fullVwin.fullwidth - screen->scrollWidget->core.border_width,
-		      (XtPointer) 0);
+	updateRightScrollbar(term);
 #endif
 
-    XtMapWidget(screen->scrollWidget);
-    update_scrollbar();
-    if (screen->visbuf) {
-	XClearWindow(screen->display, XtWindow(term));
-	Redraw();
+	XtMapWidget(screen->scrollWidget);
+	update_scrollbar();
+	if (screen->visbuf) {
+	    XClearWindow(screen->display, XtWindow(term));
+	    Redraw();
+	}
     }
 }
 
 void
 ScrollBarOff(TScreen * screen)
 {
-    if (!screen->fullVwin.sb_info.width)
+    if (!screen->fullVwin.sb_info.width || IsIcon(screen))
 	return;
-    XtUnmapWidget(screen->scrollWidget);
-    screen->fullVwin.sb_info.width = 0;
-    DoResizeScreen(term);
-    update_scrollbar();
-    if (screen->visbuf) {
-	XClearWindow(screen->display, XtWindow(term));
-	Redraw();
+
+    TRACE(("ScrollBarOff\n"));
+    if (XtIsRealized((Widget) term)) {
+	XtUnmapWidget(screen->scrollWidget);
+	screen->fullVwin.sb_info.width = 0;
+	DoResizeScreen(term);
+	update_scrollbar();
+	if (screen->visbuf) {
+	    XClearWindow(screen->display, XtWindow(term));
+	    Redraw();
+	}
+    } else {
+	Bell(XkbBI_MinorError, 0);
     }
 }
 
@@ -469,12 +499,18 @@ ToggleScrollBar(XtermWidget w)
 {
     TScreen *screen = &w->screen;
 
-    if (screen->fullVwin.sb_info.width) {
-	ScrollBarOff(screen);
+    if (IsIcon(screen)) {
+	Bell(XkbBI_MinorError, 0);
     } else {
-	ScrollBarOn(w, FALSE, FALSE);
+	TRACE(("ToggleScrollBar{{\n"));
+	if (screen->fullVwin.sb_info.width) {
+	    ScrollBarOff(screen);
+	} else {
+	    ScrollBarOn(w, FALSE, FALSE);
+	}
+	update_scrollbar();
+	TRACE(("...ToggleScrollBar}}\n"));
     }
-    update_scrollbar();
 }
 
 /*ARGSUSED*/
@@ -489,13 +525,13 @@ ScrollTextTo(
     int thumbTop;		/* relative to first saved line */
     int newTopLine;
 
-/*
-   screen->savedlines : Number of offscreen text lines,
-   screen->maxrow + 1 : Number of onscreen  text lines,
-   screen->topline    : -Number of lines above the last screen->max_row+1 lines
-*/
+    /*
+     * screen->savedlines : Number of offscreen text lines,
+     * MaxRows(screen)    : Number of onscreen  text lines,
+     * screen->topline    : -Number of lines above the last screen->max_row+1 lines
+     */
 
-    thumbTop = (int) (*topPercent * (screen->savedlines + screen->max_row + 1));
+    thumbTop = (int) (*topPercent * (screen->savedlines + MaxRows(screen)));
     newTopLine = thumbTop - screen->savedlines;
     WindowScroll(screen, newTopLine);
 }
@@ -573,9 +609,9 @@ params_to_pixels(TScreen * screen, String * params, Cardinal n)
     case 2:
 	s = params[1];
 	if (specialcmplowerwiths(s, "page", &modifier)) {
-	    mult = (screen->max_row + 1 + modifier) * FontHeight(screen);
+	    mult = (MaxRows(screen) + modifier) * FontHeight(screen);
 	} else if (specialcmplowerwiths(s, "halfpage", &modifier)) {
-	    mult = ((screen->max_row + 1 + modifier) * FontHeight(screen)) / 2;
+	    mult = ((MaxRows(screen) + modifier) * FontHeight(screen)) / 2;
 	} else if (specialcmplowerwiths(s, "pixel", &modifier)) {
 	    mult = 1;
 	} else {

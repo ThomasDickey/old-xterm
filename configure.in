@@ -1,10 +1,10 @@
-dnl $XTermId: configure.in,v 1.175 2004/12/01 01:27:46 tom Exp $
+dnl $XTermId: configure.in,v 1.197 2005/11/03 13:17:27 tom Exp $
 dnl
-dnl $XFree86: xc/programs/xterm/configure.in,v 3.67 2004/12/01 01:27:46 dickey Exp $
+dnl $XFree86: xc/programs/xterm/configure.in,v 3.72 2005/11/03 13:17:27 dickey Exp $
 dnl
 dnl ---------------------------------------------------------------------------
 dnl
-dnl Copyright 1997-2003,2004 by Thomas E. Dickey
+dnl Copyright 1997-2004,2005 by Thomas E. Dickey
 dnl
 dnl                         All Rights Reserved
 dnl
@@ -70,13 +70,18 @@ ncurses/term.h \
 stdlib.h \
 termios.h \
 unistd.h \
+wchar.h \
 )
 AC_HEADER_TIME
 AM_LANGINFO_CODESET
 
 ###	checks for typedefs
+CF_SIG_ATOMIC_T
 CF_SIZE_T
 AC_CHECK_TYPE(time_t, long)
+AC_TYPE_MODE_T
+AC_TYPE_PID_T
+AC_TYPE_UID_T
 
 ###	checks for library functions
 AC_CHECK_FUNCS( \
@@ -84,14 +89,81 @@ AC_CHECK_FUNCS( \
 	gethostname \
 	getlogin \
 	memmove \
+	putenv \
+	sched_yield \
 	strerror \
 	strftime \
 	tcgetattr \
 	waitpid \
-	)
+	wcswidth \
+	wcwidth )
 CF_FUNC_MEMMOVE
-CF_FUNC_TGETENT
 CF_UTMP
+
+CF_HELP_MESSAGE(Compile/Install Options:)
+CF_FUNC_TGETENT
+
+AC_MSG_CHECKING(for directory to install resource files)
+CF_WITH_PATH(app-defaults,
+	[  --with-app-defaults=DIR directory in which to install resource files],
+	[appsdir],[EPREFIX/lib/X11/app-defaults],
+	['\$(exec_prefix)/lib/X11/app-defaults'])
+AC_MSG_RESULT($appsdir)
+AC_SUBST(appsdir)
+
+# inherit SINSTALL_OPTS from environment to allow packager to customize it.
+
+AC_MSG_CHECKING(for install-permissions reference)
+AC_ARG_WITH(reference,
+	[  --with-reference=XXX    program to use as permissions-reference],
+	[with_reference=$withval],
+	[with_reference=xterm])
+AC_MSG_RESULT($with_reference)
+
+CF_PATH_PROG(XTERM_PATH,$with_reference)
+
+AC_MSG_CHECKING(if you want to disable setuid)
+CF_ARG_DISABLE(setuid,
+	[  --disable-setuid        disable setuid in xterm, do not install setuid],
+	[disable_setuid=yes],
+	[disable_setuid=no],
+	no)
+AC_MSG_RESULT($disable_setuid)
+
+AC_MSG_CHECKING(if you want to run xterm setuid to a given user)
+AC_ARG_WITH(setuid,
+	[  --with-setuid=XXX       use the given setuid user],
+	[use_given_setuid=$withval],
+	[use_given_setuid=no])
+AC_MSG_RESULT($use_given_setuid)
+
+if test "$use_given_setuid" != no ; then
+	if test "$use_given_setuid" = yes ; then
+		cf_cv_given_setuid=root
+	else
+		cf_cv_given_setuid=$use_given_setuid
+	fi
+	SINSTALL_OPTS="$SINSTALL_OPTS u+s -u $cf_cv_given_setuid"
+fi
+
+AC_MSG_CHECKING(if you want to run xterm setgid to match utmp/utmpx file)
+AC_ARG_WITH(utmp-setgid,
+	[  --with-utmp-setgid=XXX  use setgid to match utmp/utmpx file],
+	[use_utmp_setgid=$withval],
+	[use_utmp_setgid=no])
+AC_MSG_RESULT($use_utmp_setgid)
+
+if test "$use_utmp_setgid" != no ; then
+	if test "$use_utmp_setgid" = yes ; then
+		CF_UTMP_GROUP
+	else
+		cf_cv_utmp_group=$use_utmp_setgid
+	fi
+	AC_DEFINE(USE_UTMP_SETGID)
+	SINSTALL_OPTS="$SINSTALL_OPTS g+s -g $cf_cv_utmp_group"
+fi
+
+AC_SUBST(SINSTALL_OPTS)
 
 AC_MSG_CHECKING(if you want to link with utempter)
 AC_ARG_WITH(utempter,
@@ -102,6 +174,7 @@ AC_MSG_RESULT($use_utempter)
 
 if test "$use_utempter" = yes ; then
 	CF_UTEMPTER
+	test "$cf_cv_have_utempter" = yes && disable_setuid=yes
 fi
 
 ###	checks for external data
@@ -130,15 +203,13 @@ LIBS="$LIBS $X_EXTRA_LIBS"
 # Check for openpty() in -lutil if the UNIX98-style pty functions are not
 # available. E.g. for GNU libc 2.0.
 case $host_os in #(vi
-netbsd*)	# 2004/8/15 - revisit this if/when grantpt is known to work.
+freebsd*|netbsd*)	# 2004/8/15 - revisit this if/when grantpt is known to work.
 	AC_CHECK_LIB(util,openpty)
 	;;
 *)
 	AC_CHECK_FUNCS(grantpt, [], AC_CHECK_LIB(util,openpty))
 	;;
 esac
-
-AC_PATH_PROG(XTERM_PATH,xterm)
 
 CF_XKB_BELL_EXT
 AC_CHECK_FUNCS(Xutf8LookupString, [],[
@@ -149,9 +220,11 @@ AC_CHECK_FUNCS(Xutf8LookupString, [],[
 
 CF_WITH_IMAKE_CFLAGS($(MAIN_DEFINES) $(VENDORMANDEFS))
 
+CF_HELP_MESSAGE(Terminal Configuration:)
+
 AC_MSG_CHECKING(for default terminal-id)
 AC_ARG_WITH(terminal-id,
-	[  --with-terminal-id[=V]  set default decTerminalID (default: vt100)],
+	[  --with-terminal-id=V    set default decTerminalID (default: vt100)],
 	[default_termid=$withval],
 	[default_termid=vt100])
 AC_MSG_RESULT($default_termid)
@@ -163,7 +236,7 @@ AC_DEFINE_UNQUOTED(DFT_DECID,"$default_termid")
 
 AC_MSG_CHECKING(for default terminal-type)
 AC_ARG_WITH(terminal-type,
-	[  --with-terminal-type=T  set default \$TERM (default: xterm)],
+	[  --with-terminal-type=T  set default $TERM (default: xterm)],
 	[default_TERM=$withval],
 	[default_TERM=xterm])
 AC_MSG_RESULT($default_TERM)
@@ -171,7 +244,7 @@ AC_DEFINE_UNQUOTED(DFT_TERMTYPE,"$default_TERM")
 
 AC_MSG_CHECKING(for private terminfo-directory)
 AC_ARG_WITH(own-terminfo,
-	[  --with-own-terminfo=P   set default \$TERMINFO (default: from environment)],
+	[  --with-own-terminfo=P   set default $TERMINFO (default: from environment)],
 	[TERMINFO_DIR=$withval],
 	[TERMINFO_DIR=${TERMINFO-none}])
 AC_MSG_RESULT($TERMINFO_DIR)
@@ -461,6 +534,19 @@ CF_ARG_DISABLE(num-lock,
 AC_MSG_RESULT($enable_numlock)
 test "$enable_numlock" = no && AC_DEFINE(OPT_NUM_LOCK,0)
 
+AC_MSG_CHECKING(if you want support for get/set of base64 selection data)
+
+CF_ARG_ENABLE(paste64,
+	[  --enable-paste64        enable get/set base64 selection data],
+	[enable_paste64=yes],
+	[enable_paste64=no])
+AC_MSG_RESULT($enable_paste64)
+if test "$enable_paste64" = yes ; then
+	AC_DEFINE(OPT_PASTE64,1)
+else
+	AC_DEFINE(OPT_PASTE64,0)
+fi
+
 AC_MSG_CHECKING(if you want support for pty-handshaking)
 
 CF_ARG_DISABLE(pty-handshake,
@@ -472,6 +558,16 @@ if test "$enable_pty_handshake" = yes ; then
 	AC_DEFINE(OPT_PTY_HANDSHAKE,1)
 else
 	AC_DEFINE(OPT_PTY_HANDSHAKE,0)
+fi
+
+AC_MSG_CHECKING(if you want support for mouse in readline applications)
+CF_ARG_ENABLE(readline-mouse,
+	[  --enable-readline-mouse enable support for mouse in readline applications],
+	[enable_readline_mouse=yes],
+	[enable_readline_mouse=no])
+AC_MSG_RESULT($enable_readline_mouse)
+if test "$enable_readline_mouse" = yes ; then
+	AC_DEFINE(OPT_READLINE,1)
 fi
 
 AC_MSG_CHECKING(if you want support for right-scrollbar)
@@ -575,7 +671,7 @@ if test "$enable_wchar" = yes ; then
 fi
 
 AC_MSG_CHECKING(if you want dynamic-abbreviation support)
-CF_ARG_ENABLE(dec-locator,
+CF_ARG_ENABLE(dabbrev,
 	[  --enable-dabbrev        enable dynamic-abbreviation support],
 	[enable_dabbrev=yes],
 	[enable_dabbrev=no])
@@ -650,6 +746,18 @@ AC_SUBST(CHARPROC_DEPS)
 AC_SUBST(EXTRAHDRS)
 AC_SUBST(EXTRASRCS)
 AC_SUBST(EXTRAOBJS)
+
+if test $disable_setuid = yes ; then
+	MAY_SETUID="#"
+	NOT_SETUID=
+	AC_DEFINE(DISABLE_SETUID)
+else
+	MAY_SETUID=
+	NOT_SETUID="#"
+fi
+
+AC_SUBST(MAY_SETUID)
+AC_SUBST(NOT_SETUID)
 
 ###	remove from CPPFLAGS the optional features we define in xtermcfg.h
 ###	or other conflicting symbols that may be defined via imake:

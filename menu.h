@@ -1,9 +1,9 @@
-/* $XTermId: menu.h,v 1.86 2004/12/01 01:27:47 tom Exp $ */
+/* $XTermId: menu.h,v 1.96 2005/11/03 13:17:28 tom Exp $ */
 
 /* $Xorg: menu.h,v 1.4 2001/02/09 02:06:03 xorgcvs Exp $ */
 /*
 
-Copyright 1999-2001,2004 by Thomas E. Dickey
+Copyright 1999-2004,2005 by Thomas E. Dickey
 
                         All Rights Reserved
 
@@ -50,14 +50,12 @@ other dealings in this Software without prior written authorization
 from The Open Group.
 
 */
-/* $XFree86: xc/programs/xterm/menu.h,v 3.34 2004/12/01 01:27:47 dickey Exp $ */
+/* $XFree86: xc/programs/xterm/menu.h,v 3.38 2005/11/03 13:17:28 dickey Exp $ */
 
 #ifndef included_menu_h
 #define included_menu_h
 
 #include <xterm.h>
-
-#include <X11/Intrinsic.h>
 
 typedef struct _MenuEntry {
     char *name;
@@ -74,6 +72,7 @@ extern MenuEntry tekMenuEntries[];
 extern void Handle8BitControl      PROTO_XT_ACTIONS_ARGS;
 extern void HandleAllow132         PROTO_XT_ACTIONS_ARGS;
 extern void HandleAllowSends       PROTO_XT_ACTIONS_ARGS;
+extern void HandleAltEsc           PROTO_XT_ACTIONS_ARGS;
 extern void HandleAltScreen        PROTO_XT_ACTIONS_ARGS;
 extern void HandleAppCursor        PROTO_XT_ACTIONS_ARGS;
 extern void HandleAppKeypad        PROTO_XT_ACTIONS_ARGS;
@@ -128,8 +127,7 @@ extern void DoSecureKeyboard (Time tp);
 extern void SetupMenus (Widget shell, Widget *forms, Widget *menus);
 
 #if OPT_TOOLBAR
-extern void SetupToolbar(Widget);
-extern void ShowToolbar(Boolean);
+extern void ShowToolbar(Bool);
 #endif
 
 /*
@@ -158,6 +156,7 @@ typedef enum {
     mainMenu_backarrow,
 #if OPT_NUM_LOCK
     mainMenu_num_lock,
+    mainMenu_alt_esc,
     mainMenu_meta_esc,
 #endif
     mainMenu_delete_del,
@@ -324,9 +323,11 @@ extern void update_decbkm(void);
 
 #if OPT_NUM_LOCK
 extern void update_num_lock(void);
+extern void update_alt_esc(void);
 extern void update_meta_esc(void);
 #else
 #define update_num_lock() /*nothing*/
+#define update_alt_esc()  /*nothing*/
 #define update_meta_esc() /*nothing*/
 #endif
 
